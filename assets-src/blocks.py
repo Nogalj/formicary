@@ -510,6 +510,70 @@ def resin_item():
     return img
 
 
+def chitin_item():
+    """Curved shell-plate item sprite: dark maroon-brown core with a lighter
+    rim catching the light along one edge -- a stretched, rotated ellipse
+    (an implicit SDF) rather than resin's round glob, so it reads as a plate."""
+    img = blank()
+    px = img.load()
+    cx, cy = 8.0, 8.0
+
+    def sdf(x, y):
+        dx, dy = x + 0.5 - cx, y + 0.5 - cy
+        u = dx * 0.92 + dy * 0.40
+        v = -dx * 0.40 + dy * 0.92
+        return (u * u) / 34.0 + (v * v) / 14.0
+
+    for y in range(SIZE):
+        for x in range(SIZE):
+            d = sdf(x, y)
+            if d < 1.0:
+                px[x, y] = lerp_color((156, 64, 38, 255), (58, 22, 14, 255), d)
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if px[x, y][3] != 0 and sdf(x, y) > 0.82:
+                px[x, y] = (34, 12, 8, 255)
+    for (x, y) in [(4, 5), (5, 4), (6, 4), (5, 6), (7, 3)]:
+        if px[x, y][3] != 0:
+            px[x, y] = (196, 96, 58, 255)
+    px[5, 5] = (222, 130, 84, 255)
+    return img
+
+
+def larva_item():
+    """Curled grub item sprite: pale cream body curling into a C, faint amber
+    segment lines, two tiny dark eye dots at the head end -- matching the
+    larva entity's palette (see LARVA in models.py)."""
+    img = blank()
+    px = img.load()
+    base = (238, 224, 196, 255)
+    light = (248, 238, 218, 255)
+    shade = (214, 196, 164, 255)
+    line = (222, 158, 70, 255)
+    eye = (60, 40, 24, 255)
+
+    # Curl path: centres for a C-shaped body: head end -> curls down -> tail.
+    path = [(11, 4), (12, 5), (12, 7), (11, 8), (9, 9), (7, 10),
+            (5, 10), (4, 9), (3, 7), (4, 5)]
+    for i, (cx, cy) in enumerate(path):
+        r = 1 if i in (0, len(path) - 1) else 2
+        for dy in range(-r, r + 1):
+            for dx in range(-r, r + 1):
+                if dx * dx + dy * dy <= r * r + 1:
+                    x, y = cx + dx, cy + dy
+                    if 0 <= x < SIZE and 0 <= y < SIZE:
+                        px[x, y] = light if (dx <= 0 and dy <= 0) else base
+    for (x, y) in [(6, 11), (5, 10), (8, 10), (10, 8), (11, 6)]:
+        if 0 <= x < SIZE and 0 <= y < SIZE and px[x, y][3] != 0:
+            px[x, y] = shade
+    for (x, y) in [(10, 7), (8, 9), (6, 9), (5, 8)]:
+        if px[x, y][3] != 0:
+            px[x, y] = line
+    px[11, 3] = eye
+    px[12, 4] = eye
+    return img
+
+
 BLOCK_TEXTURES = {
     "packed_soil": packed_soil,
     "amber_earth": amber_earth,
@@ -531,6 +595,8 @@ BLOCK_TEXTURES = {
 
 ITEM_TEXTURES = {
     "resin": resin_item,
+    "chitin": chitin_item,
+    "larva": larva_item,
 }
 
 

@@ -43,6 +43,8 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 TEX = 64
+SOLDIER_TEX_W, SOLDIER_TEX_H = 64, 32
+LARVA_TEX_W, LARVA_TEX_H = 32, 16
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENTITY_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/entity"
 PREVIEW_DIR = Path(__file__).resolve().parent / "previews"
@@ -111,6 +113,88 @@ WORKER_ANT = {
 }
 
 
+# Soldier: a visibly bulkier worker -- bigger armored head + crest, oversized
+# mandibles, thicker thorax/gaster, slightly longer legs (so the foot still
+# reaches near the ground despite the taller thorax). Mandibles are their own
+# posed parts (not baked into the head's cube list like the worker's) because
+# WorkerAntModel-style setupAnim needs to flex them independently; each pose
+# sits at the mandible's inner-rear hinge corner, so the box below is that
+# same absolute box re-expressed relative to the hinge instead of to head.
+SOLDIER_ANT = {
+    "name": "soldier_ant",
+    "parts": [
+        # --- thorax: bigger than the worker's (5x4x5 vs 4x3x4) ---------------
+        {"name": "body", "pose": (0, 19.5, 0), "cubes": [
+            {"off": (0, 12), "box": (-2.5, -2, -2.5, 5, 4, 5)},          # thorax
+        ]},
+        # --- head: armored skull + raised crest ------------------------------
+        {"name": "head", "pose": (0, 19.0, -2.5), "cubes": [
+            {"off": (20, 12), "box": (-3, -2, -5, 6, 4, 5)},             # skull
+            {"off": (0, 26), "box": (-1.5, -3, -3, 3, 1, 2)},            # crest
+        ]},
+        {"name": "mandible_r", "pose": (-1, 20.0, -6.5), "cubes": [
+            {"off": (0, 21), "box": (-2, -0.5, -3, 2, 1, 3)},
+        ]},
+        {"name": "mandible_l", "pose": (1, 20.0, -6.5), "cubes": [
+            {"off": (0, 21), "box": (0, -0.5, -3, 2, 1, 3)},
+        ]},
+        {"name": "antenna_r", "pose": (-2.0, 17.5, -7.0),
+         "rot": (REST_ANT_X, 0, -REST_ANT_Z), "cubes": [
+            {"off": (10, 21), "box": (-0.5, -3, -0.5, 1, 3, 1)},
+        ]},
+        {"name": "antenna_l", "pose": (2.0, 17.5, -7.0),
+         "rot": (REST_ANT_X, 0, REST_ANT_Z), "cubes": [
+            {"off": (10, 21), "box": (-0.5, -3, -0.5, 1, 3, 1)},
+        ]},
+        # --- gaster: 6x5x7 vs the worker's 5x4x6 -----------------------------
+        {"name": "gaster", "pose": (0, 18.5, 0), "cubes": [
+            {"off": (14, 21), "box": (-1, 0.5, 2.0, 2, 2, 2)},           # petiole
+            {"off": (0, 0), "box": (-3, -1.5, 4.0, 6, 5, 7)},            # gaster
+        ]},
+        # --- six legs, one unit longer than the worker's so the foot still ---
+        # --- reaches near the ground under the taller thorax -----------------
+        {"name": "leg_r1", "pose": (-2.5, 21.4, -2.0),
+         "rot": (0, REST_LEG_Y_FRONT, REST_LEG_Z),
+         "cubes": [{"off": (22, 21), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+        {"name": "leg_r2", "pose": (-2.5, 21.4, 0),
+         "rot": (0, 0, REST_LEG_Z),
+         "cubes": [{"off": (22, 21), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+        {"name": "leg_r3", "pose": (-2.5, 21.4, 2.0),
+         "rot": (0, REST_LEG_Y_HIND, REST_LEG_Z),
+         "cubes": [{"off": (22, 21), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+        {"name": "leg_l1", "pose": (2.5, 21.4, -2.0),
+         "rot": (0, -REST_LEG_Y_FRONT, -REST_LEG_Z),
+         "cubes": [{"off": (22, 21), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+        {"name": "leg_l2", "pose": (2.5, 21.4, 0),
+         "rot": (0, 0, -REST_LEG_Z),
+         "cubes": [{"off": (22, 21), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+        {"name": "leg_l3", "pose": (2.5, 21.4, 2.0),
+         "rot": (0, -REST_LEG_Y_HIND, -REST_LEG_Z),
+         "cubes": [{"off": (22, 21), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+    ],
+}
+
+
+# Larva: a tiny legless, antenna-less grub -- three tapering segments (head
+# 3x3x2, mid 4x3x3, tail 3x2x3) resting flush on the ground. `mid` is the
+# root; `head`/`tail` are its children so setupAnim can flex them
+# independently for the wriggle.
+LARVA = {
+    "name": "larva",
+    "parts": [
+        {"name": "mid", "pose": (0, 22.5, 0), "cubes": [
+            {"off": (0, 0), "box": (-2, -1.5, -1.5, 4, 3, 3)},
+        ]},
+        {"name": "head", "pose": (0, 22.5, -1.5), "cubes": [
+            {"off": (0, 6), "box": (-1.5, -1.5, -2, 3, 3, 2)},
+        ]},
+        {"name": "tail", "pose": (0, 23.0, 1.5), "cubes": [
+            {"off": (10, 6), "box": (-1.5, -1, 0, 3, 2, 3)},
+        ]},
+    ],
+}
+
+
 # ------------------------------------------------------------------- faces --
 
 def face_rects(u, v, w, h, d):
@@ -160,17 +244,75 @@ BELLY_PAL = [BELLY_DARK, BELLY, BELLY, BELLY_LIGHT, BELLY_LIGHT]
 LIMB_PAL = [CHITIN_DARKEST, CHITIN_DARK, CHITIN_DARK, CHITIN_BASE, CHITIN_MID]
 
 
+# ----------------------------------------------------------- soldier palette --
+# Darker, redder chitin than the worker -- deep maroon-browns with near-black
+# head plates and lighter mandible tips, so it reads as armored rather than
+# just a colour swap.
+
+S_CHITIN_DARKEST = (26, 10, 8, 255)
+S_CHITIN_DARK = (58, 18, 14, 255)
+S_CHITIN_BASE = (92, 28, 20, 255)
+S_CHITIN_MID = (118, 40, 28, 255)
+S_CHITIN_LIGHT = (145, 55, 38, 255)
+S_CHITIN_PALE = (168, 70, 48, 255)
+
+S_BELLY_DARK = (110, 50, 36, 255)
+S_BELLY = (140, 66, 46, 255)
+S_BELLY_LIGHT = (164, 84, 58, 255)
+
+S_BAND = (36, 12, 9, 255)
+S_SHEEN = (172, 82, 56, 255)
+
+S_HEAD_DARKEST = (16, 7, 6, 255)
+S_HEAD_DARK = (30, 13, 11, 255)
+S_HEAD_BASE = (46, 19, 15, 255)
+S_HEAD_MID = (64, 27, 21, 255)
+S_HEAD_LIGHT = (82, 36, 27, 255)
+
+S_JAW = (150, 68, 44, 255)
+S_JAW_TIP = (206, 122, 78, 255)
+S_JAW_DARK = (94, 42, 26, 255)
+
+S_ANTENNA_TIP = (196, 98, 52, 255)
+
+S_BODY_PAL = [S_CHITIN_DARK, S_CHITIN_BASE, S_CHITIN_MID, S_CHITIN_LIGHT, S_CHITIN_PALE]
+S_BACK_PAL = [S_CHITIN_DARKEST, S_CHITIN_DARK, S_CHITIN_BASE, S_CHITIN_MID, S_CHITIN_LIGHT]
+S_BELLY_PAL = [S_BELLY_DARK, S_BELLY, S_BELLY, S_BELLY_LIGHT, S_BELLY_LIGHT]
+S_LIMB_PAL = [S_CHITIN_DARKEST, S_CHITIN_DARK, S_CHITIN_DARK, S_CHITIN_BASE, S_CHITIN_MID]
+S_HEAD_PAL = [S_HEAD_DARK, S_HEAD_BASE, S_HEAD_MID, S_HEAD_LIGHT, S_CHITIN_LIGHT]
+S_HEAD_BACK_PAL = [S_HEAD_DARKEST, S_HEAD_DARK, S_HEAD_BASE, S_HEAD_MID, S_HEAD_LIGHT]
+
+
+# ------------------------------------------------------------- larva palette --
+# Pale cream/ivory grub -- faint amber segment lines, tiny dark eye dots.
+
+L_PALE = (252, 246, 232, 255)
+L_LIGHT = (248, 238, 218, 255)
+L_BASE = (238, 224, 196, 255)
+L_SHADE = (222, 204, 174, 255)
+L_DARK = (198, 178, 146, 255)
+
+L_LINE = (222, 158, 70, 255)
+L_EYE = (60, 40, 24, 255)
+
+L_BODY_PAL = [L_SHADE, L_BASE, L_LIGHT, L_LIGHT, L_PALE]
+L_TOP_PAL = [L_DARK, L_SHADE, L_BASE, L_LIGHT, L_PALE]
+L_BOTTOM_PAL = [L_DARK, L_DARK, L_SHADE, L_SHADE, L_BASE]
+
+
 # ----------------------------------------------------------------- painting --
 
-def noise_rect(draw, rect, seed, palette, weights=None, jitter=0.24, cell=2):
+def noise_rect(draw, rect, seed, palette, weights=None, jitter=0.24, cell=2, namespace="worker_ant"):
     """Clumped multi-tone fill inside `rect` -- a coarse `cell`-sized tone grid
     with per-pixel +/-1 tone jitter. Same technique as blocks.py, so the ant
     shades in connected clumps rather than reading as flat colour or speckle.
-    Deterministic: the same seed always paints the same pixels."""
+    Deterministic: the same seed always paints the same pixels.
+    `namespace` keys the RNG per model (worker/soldier/larva) so identical
+    part-face seed strings across models don't paint identical noise."""
     x0, y0, x1, y1 = rect
     if x1 <= x0 or y1 <= y0:
         return
-    r = random.Random(f"formicary:worker_ant:{seed}")
+    r = random.Random(f"formicary:{namespace}:{seed}")
     n = len(palette)
     if weights is None:
         weights = [1, 3, 6, 3, 1][:n] if n == 5 else [1] * n
@@ -319,6 +461,160 @@ def paint_worker_ant():
     return img
 
 
+def paint_soldier_ant():
+    img = Image.new("RGBA", (SOLDIER_TEX_W, SOLDIER_TEX_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    parts = {p["name"]: p for p in SOLDIER_ANT["parts"]}
+    NS = "soldier_ant"
+
+    def rects(cube):
+        u, v = cube["off"]
+        _, _, _, w, h, dd = cube["box"]
+        return face_rects(u, v, w, h, dd)
+
+    # ---- thorax: bulkier, maroon chitin ------------------------------------
+    r = rects(parts["body"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "thorax:" + f, S_BODY_PAL, namespace=NS)
+    noise_rect(d, r["top"], "thorax:top", S_BACK_PAL, namespace=NS)
+    noise_rect(d, r["bottom"], "thorax:bottom", S_BELLY_PAL, namespace=NS)
+    hband(d, r["top"], 0, S_BAND)                # seam against the gaster (back)
+    hband(d, r["top"], 4, S_BAND)                # seam against the head (front)
+    for f in ("west", "east"):
+        vband(d, r[f], 0, S_CHITIN_DARK)
+        vband(d, r[f], 4, S_BAND)
+    px(d, r["top"], 2, 2, S_SHEEN)
+
+    # ---- gaster: petiole waist + the big rear mass -------------------------
+    petiole, gaster = parts["gaster"]["cubes"]
+    r = rects(petiole)
+    for f in ("west", "north", "east", "south", "top"):
+        fill(d, r[f], S_CHITIN_DARK)
+    fill(d, r["bottom"], S_BELLY_DARK)
+    for f in ("west", "east"):
+        hband(d, r[f], 0, S_CHITIN_BASE)
+
+    r = rects(gaster)
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "gaster:" + f, S_BODY_PAL, namespace=NS)
+    noise_rect(d, r["top"], "gaster:top", S_BACK_PAL, namespace=NS)
+    noise_rect(d, r["bottom"], "gaster:bottom", S_BELLY_PAL, namespace=NS)
+    for f in ("west", "east"):
+        vband(d, r[f], 0, S_CHITIN_DARK)
+        for bx in (2, 5):
+            vband(d, r[f], bx, S_BAND)
+        hband(d, r[f], 0, S_CHITIN_DARK)
+        px(d, r[f], 1, 2, S_CHITIN_LIGHT)
+    for by in (0, 3, 6):
+        hband(d, r["top"], by, S_BAND)
+    hband(d, r["north"], 0, S_CHITIN_DARK)
+    px(d, r["south"], 3, 2, S_CHITIN_DARKEST)
+
+    # ---- head: near-black armored plates, amber eyes, brow ridge ----------
+    skull, crest = parts["head"]["cubes"][0], parts["head"]["cubes"][1]
+    r = rects(skull)
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "skull:" + f, S_HEAD_PAL, namespace=NS)
+    noise_rect(d, r["top"], "skull:top", S_HEAD_BACK_PAL, namespace=NS)
+    noise_rect(d, r["bottom"], "skull:bottom", S_BELLY_PAL, namespace=NS)
+    n = r["north"]                              # 6 wide x 4 tall front face
+    hband(d, n, 0, S_HEAD_DARKEST)              # brow ridge
+    for ex in (0, 5):                           # amber eye spots near the edges
+        px(d, n, ex, 0, S_HEAD_DARKEST)
+        px(d, n, ex, 1, EYE)
+        px(d, n, ex, 2, EYE_DARK)
+    px(d, n, 2, 0, S_HEAD_BASE)
+    px(d, n, 3, 0, S_HEAD_BASE)
+    d.rectangle([n[0] + 1, n[1] + 3, n[0] + 4, n[1] + 3], fill=S_BAND)  # mouth line
+    for f in ("west", "east"):
+        px(d, r[f], 0, 1, EYE)
+        px(d, r[f], 0, 2, EYE_DARK)
+    hband(d, r["top"], 4, S_HEAD_DARKEST)       # shadow where the crest sits
+
+    r = rects(crest)
+    for f in ("west", "north", "east", "south", "top"):
+        fill(d, r[f], S_HEAD_DARKEST)
+    fill(d, r["bottom"], S_HEAD_DARK)
+    for f in ("west", "east"):
+        hband(d, r[f], 0, S_CHITIN_MID)         # thin lit ridge along the top
+
+    # ---- mandibles: dark base, lighter biting tip --------------------------
+    r = rects(parts["mandible_r"]["cubes"][0])
+    for f in ("west", "north", "east", "south", "top"):
+        fill(d, r[f], S_JAW)
+    fill(d, r["bottom"], S_JAW_DARK)
+    fill(d, r["north"], S_JAW_TIP)               # the -Z face is the biting tip
+    for f in ("west", "east"):
+        vband(d, r[f], 0, S_JAW_TIP)
+        vband(d, r[f], 2, S_JAW_DARK)
+    px(d, r["top"], 0, 1, S_JAW_DARK)
+
+    # ---- antennae: dark shaft, redder tip (min-Y end is the tip) -----------
+    r = rects(parts["antenna_r"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "antenna:" + f, S_LIMB_PAL, cell=1, namespace=NS)
+        hband(d, r[f], 0, S_ANTENNA_TIP)
+        hband(d, r[f], 2, S_CHITIN_DARKEST)     # base joint
+    fill(d, r["top"], S_ANTENNA_TIP)
+    fill(d, r["bottom"], S_CHITIN_DARKEST)
+
+    # ---- legs: dark chitin, lit joint band, near-black foot ---------------
+    r = rects(parts["leg_r1"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "leg:" + f, S_LIMB_PAL, cell=1, namespace=NS)
+        hband(d, r[f], 1, S_CHITIN_MID)         # knee joint catches the light
+        hband(d, r[f], 3, S_CHITIN_DARKEST)     # tarsus / foot
+    fill(d, r["top"], S_CHITIN_DARK)
+    fill(d, r["bottom"], S_CHITIN_DARKEST)
+
+    return img
+
+
+def paint_larva():
+    img = Image.new("RGBA", (LARVA_TEX_W, LARVA_TEX_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    parts = {p["name"]: p for p in LARVA["parts"]}
+    NS = "larva"
+
+    def rects(cube):
+        u, v = cube["off"]
+        _, _, _, w, h, dd = cube["box"]
+        return face_rects(u, v, w, h, dd)
+
+    # ---- mid: the widest segment, pale cream with a faint seam each end ----
+    r = rects(parts["mid"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "mid:" + f, L_BODY_PAL, namespace=NS, jitter=0.14, cell=1)
+    noise_rect(d, r["top"], "mid:top", L_TOP_PAL, namespace=NS, jitter=0.14, cell=1)
+    noise_rect(d, r["bottom"], "mid:bottom", L_BOTTOM_PAL, namespace=NS, jitter=0.14, cell=1)
+    for f in ("west", "east"):
+        vband(d, r[f], 0, L_LINE)               # seam against the head (front)
+        vband(d, r[f], 2, L_LINE)               # seam against the tail (back)
+
+    # ---- head: tapered, carries the two eye dots ---------------------------
+    r = rects(parts["head"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "head:" + f, L_BODY_PAL, namespace=NS, jitter=0.14, cell=1)
+    noise_rect(d, r["top"], "head:top", L_TOP_PAL, namespace=NS, jitter=0.14, cell=1)
+    noise_rect(d, r["bottom"], "head:bottom", L_BOTTOM_PAL, namespace=NS, jitter=0.14, cell=1)
+    n = r["north"]                               # 3 wide x 3 tall front face
+    px(d, n, 0, 1, L_EYE)
+    px(d, n, 2, 1, L_EYE)
+    for f in ("west", "east"):
+        vband(d, r[f], 1, L_LINE)               # seam against mid
+
+    # ---- tail: shorter and thinner, tapering down --------------------------
+    r = rects(parts["tail"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "tail:" + f, L_BODY_PAL, namespace=NS, jitter=0.14, cell=1)
+    noise_rect(d, r["top"], "tail:top", L_TOP_PAL, namespace=NS, jitter=0.14, cell=1)
+    noise_rect(d, r["bottom"], "tail:bottom", L_BOTTOM_PAL, namespace=NS, jitter=0.14, cell=1)
+    for f in ("west", "east"):
+        vband(d, r[f], 0, L_LINE)               # seam against mid
+
+    return img
+
+
 # ----------------------------------------------------------------- preview --
 
 def rotate_zyx(p, rot):
@@ -433,11 +729,11 @@ def crop_to_content(img, pad=8):
     return img.crop((x0, y0, x1, y1))
 
 
-def contact_sheet(views, tex):
+def contact_sheet(views, tex, atlas_scale=4):
     """Labelled QA sheet: the three orthographic views plus the raw atlas."""
     panels = [(name, crop_to_content(img)) for name, img in views]
-    atlas = tex.resize((TEX * 4, TEX * 4), Image.NEAREST)
-    panels.append(("atlas 64x64 (4x)", atlas))
+    atlas = tex.resize((tex.width * atlas_scale, tex.height * atlas_scale), Image.NEAREST)
+    panels.append((f"atlas {tex.width}x{tex.height} ({atlas_scale}x)", atlas))
 
     label_h = 16
     pad = 10
@@ -462,27 +758,35 @@ def contact_sheet(views, tex):
     return sheet
 
 
+MODELS = [
+    (WORKER_ANT, paint_worker_ant),
+    (SOLDIER_ANT, paint_soldier_ant),
+    (LARVA, paint_larva),
+]
+
+
 def main():
     ENTITY_TEX_DIR.mkdir(parents=True, exist_ok=True)
     PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 
-    tex = paint_worker_ant()
-    out = ENTITY_TEX_DIR / f"{WORKER_ANT['name']}.png"
-    tex.save(out)
-    print(f"wrote {out.relative_to(REPO_ROOT)}")
+    for spec, paint in MODELS:
+        tex = paint()
+        out = ENTITY_TEX_DIR / f"{spec['name']}.png"
+        tex.save(out)
+        print(f"wrote {out.relative_to(REPO_ROOT)}")
 
-    views = []
-    for view in ("front", "side", "top"):
-        img = render_view(WORKER_ANT, tex, view)
-        views.append((view, img))
-        p = PREVIEW_DIR / f"{WORKER_ANT['name']}_{view}.png"
-        crop_to_content(img).save(p)
+        views = []
+        for view in ("front", "side", "top"):
+            img = render_view(spec, tex, view)
+            views.append((view, img))
+            p = PREVIEW_DIR / f"{spec['name']}_{view}.png"
+            crop_to_content(img).save(p)
+            print(f"wrote {p.relative_to(REPO_ROOT)}")
+
+        sheet = contact_sheet(views, tex)
+        p = PREVIEW_DIR / f"{spec['name']}_sheet.png"
+        sheet.save(p)
         print(f"wrote {p.relative_to(REPO_ROOT)}")
-
-    sheet = contact_sheet(views, tex)
-    p = PREVIEW_DIR / f"{WORKER_ANT['name']}_sheet.png"
-    sheet.save(p)
-    print(f"wrote {p.relative_to(REPO_ROOT)}")
 
 
 if __name__ == "__main__":
