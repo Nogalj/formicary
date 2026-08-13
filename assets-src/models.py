@@ -1,0 +1,489 @@
+"""
+Geometry + texture source of truth for Formicary's entity models.
+
+Model space matches Minecraft entity models: +Y is DOWN (ground at y=24),
+-Z is the creature's front, +X is the creature's left.
+
+Box-UV face rects for a cube at texOffs(u,v) with dims (w,h,d), verified
+against the decompiled 1.21 `ModelPart.Cube` constructor in
+reference/net/minecraft/client/model/geom/ModelPart.java (lines 244-344).
+Direction.DOWN is the min-Y face, which the -1/-1/+1 renderer flip puts at
+the WORLD top, hence the naming here:
+
+  world-top    (Direction.DOWN):  [u+d,     u+d+w]   x [v,     v+d]
+  world-bottom (Direction.UP):    [u+d+w,   u+d+2w]  x [v,     v+d]
+  west  (-X):                     [u,       u+d]     x [v+d,   v+d+h]
+  north (-Z, front):              [u+d,     u+d+w]   x [v+d,   v+d+h]
+  east  (+X):                     [u+d+w,   u+d+w+d] x [v+d,   v+d+h]
+  south (+Z, back):               [u+d+w+d, u+2d+2w] x [v+d,   v+d+h]
+
+Face-rect orientation (also read off the Cube vertex/uv pairing):
+  * north: rect-x 0 = max X (the creature's LEFT); rect-y 0 = min Y (world top)
+  * west / east / south: rect-y 0 = min Y (world top)
+  * west: rect-x 0 = min Z (front), increasing toward the back
+  * world-top rect: rect-y 0 = max Z (back) -> rect-y max = front
+
+This file is the SINGLE SOURCE OF TRUTH for the numbers in
+src/main/java/com/nogal/formicary/client/model/WorkerAntModel.java --
+the LayerDefinition there is a hand translation of WORKER_ANT below.
+
+Run with:  python assets-src\\models.py
+Requires:  Pillow (PIL).
+
+Outputs:
+  src/main/resources/assets/formicary/textures/entity/worker_ant.png  (64x64)
+  assets-src/previews/worker_ant_front.png / _side.png / _top.png
+  assets-src/previews/worker_ant_sheet.png   (labelled QA contact sheet)
+"""
+
+import math
+import random
+from pathlib import Path
+
+from PIL import Image, ImageDraw
+
+TEX = 64
+REPO_ROOT = Path(__file__).resolve().parent.parent
+ENTITY_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/entity"
+PREVIEW_DIR = Path(__file__).resolve().parent / "previews"
+
+
+# ---------------------------------------------------------------- geometry --
+# part: {name, pose:(px,py,pz), rot:(xRot,yRot,zRot), cubes:[{off:(u,v), box:(x,y,z,w,h,d)}]}
+#
+# Poses are ABSOLUTE world-space (the Java hierarchy nests head/gaster/legs
+# under `body`, but only leaf parts carry rotations, so absolute poses here
+# project identically). Rotations are applied Rz * Ry * Rx, matching
+# ModelPart.translateAndRotate -> Quaternionf.rotationZYX(zRot, yRot, xRot).
+
+REST_LEG_Z = 0.8378        # leg splay away from vertical
+REST_LEG_Y_FRONT = -0.5236  # front legs yaw forward (right side)
+REST_LEG_Y_HIND = 0.5236    # hind legs yaw backward (right side)
+REST_ANT_X = 0.5236         # antennae tilt forward
+REST_ANT_Z = 0.2618         # antennae splay outward
+
+WORKER_ANT = {
+    "name": "worker_ant",
+    "parts": [
+        # --- thorax: the body root; every leg hangs off it ------------------
+        {"name": "body", "pose": (0, 20.5, 0), "cubes": [
+            {"off": (0, 0), "box": (-2, -1.5, -2, 4, 3, 4)},          # thorax
+        ]},
+        # --- head: skull + two mandibles ------------------------------------
+        {"name": "head", "pose": (0, 20, -2), "cubes": [
+            {"off": (0, 19), "box": (-2.5, -2, -4, 5, 4, 4)},         # skull
+            {"off": (34, 0), "box": (-2, 0.5, -5, 1, 1, 2)},          # mandible_r
+            {"off": (34, 0), "box": (1, 0.5, -5, 1, 1, 2)},           # mandible_l
+        ]},
+        {"name": "antenna_r", "pose": (-1.5, 18.5, -5.5),
+         "rot": (REST_ANT_X, 0, -REST_ANT_Z), "cubes": [
+            {"off": (42, 0), "box": (-0.5, -3, -0.5, 1, 3, 1)},
+        ]},
+        {"name": "antenna_l", "pose": (1.5, 18.5, -5.5),
+         "rot": (REST_ANT_X, 0, REST_ANT_Z), "cubes": [
+            {"off": (42, 0), "box": (-0.5, -3, -0.5, 1, 3, 1)},
+        ]},
+        # --- gaster: narrow petiole waist + the big rear mass ---------------
+        {"name": "gaster", "pose": (0, 19.5, 0), "cubes": [
+            {"off": (24, 0), "box": (-1, 0.5, 1.5, 2, 2, 2)},         # petiole
+            {"off": (0, 8), "box": (-2.5, -1.5, 3.5, 5, 4, 6)},       # gaster
+        ]},
+        # --- six legs, splayed outward at rest ------------------------------
+        {"name": "leg_r1", "pose": (-2, 21.9, -1.5),
+         "rot": (0, REST_LEG_Y_FRONT, REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 3, 1)}]},
+        {"name": "leg_r2", "pose": (-2, 21.9, 0),
+         "rot": (0, 0, REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 3, 1)}]},
+        {"name": "leg_r3", "pose": (-2, 21.9, 1.5),
+         "rot": (0, REST_LEG_Y_HIND, REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 3, 1)}]},
+        {"name": "leg_l1", "pose": (2, 21.9, -1.5),
+         "rot": (0, -REST_LEG_Y_FRONT, -REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 3, 1)}]},
+        {"name": "leg_l2", "pose": (2, 21.9, 0),
+         "rot": (0, 0, -REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 3, 1)}]},
+        {"name": "leg_l3", "pose": (2, 21.9, 1.5),
+         "rot": (0, -REST_LEG_Y_HIND, -REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 3, 1)}]},
+    ],
+}
+
+
+# ------------------------------------------------------------------- faces --
+
+def face_rects(u, v, w, h, d):
+    """(x0, y0, x1, y1) atlas rect per face; x1/y1 exclusive."""
+    w, h, d = int(w), int(h), int(d)
+    return {
+        "top":    (u + d,         v,     u + d + w,         v + d),
+        "bottom": (u + d + w,     v,     u + d + 2 * w,     v + d),
+        "west":   (u,             v + d, u + d,             v + d + h),
+        "north":  (u + d,         v + d, u + d + w,         v + d + h),
+        "east":   (u + d + w,     v + d, u + d + w + d,     v + d + h),
+        "south":  (u + d + w + d, v + d, u + 2 * d + 2 * w, v + d + h),
+    }
+
+
+# ------------------------------------------------------------------ palette --
+# Warm chitin red-browns, sitting next to the M1 block set's ambers.
+# (M1 amber family: (232,160,64) light / (250,205,120) pale -- reused for the
+#  eyes and antenna tips so the worker reads as part of the same world.)
+
+CHITIN_DARKEST = (52, 22, 10, 255)
+CHITIN_DARK = (84, 38, 17, 255)
+CHITIN_BASE = (120, 60, 30, 255)
+CHITIN_MID = (146, 76, 38, 255)
+CHITIN_LIGHT = (172, 96, 50, 255)
+CHITIN_PALE = (196, 120, 66, 255)
+
+BELLY_DARK = (150, 98, 60, 255)
+BELLY = (186, 128, 82, 255)
+BELLY_LIGHT = (208, 152, 104, 255)
+
+BAND = (72, 30, 13, 255)
+SHEEN = (216, 152, 92, 255)
+
+EYE = (250, 205, 120, 255)
+EYE_HI = (255, 238, 190, 255)
+EYE_DARK = (44, 20, 9, 255)
+
+JAW = (170, 124, 68, 255)
+JAW_DARK = (108, 70, 32, 255)
+
+ANTENNA_TIP = (232, 160, 64, 255)
+
+BODY_PAL = [CHITIN_DARK, CHITIN_BASE, CHITIN_MID, CHITIN_LIGHT, CHITIN_PALE]
+BACK_PAL = [CHITIN_DARKEST, CHITIN_DARK, CHITIN_BASE, CHITIN_MID, CHITIN_LIGHT]
+BELLY_PAL = [BELLY_DARK, BELLY, BELLY, BELLY_LIGHT, BELLY_LIGHT]
+LIMB_PAL = [CHITIN_DARKEST, CHITIN_DARK, CHITIN_DARK, CHITIN_BASE, CHITIN_MID]
+
+
+# ----------------------------------------------------------------- painting --
+
+def noise_rect(draw, rect, seed, palette, weights=None, jitter=0.24, cell=2):
+    """Clumped multi-tone fill inside `rect` -- a coarse `cell`-sized tone grid
+    with per-pixel +/-1 tone jitter. Same technique as blocks.py, so the ant
+    shades in connected clumps rather than reading as flat colour or speckle.
+    Deterministic: the same seed always paints the same pixels."""
+    x0, y0, x1, y1 = rect
+    if x1 <= x0 or y1 <= y0:
+        return
+    r = random.Random(f"formicary:worker_ant:{seed}")
+    n = len(palette)
+    if weights is None:
+        weights = [1, 3, 6, 3, 1][:n] if n == 5 else [1] * n
+    gw = max(1, (x1 - x0 + cell - 1) // cell)
+    gh = max(1, (y1 - y0 + cell - 1) // cell)
+    grid = [[r.choices(range(n), weights)[0] for _ in range(gw)] for _ in range(gh)]
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            t = grid[(y - y0) // cell][(x - x0) // cell]
+            if r.random() < jitter:
+                t = max(0, min(n - 1, t + r.choice((-1, 1))))
+            draw.point((x, y), fill=palette[t])
+
+
+def fill(draw, rect, color):
+    x0, y0, x1, y1 = rect
+    if x1 > x0 and y1 > y0:
+        draw.rectangle([x0, y0, x1 - 1, y1 - 1], fill=color)
+
+
+def px(draw, rect, x, y, color):
+    """Paint one texel at rect-local (x, y)."""
+    x0, y0, x1, y1 = rect
+    if 0 <= x < x1 - x0 and 0 <= y < y1 - y0:
+        draw.point((x0 + x, y0 + y), fill=color)
+
+
+def hband(draw, rect, y, color):
+    """Full-width 1px row at rect-local y."""
+    x0, y0, x1, y1 = rect
+    if 0 <= y < y1 - y0:
+        draw.rectangle([x0, y0 + y, x1 - 1, y0 + y], fill=color)
+
+
+def vband(draw, rect, x, color):
+    """Full-height 1px column at rect-local x."""
+    x0, y0, x1, y1 = rect
+    if 0 <= x < x1 - x0:
+        draw.rectangle([x0 + x, y0, x0 + x, y1 - 1], fill=color)
+
+
+def paint_worker_ant():
+    img = Image.new("RGBA", (TEX, TEX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    parts = {p["name"]: p for p in WORKER_ANT["parts"]}
+
+    def rects(cube):
+        u, v = cube["off"]
+        _, _, _, w, h, dd = cube["box"]
+        return face_rects(u, v, w, h, dd)
+
+    # ---- thorax: mid chitin, dark seam where the head and petiole join -----
+    r = rects(parts["body"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "thorax:" + f, BODY_PAL)
+    noise_rect(d, r["top"], "thorax:top", BACK_PAL)
+    noise_rect(d, r["bottom"], "thorax:bottom", BELLY_PAL)
+    hband(d, r["top"], 0, BAND)                 # seam against the gaster (back)
+    hband(d, r["top"], 3, BAND)                 # seam against the head (front)
+    for f in ("west", "east"):
+        vband(d, r[f], 0, CHITIN_DARK)          # front-edge shadow
+        vband(d, r[f], 3, BAND)                 # rear-edge shadow
+    px(d, r["top"], 1, 1, SHEEN)
+    px(d, r["top"], 2, 2, SHEEN)
+
+    # ---- gaster: the big rear mass, banded like a real ant's metasoma -----
+    petiole, gaster = parts["gaster"]["cubes"]
+    r = rects(petiole)
+    for f in ("west", "north", "east", "south", "top"):
+        fill(d, r[f], CHITIN_DARK)
+    fill(d, r["bottom"], BELLY_DARK)
+    for f in ("west", "east"):
+        hband(d, r[f], 0, CHITIN_BASE)          # lit upper edge of the waist
+
+    r = rects(gaster)
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "gaster:" + f, BODY_PAL)
+    noise_rect(d, r["top"], "gaster:top", BACK_PAL)
+    noise_rect(d, r["bottom"], "gaster:bottom", BELLY_PAL)
+    # segment banding: on the side faces rect-x runs front -> back
+    for f in ("west", "east"):
+        vband(d, r[f], 0, CHITIN_DARK)          # seam against the petiole
+        for bx in (2, 4):
+            vband(d, r[f], bx, BAND)
+        hband(d, r[f], 0, CHITIN_DARK)          # dark upper rim
+        px(d, r[f], 1, 2, CHITIN_LIGHT)
+        px(d, r[f], 3, 1, SHEEN)
+    # on the world-top face rect-y runs back -> front
+    for by in (0, 2, 4):
+        hband(d, r["top"], by, BAND)
+    px(d, r["top"], 2, 3, SHEEN)
+    px(d, r["top"], 3, 1, SHEEN)
+    hband(d, r["north"], 0, CHITIN_DARK)        # shaded where it meets the waist
+    fill(d, (r["south"][0], r["south"][1], r["south"][2], r["south"][1] + 1), CHITIN_DARK)
+    px(d, r["south"], 2, 2, CHITIN_DARKEST)     # tail tip dimple
+
+    # ---- head: eyes, brow, mouth ------------------------------------------
+    skull, mandible = parts["head"]["cubes"][0], parts["head"]["cubes"][1]
+    r = rects(skull)
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "skull:" + f, BODY_PAL)
+    noise_rect(d, r["top"], "skull:top", BACK_PAL)
+    noise_rect(d, r["bottom"], "skull:bottom", BELLY_PAL)
+    n = r["north"]                              # 5 wide x 4 tall front face
+    hband(d, n, 0, CHITIN_DARK)                 # brow ridge
+    for ex in (0, 4):                           # small pale amber eye spots
+        px(d, n, ex, 0, CHITIN_DARKEST)         # socket shadow above the eye
+        px(d, n, ex, 1, EYE)
+        px(d, n, ex, 2, EYE_DARK)               # dark lower rim / pupil
+    px(d, n, 2, 0, CHITIN_BASE)                 # frontal ocellus notch
+    d.rectangle([n[0] + 1, n[1] + 3, n[0] + 3, n[1] + 3], fill=BAND)  # mouth line
+    # the compound eyes wrap onto the sides of the head
+    for f in ("west", "east"):
+        px(d, r[f], 0, 1, EYE)
+        px(d, r[f], 0, 2, EYE_DARK)
+    hband(d, r["top"], 3, CHITIN_DARK)          # shadow under the brow
+    px(d, r["top"], 2, 1, SHEEN)
+
+    r = rects(mandible)
+    for f in ("west", "north", "east", "south", "top"):
+        fill(d, r[f], JAW)
+    fill(d, r["bottom"], JAW_DARK)
+    fill(d, r["north"], JAW_DARK)               # the -Z face is the biting tip
+    for f in ("west", "east"):
+        vband(d, r[f], 0, JAW_DARK)             # darkened toward the tip
+    px(d, r["top"], 0, 1, JAW_DARK)
+
+    # ---- antennae: dark shaft, amber tip (min-Y end is the tip) -----------
+    r = rects(parts["antenna_r"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "antenna:" + f, LIMB_PAL, cell=1)
+        hband(d, r[f], 0, ANTENNA_TIP)
+        hband(d, r[f], 2, CHITIN_DARKEST)       # base joint
+    fill(d, r["top"], ANTENNA_TIP)
+    fill(d, r["bottom"], CHITIN_DARKEST)
+
+    # ---- legs: dark chitin, lit joint band, near-black foot ---------------
+    r = rects(parts["leg_r1"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "leg:" + f, LIMB_PAL, cell=1)
+        hband(d, r[f], 1, CHITIN_MID)           # knee joint catches the light
+        hband(d, r[f], 2, CHITIN_DARKEST)       # tarsus / foot
+    fill(d, r["top"], CHITIN_DARK)
+    fill(d, r["bottom"], CHITIN_DARKEST)
+
+    return img
+
+
+# ----------------------------------------------------------------- preview --
+
+def rotate_zyx(p, rot):
+    """Rx then Ry then Rz -- matches Quaternionf.rotationZYX(zRot, yRot, xRot)
+    used by ModelPart.translateAndRotate."""
+    x, y, z = p
+    rx, ry, rz = rot
+    # Rx
+    cy_, sy_ = math.cos(rx), math.sin(rx)
+    y, z = y * cy_ - z * sy_, y * sy_ + z * cy_
+    # Ry
+    c, s = math.cos(ry), math.sin(ry)
+    x, z = x * c + z * s, -x * s + z * c
+    # Rz
+    c, s = math.cos(rz), math.sin(rz)
+    x, y = x * c - y * s, x * s + y * c
+    return (x, y, z)
+
+
+def cube_corners(part, cube):
+    """The 8 world-space corners plus the per-face (origin, +u, +v) triples."""
+    ox, oy, oz = part["pose"]
+    rot = part.get("rot", (0.0, 0.0, 0.0))
+    bx, by, bz, w, h, d = cube["box"]
+    x0, y0, z0 = bx, by, bz
+    x1, y1, z1 = bx + w, by + h, bz + d
+
+    def wp(x, y, z):
+        rx, ry, rz = rotate_zyx((x, y, z), rot)
+        return (ox + rx, oy + ry, oz + rz)
+
+    # (src-origin, src +x edge end, src +y edge end) per face, in world space.
+    return {
+        "top":    (wp(x1, y0, z1), wp(x0, y0, z1), wp(x1, y0, z0)),
+        "bottom": (wp(x1, y1, z1), wp(x0, y1, z1), wp(x1, y1, z0)),
+        "west":   (wp(x0, y0, z0), wp(x0, y0, z1), wp(x0, y1, z0)),
+        "north":  (wp(x1, y0, z0), wp(x0, y0, z0), wp(x1, y1, z0)),
+        "east":   (wp(x1, y0, z1), wp(x1, y0, z0), wp(x1, y1, z1)),
+        "south":  (wp(x0, y0, z1), wp(x1, y0, z1), wp(x0, y1, z1)),
+    }
+
+
+def face_centre(part, cube, face):
+    """World-space centre of a face, used for painter's-algorithm sorting."""
+    p0, pu, pv = cube_corners(part, cube)[face]
+    return tuple((pu[i] + pv[i]) / 2.0 for i in range(3))
+
+
+VIEW_SCALE = 12
+VIEW_UNITS = 24
+VIEW_PX = VIEW_SCALE * VIEW_UNITS
+VX0, VY0, VZ0 = -12.0, 8.0, -12.0   # world coord at screen origin, per axis
+
+VIEWS = {
+    # name: (project(worldpoint) -> (screen_x, screen_y), depth axis index, )
+    "front": (lambda p: ((p[0] - VX0) * VIEW_SCALE, (p[1] - VY0) * VIEW_SCALE), 2),
+    "side":  (lambda p: ((p[2] - VZ0) * VIEW_SCALE, (p[1] - VY0) * VIEW_SCALE), 0),
+    "top":   (lambda p: ((p[0] - VX0) * VIEW_SCALE, (p[2] - VZ0) * VIEW_SCALE), 1),
+}
+
+
+def paste_face(canvas, tex, rect, p0, pu, pv):
+    """Paste the atlas rect onto the canvas as the parallelogram p0/pu/pv
+    (orthographic projection of a rotated quad is always affine)."""
+    x0, y0, x1, y1 = rect
+    sw, sh = x1 - x0, y1 - y0
+    if sw <= 0 or sh <= 0:
+        return
+    ax, ay = (pu[0] - p0[0]) / sw, (pu[1] - p0[1]) / sw
+    bx, by = (pv[0] - p0[0]) / sh, (pv[1] - p0[1]) / sh
+    det = ax * by - bx * ay
+    if abs(det) < 1e-6:      # face seen exactly edge-on
+        return
+    ia, ib = by / det, -bx / det
+    ic, id_ = -ay / det, ax / det
+    coeffs = (ia, ib, -(ia * p0[0] + ib * p0[1]),
+              ic, id_, -(ic * p0[0] + id_ * p0[1]))
+    face = tex.crop(rect)
+    warped = face.transform((VIEW_PX, VIEW_PX), Image.AFFINE, coeffs,
+                            resample=Image.NEAREST)
+    canvas.alpha_composite(warped)
+
+
+def render_view(model, tex, view):
+    project, depth_axis = VIEWS[view]
+    canvas = Image.new("RGBA", (VIEW_PX, VIEW_PX), (0, 0, 0, 0))
+    faces = []
+    for part in model["parts"]:
+        for cube in part["cubes"]:
+            u, v = cube["off"]
+            _, _, _, w, h, dd = cube["box"]
+            fr = face_rects(u, v, w, h, dd)
+            corners = cube_corners(part, cube)
+            for fname, tri in corners.items():
+                depth = face_centre(part, cube, fname)[depth_axis]
+                faces.append((depth, fr[fname], tri))
+    # painter's algorithm: the camera sits on the negative side of each axis,
+    # so larger coordinate = further away = drawn first.
+    faces.sort(key=lambda f: -f[0])
+    for _, rect, (p0, pu, pv) in faces:
+        paste_face(canvas, tex, rect, project(p0), project(pu), project(pv))
+    return canvas
+
+
+def crop_to_content(img, pad=8):
+    bbox = img.getbbox()
+    if bbox is None:
+        return img
+    x0, y0, x1, y1 = bbox
+    x0, y0 = max(0, x0 - pad), max(0, y0 - pad)
+    x1, y1 = min(img.width, x1 + pad), min(img.height, y1 + pad)
+    return img.crop((x0, y0, x1, y1))
+
+
+def contact_sheet(views, tex):
+    """Labelled QA sheet: the three orthographic views plus the raw atlas."""
+    panels = [(name, crop_to_content(img)) for name, img in views]
+    atlas = tex.resize((TEX * 4, TEX * 4), Image.NEAREST)
+    panels.append(("atlas 64x64 (4x)", atlas))
+
+    label_h = 16
+    pad = 10
+    ph = max(p.height for _, p in panels)
+    total_w = sum(p.width for _, p in panels) + pad * (len(panels) + 1)
+    total_h = ph + label_h + pad * 2
+    sheet = Image.new("RGBA", (total_w, total_h), (30, 26, 24, 255))
+    draw = ImageDraw.Draw(sheet)
+    x = pad
+    for name, panel in panels:
+        # checkerboard backing so alpha reads correctly
+        for cy in range(0, ph, 16):
+            for cx in range(0, panel.width, 16):
+                shade = 64 if ((cx // 16 + cy // 16) % 2 == 0) else 50
+                draw.rectangle([x + cx, pad + cy,
+                                min(x + cx + 15, x + panel.width - 1),
+                                min(pad + cy + 15, pad + ph - 1)],
+                               fill=(shade, shade, shade, 255))
+        sheet.alpha_composite(panel, (x, pad + (ph - panel.height) // 2))
+        draw.text((x + 2, pad + ph + 2), name, fill=(226, 214, 200, 255))
+        x += panel.width + pad
+    return sheet
+
+
+def main():
+    ENTITY_TEX_DIR.mkdir(parents=True, exist_ok=True)
+    PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+
+    tex = paint_worker_ant()
+    out = ENTITY_TEX_DIR / f"{WORKER_ANT['name']}.png"
+    tex.save(out)
+    print(f"wrote {out.relative_to(REPO_ROOT)}")
+
+    views = []
+    for view in ("front", "side", "top"):
+        img = render_view(WORKER_ANT, tex, view)
+        views.append((view, img))
+        p = PREVIEW_DIR / f"{WORKER_ANT['name']}_{view}.png"
+        crop_to_content(img).save(p)
+        print(f"wrote {p.relative_to(REPO_ROOT)}")
+
+    sheet = contact_sheet(views, tex)
+    p = PREVIEW_DIR / f"{WORKER_ANT['name']}_sheet.png"
+    sheet.save(p)
+    print(f"wrote {p.relative_to(REPO_ROOT)}")
+
+
+if __name__ == "__main__":
+    main()
