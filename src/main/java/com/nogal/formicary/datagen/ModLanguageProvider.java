@@ -37,9 +37,15 @@ public class ModLanguageProvider extends LanguageProvider {
         addBlock(ModBlocks.QUEENS_CREST, "Queen's Crest");
 
         addItem(ModItems.RESIN, "Resin");
+        addItem(ModItems.CHITIN, "Chitin");
+        addItem(ModItems.LARVA, "Larva");
 
         addEntityType(ModEntities.WORKER_ANT, "Worker Ant");
         addItem(ModEntities.WORKER_ANT_SPAWN_EGG, "Worker Ant Spawn Egg");
+        addEntityType(ModEntities.SOLDIER_ANT, "Soldier Ant");
+        addItem(ModEntities.SOLDIER_ANT_SPAWN_EGG, "Soldier Ant Spawn Egg");
+        addEntityType(ModEntities.LARVA, "Larva");
+        addItem(ModEntities.LARVA_SPAWN_EGG, "Larva Spawn Egg");
 
         add("itemGroup.formicary.formicary", "Formicary");
     }

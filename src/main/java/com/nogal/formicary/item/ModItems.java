@@ -11,11 +11,15 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 /**
  * M1 items: the resin resource item, plus a {@code BlockItem} for every M1 block via
  * {@link DeferredRegister.Items#registerSimpleBlockItem(net.minecraft.core.Holder)}.
+ * M3a adds chitin (worker/soldier loot) and the larva item (the capture interaction's
+ * export good -- placement lands in M6, so it's a plain item for now).
  */
 public class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(Formicary.MODID);
 
     public static final DeferredItem<Item> RESIN = ITEMS.registerSimpleItem("resin");
+    public static final DeferredItem<Item> CHITIN = ITEMS.registerSimpleItem("chitin");
+    public static final DeferredItem<Item> LARVA = ITEMS.registerSimpleItem("larva");
 
     public static final DeferredItem<BlockItem> PACKED_SOIL = ITEMS.registerSimpleBlockItem(ModBlocks.PACKED_SOIL);
     public static final DeferredItem<BlockItem> AMBER_EARTH = ITEMS.registerSimpleBlockItem(ModBlocks.AMBER_EARTH);

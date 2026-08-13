@@ -37,6 +37,8 @@ public class Formicary {
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.SPAWN_EGGS) {
             event.accept(ModEntities.WORKER_ANT_SPAWN_EGG);
+            event.accept(ModEntities.SOLDIER_ANT_SPAWN_EGG);
+            event.accept(ModEntities.LARVA_SPAWN_EGG);
         }
     }
 }

@@ -1,7 +1,11 @@
 package com.nogal.formicary.client;
 
 import com.nogal.formicary.Formicary;
+import com.nogal.formicary.client.model.LarvaModel;
+import com.nogal.formicary.client.model.SoldierAntModel;
 import com.nogal.formicary.client.model.WorkerAntModel;
+import com.nogal.formicary.client.renderer.LarvaRenderer;
+import com.nogal.formicary.client.renderer.SoldierAntRenderer;
 import com.nogal.formicary.client.renderer.WorkerAntRenderer;
 import com.nogal.formicary.entity.ModEntities;
 
@@ -19,11 +23,15 @@ public class ModClientEvents {
     @SubscribeEvent
     public static void registerLayerDefinitions(EntityRenderersEvent.RegisterLayerDefinitions event) {
         event.registerLayerDefinition(WorkerAntModel.LAYER_LOCATION, WorkerAntModel::createBodyLayer);
+        event.registerLayerDefinition(SoldierAntModel.LAYER_LOCATION, SoldierAntModel::createBodyLayer);
+        event.registerLayerDefinition(LarvaModel.LAYER_LOCATION, LarvaModel::createBodyLayer);
     }
 
     @SubscribeEvent
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.WORKER_ANT.get(), WorkerAntRenderer::new);
+        event.registerEntityRenderer(ModEntities.SOLDIER_ANT.get(), SoldierAntRenderer::new);
+        event.registerEntityRenderer(ModEntities.LARVA.get(), LarvaRenderer::new);
     }
 
     private ModClientEvents() {

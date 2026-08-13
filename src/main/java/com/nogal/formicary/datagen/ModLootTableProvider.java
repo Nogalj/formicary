@@ -10,15 +10,18 @@ import net.minecraft.data.loot.LootTableProvider;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
 
 /**
- * Wires {@link ModBlockLootSubProvider} into the vanilla {@link LootTableProvider}
- * under the {@code BLOCK} loot context param set.
+ * Wires {@link ModBlockLootSubProvider} and {@link ModEntityLootSubProvider} into the
+ * vanilla {@link LootTableProvider} under the {@code BLOCK} / {@code ENTITY} loot
+ * context param sets respectively.
  */
 public class ModLootTableProvider extends LootTableProvider {
     public ModLootTableProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> registries) {
         super(
                 output,
                 Set.of(),
-                List.of(new LootTableProvider.SubProviderEntry(ModBlockLootSubProvider::new, LootContextParamSets.BLOCK)),
+                List.of(
+                        new LootTableProvider.SubProviderEntry(ModBlockLootSubProvider::new, LootContextParamSets.BLOCK),
+                        new LootTableProvider.SubProviderEntry(ModEntityLootSubProvider::new, LootContextParamSets.ENTITY)),
                 registries);
     }
 }

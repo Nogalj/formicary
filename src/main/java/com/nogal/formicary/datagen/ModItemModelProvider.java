@@ -43,10 +43,14 @@ public class ModItemModelProvider extends ItemModelProvider {
         blockItem("queens_crest");
 
         basicItem(ModItems.RESIN.get());
+        basicItem(ModItems.CHITIN.get());
+        basicItem(ModItems.LARVA.get());
 
         // Spawn eggs reuse the vanilla two-layer template; the shell/spot colours come
         // from DeferredSpawnEggItem's tint handler, not from a texture of our own.
         withExistingParent("worker_ant_spawn_egg", "item/template_spawn_egg");
+        withExistingParent("soldier_ant_spawn_egg", "item/template_spawn_egg");
+        withExistingParent("larva_spawn_egg", "item/template_spawn_egg");
     }
 
     private void blockItem(String name) {
