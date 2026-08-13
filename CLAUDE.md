@@ -75,7 +75,11 @@ there) is the reference approach -- one python spec per model drives both the te
 painting (PIL) and orthographic QA previews (`assets-src/previews/`), then the same
 numbers are hand-translated into `LayerDefinition` Java. Box-UV face rects in ModTest's
 script are verified against decompiled `ModelPart.java` -- trust it over memory.
-Run `python assets-src\models.py` to regenerate textures + previews after edits.
+This repo now has its own `assets-src/models.py` (worker ant, M2) -- add new mobs as
+another spec dict there rather than starting a new script. Run
+`python assets-src\models.py` to regenerate textures + previews after edits; its
+preview renderer is a real orthographic projection (rotations applied Rz*Ry*Rx, faces
+depth-sorted), so what the contact sheet shows is what the game draws.
 Entity textures go to `src/main/resources/assets/formicary/textures/entity/`.
 `D:\MyProjects\ModTest\src\main\java\com\nogal\modtest\client\model\TarantulaModel.java`
 is a known-correct 1.21 entity model reference.
@@ -102,6 +106,20 @@ is a known-correct 1.21 entity model reference.
   `.\gradlew processResources` -> F3+T in the running client (dev runs read
   `build/resources/main`). Java class changes still need a client restart.
   (`verified: 2026-08-13`)
+- **A plain `MobRenderer` draws NOTHING for a mob's main-hand item.** Vanilla's
+  `ItemInHandLayer` requires the model to implement `ArmedModel`, which no custom
+  non-humanoid does. Copy `FoxHeldItemLayer` instead: a `RenderLayer` that parks the
+  PoseStack on the head pivot, follows the head rotation, then calls
+  `context.getItemInHandRenderer().renderItem(entity, stack, ItemDisplayContext.GROUND,
+  false, poseStack, buffer, light)`. See `client/renderer/WorkerAntCarriedItemLayer.java`.
+  (`verified: 2026-08-13`)
+- **`reference/` is a PARTIAL extraction** (it was seeded from ModTest's block/datagen-era
+  copy). A missing class is not a missing API. Re-extract on demand from
+  `build/moddev/artifacts/neoforge-21.0.167-sources.jar` with
+  `[System.IO.Compression.ZipFile]::OpenRead(...)` filtered by package prefix -- M2 had to
+  add `world/phys`, `client/renderer`, `world/item`, `core`, `util`, `com/mojang/math`,
+  `world/level/EntityGetter.java`, `world/level/Level.java` and
+  `world/entity/ai/navigation`. (`verified: 2026-08-13`)
 
 ## Workflow
 
