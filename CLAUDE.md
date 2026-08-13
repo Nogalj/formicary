@@ -92,6 +92,17 @@ is a known-correct 1.21 entity model reference.
    `zRot` to use as a rest value accumulates drift, because nothing resets a plain
    `EntityModel`'s parts between frames (only `HierarchicalModel.animate()` does).
 
+## Banked rules (caught during this build)
+
+- **Datagen `BlockLootSubProvider.getKnownBlocks()` defaults to EVERY block in the game**
+  (`BuiltInRegistries.BLOCK`) -- leave it unoverridden and runData throws "Missing
+  loottable" for all vanilla blocks. Always override it to return this mod's
+  `ModBlocks.BLOCKS.getEntries()`. (`verified: 2026-08-13`)
+- **Live texture/JSON iteration without restarting the client:** edit assets ->
+  `.\gradlew processResources` -> F3+T in the running client (dev runs read
+  `build/resources/main`). Java class changes still need a client restart.
+  (`verified: 2026-08-13`)
+
 ## Workflow
 
 - Conventional commits, one per logical step. Commit as you go; never leave finished work
