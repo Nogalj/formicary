@@ -119,7 +119,22 @@ is a known-correct 1.21 entity model reference.
   `[System.IO.Compression.ZipFile]::OpenRead(...)` filtered by package prefix -- M2 had to
   add `world/phys`, `client/renderer`, `world/item`, `core`, `util`, `com/mojang/math`,
   `world/level/EntityGetter.java`, `world/level/Level.java` and
-  `world/entity/ai/navigation`. (`verified: 2026-08-13`)
+  `world/entity/ai/navigation`. M3a had to add `world/InteractionResult.java`,
+  `world/InteractionHand.java`, `world/item/ItemUtils.java`,
+  `data/loot/EntityLootSubProvider.java` + `packs/VanillaEntityLoot.java`,
+  `world/entity/EntityType.java`, `world/entity/player/Inventory.java`,
+  `world/level/storage/loot/{parameters/LootContextParamSets,predicates/
+  LootItemRandomChanceCondition,functions/EnchantedCountIncreaseFunction,
+  functions/SetItemCountFunction,providers/number/UniformGenerator,
+  entries/LootItem,LootPool,LootTable}.java` and `sounds/SoundSource.java`.
+  (`verified: 2026-08-13`)
+- **`EntityLootSubProvider.getKnownEntityTypes()` defaults to EVERY entity type in the
+  game** (`BuiltInRegistries.ENTITY_TYPE`) -- the same trap as
+  `BlockLootSubProvider.getKnownBlocks()` (above), and it throws "Missing loottable" for
+  every vanilla mob if left unoverridden. Always override it to return just this mod's
+  `EntityType`s. `EntityType#getDefaultLootTable()` derives the table id as
+  `entities/<namespace>/<path>` automatically, so `add(EntityType, builder)` (no explicit
+  key) is enough. (`verified: 2026-08-13`)
 
 ## Workflow
 
