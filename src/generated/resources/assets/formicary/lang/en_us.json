@@ -15,6 +15,8 @@
   "block.formicary.resin_block": "Resin Block",
   "block.formicary.resin_weep": "Resin Weep",
   "block.formicary.royal_comb": "Royal Comb",
+  "entity.formicary.worker_ant": "Worker Ant",
   "item.formicary.resin": "Resin",
+  "item.formicary.worker_ant_spawn_egg": "Worker Ant Spawn Egg",
   "itemGroup.formicary.formicary": "Formicary"
 }

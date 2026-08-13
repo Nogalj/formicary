@@ -2,14 +2,15 @@ package com.nogal.formicary.datagen;
 
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.ModBlocks;
+import com.nogal.formicary.entity.ModEntities;
 import com.nogal.formicary.item.ModItems;
 
 import net.minecraft.data.PackOutput;
 import net.neoforged.neoforge.common.data.LanguageProvider;
 
 /**
- * en_us display names for the M1 block set, the resin item, and the Formicary
- * creative tab.
+ * en_us display names for the M1 block set, the resin item, the M2 worker ant and its
+ * spawn egg, and the Formicary creative tab.
  */
 public class ModLanguageProvider extends LanguageProvider {
     public ModLanguageProvider(PackOutput output) {
@@ -36,6 +37,9 @@ public class ModLanguageProvider extends LanguageProvider {
         addBlock(ModBlocks.QUEENS_CREST, "Queen's Crest");
 
         addItem(ModItems.RESIN, "Resin");
+
+        addEntityType(ModEntities.WORKER_ANT, "Worker Ant");
+        addItem(ModEntities.WORKER_ANT_SPAWN_EGG, "Worker Ant Spawn Egg");
 
         add("itemGroup.formicary.formicary", "Formicary");
     }
