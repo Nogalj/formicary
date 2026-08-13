@@ -35,8 +35,9 @@ compiler is the source of truth, not training memory.
 
 GameTest facts (verified 2026-08-01 in ModTest, same pins): there is NO built-in empty
 structure template -- `@GameTest(template=...)` needs a real `.nbt` at
-`data/formicary/structure/<name>.nbt` (ModTest generates its 5x3x5 `platform.nbt` with a
-python NBT writer -- copy that approach). Annotate the test class
+`data/formicary/structure/<name>.nbt`. This repo generates its own with
+`python assets-src\structures.py` (5x3x5 `platform` + 48x3x5 `long_platform`; add a size
+to that script's `TEMPLATES` dict rather than hand-authoring nbt). Annotate the test class
 `@GameTestHolder(Formicary.MODID)` and methods `@PrefixGameTestTemplate(false)` or the
 template resolves under the wrong namespace/class-name prefix. GameTestServer runs at
 NORMAL difficulty (Monsters safe).
@@ -119,7 +120,11 @@ is a known-correct 1.21 entity model reference.
   `[System.IO.Compression.ZipFile]::OpenRead(...)` filtered by package prefix -- M2 had to
   add `world/phys`, `client/renderer`, `world/item`, `core`, `util`, `com/mojang/math`,
   `world/level/EntityGetter.java`, `world/level/Level.java` and
-  `world/entity/ai/navigation`. M3a had to add `world/InteractionResult.java`,
+  `world/entity/ai/navigation`. M3b had to add the whole of `tags/`,
+  `data/tags/`, `world/level/storage/loot/` and `advancements/critereon/`, plus
+  `server/level/ServerLevel.java`, `world/entity/ai/targeting/TargetingConditions.java`,
+  `world/entity/player/Player.java`, `world/damagesource/DamageSources.java` and
+  `net/neoforged/neoforge/common/NeoForge.java`. M3a had to add `world/InteractionResult.java`,
   `world/InteractionHand.java`, `world/item/ItemUtils.java`,
   `data/loot/EntityLootSubProvider.java` + `packs/VanillaEntityLoot.java`,
   `world/entity/EntityType.java`, `world/entity/player/Inventory.java`,
@@ -128,6 +133,44 @@ is a known-correct 1.21 entity model reference.
   functions/SetItemCountFunction,providers/number/UniformGenerator,
   entries/LootItem,LootPool,LootTable}.java` and `sounds/SoundSource.java`.
   (`verified: 2026-08-13`)
+- **NeoForge event names for 1.21 that training memory gets wrong.** All three verified in
+  the extracted 21.0.167 sources: damage is
+  `net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent` (fires in
+  `LivingEntity#hurt` before mitigation -- the old `LivingHurtEvent` is GONE, and
+  `LivingDamageEvent` is now an abstract `Pre`/`Post` pair fired later in the sequence);
+  block breaking is `net.neoforged.neoforge.event.level.BlockEvent.BreakEvent`; mining
+  speed is `net.neoforged.neoforge.event.entity.player.PlayerEvent.BreakSpeed`
+  (`getOriginalSpeed()` / `getNewSpeed()` / `setNewSpeed(float)`). The game bus enum is
+  `EventBusSubscriber.Bus.GAME` -- and `EventBusSubscriber` ships in the FML *loader* jar
+  (`net.neoforged.fancymodloader:loader`), NOT the neoforge sources jar, so `javap` on
+  that jar is the only way to check it. (`verified: 2026-08-13`)
+- **1.21 armor materials are a REGISTRY, not an enum.** `Registries.ARMOR_MATERIAL`;
+  vanilla builds each entry with `Registry.registerForHolder(...)` in `ArmorMaterials`,
+  and `ArmorItem` takes a `Holder<ArmorMaterial>` -- so a `DeferredRegister` +
+  `DeferredHolder` is the mod-side equivalent and no ordering dance is needed
+  (`ArmorItem` memoises its attribute modifiers, so it never dereferences the holder
+  during registration). The `ArmorMaterial.Layer` asset name resolves to
+  `<ns>:textures/models/armor/<path>_layer_1.png` (outer: HEAD/CHEST/FEET) and
+  `_layer_2.png` (inner: LEGS only -- `HumanoidArmorLayer.usesInnerModel` returns true
+  just for `EquipmentSlot.LEGS`). Humanoid overlay UV rects are 64x32 with head at
+  `texOffs(0,0) 8x8x8`, body `(16,16) 8x12x4`, arm `(40,16) 4x12x4`, leg `(0,16) 4x12x4`.
+  (`verified: 2026-08-13`)
+- **Custom loot conditions:** register a `LootItemConditionType(MapCodec<...>)` into
+  `Registries.LOOT_CONDITION_TYPE` via `DeferredRegister`; copy vanilla's
+  `LootItemKilledByPlayerCondition` shape (stateless singleton + `MapCodec.unit`). The
+  player who broke a block arrives as `LootContextParams.THIS_ENTITY`, which
+  `LootContextParamSets.BLOCK` declares **optional** -- use `getParamOrNull`, and declare
+  it in `getReferencedContextParams()` or datagen validation rejects the table.
+  (`verified: 2026-08-13`)
+- **GameTest structure templates can be written straight from python** -- gzipped NBT,
+  root compound with `size` (LIST<INT>), `entities` (empty LIST<END>), `blocks`
+  (LIST<COMPOUND> of `{pos: LIST<INT>[3], state: INT}`), `palette` (LIST<COMPOUND> of
+  `{Name: STRING}`) and `DataVersion: 3953`. `assets-src/structures.py` does it; the
+  layout was verified by reading ModTest's `platform.nbt` back, not recalled.
+  `GameTestHelper.makeMockPlayer(GameType)` returns a bare `Player` that is **never added
+  to the level**, so it can carry a `DamageSource` (vanilla's damage events then fire for
+  real) but it cannot drive `ServerPlayerGameMode`, and `level.getNearestPlayer` will not
+  see it. (`verified: 2026-08-13`)
 - **`EntityLootSubProvider.getKnownEntityTypes()` defaults to EVERY entity type in the
   game** (`BuiltInRegistries.ENTITY_TYPE`) -- the same trap as
   `BlockLootSubProvider.getKnownBlocks()` (above), and it throws "Missing loottable" for
