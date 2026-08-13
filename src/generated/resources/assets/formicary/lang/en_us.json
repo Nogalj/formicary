@@ -1,0 +1,20 @@
+{
+  "block.formicary.amber_earth": "Amber Earth",
+  "block.formicary.amber_glass": "Amber Glass",
+  "block.formicary.anthill_core": "Anthill Core",
+  "block.formicary.anthill_soil": "Anthill Soil",
+  "block.formicary.brood_comb": "Brood Comb",
+  "block.formicary.daylight_membrane": "Daylight Membrane",
+  "block.formicary.deep_loam": "Deep Loam",
+  "block.formicary.egg_cluster": "Egg Cluster",
+  "block.formicary.fungal_bloom": "Fungal Bloom",
+  "block.formicary.fungal_carpet": "Fungal Carpet",
+  "block.formicary.hardened_soil": "Hardened Soil",
+  "block.formicary.packed_soil": "Packed Soil",
+  "block.formicary.queens_crest": "Queen's Crest",
+  "block.formicary.resin_block": "Resin Block",
+  "block.formicary.resin_weep": "Resin Weep",
+  "block.formicary.royal_comb": "Royal Comb",
+  "item.formicary.resin": "Resin",
+  "itemGroup.formicary.formicary": "Formicary"
+}
