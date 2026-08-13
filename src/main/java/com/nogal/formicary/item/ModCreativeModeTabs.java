@@ -2,6 +2,7 @@ package com.nogal.formicary.item;
 
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.ModBlocks;
+import com.nogal.formicary.entity.ModEntities;
 
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -25,6 +26,7 @@ public class ModCreativeModeTabs {
                     .displayItems((parameters, output) -> {
                         ModBlocks.BLOCKS.getEntries().forEach(entry -> output.accept(entry.get()));
                         output.accept(ModItems.RESIN.get());
+                        output.accept(ModEntities.WORKER_ANT_SPAWN_EGG.get());
                     })
                     .build());
 

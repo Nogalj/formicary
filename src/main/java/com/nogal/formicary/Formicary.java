@@ -4,12 +4,15 @@ import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
 import com.nogal.formicary.block.ModBlocks;
+import com.nogal.formicary.entity.ModEntities;
 import com.nogal.formicary.item.ModCreativeModeTabs;
 import com.nogal.formicary.item.ModItems;
 
+import net.minecraft.world.item.CreativeModeTabs;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 
 @Mod(Formicary.MODID)
 public class Formicary {
@@ -17,10 +20,23 @@ public class Formicary {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public Formicary(IEventBus modEventBus, ModContainer modContainer) {
+        // ModEntities' static initialiser adds the spawn egg to ModItems.ITEMS, so it has
+        // to be class-loaded before the item registry event fires -- touching ENTITY_TYPES
+        // here does that.
+        ModEntities.ENTITY_TYPES.register(modEventBus);
         ModBlocks.BLOCKS.register(modEventBus);
         ModItems.ITEMS.register(modEventBus);
         ModCreativeModeTabs.CREATIVE_MODE_TABS.register(modEventBus);
 
+        modEventBus.addListener(this::addCreative);
+
         LOGGER.info("Formicary loading -- the colony stirs.");
+    }
+
+    /** Puts our spawn eggs in the vanilla Spawn Eggs tab alongside the mod's own tab. */
+    private void addCreative(BuildCreativeModeTabContentsEvent event) {
+        if (event.getTabKey() == CreativeModeTabs.SPAWN_EGGS) {
+            event.accept(ModEntities.WORKER_ANT_SPAWN_EGG);
+        }
     }
 }
