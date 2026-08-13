@@ -1,31 +1,36 @@
 """
-Programmer-art texture generator for Formicary's M1 block set.
+Texture generator for Formicary's M1 block set -- vanilla-style programmer art.
 
-One function per texture, each deterministic (seeded RNG keyed off the block
-name so re-running this script produces byte-identical PNGs). Flat base color
-+ simple noise/speckle/pattern per block, per the M1 art direction:
+One function per texture, each deterministic (seeded RNG keyed off the texture
+name so re-running this script produces byte-identical PNGs). Technique notes,
+aimed at reading like vanilla resources rather than flat speckle:
 
-    palette/fabric blocks -> speckled dirt-like fill, distinct hue per tier
-    resin family          -> amber tones, droplets / drip streaks
-    fungal family          -> teal-green, pale glow dots
-    hive family            -> hex-comb cell pattern, waxy/golden tones
-    glow blocks             -> radial amber glow
+    * value-noise fills: a coarse 8x8 tone grid (5-tone palette) upscaled 2x
+      with per-pixel +/-1 tone jitter -- noise arrives in connected clumps,
+      the way vanilla dirt/stone does, and tiles seamlessly (grid cells are
+      independent, clump stamps wrap mod 16).
+    * directional bevels: combs and the trophy use light top-left / dark
+      bottom-right edges like vanilla's chiseled blocks.
+    * glow is dithered patches (glowstone-style), not smooth radial gradients.
+    * anthill core uses magma-block-style bright veins over a dark base.
 
 Run with: python assets-src\\blocks.py
 Requires: Pillow (PIL). Outputs 16x16 PNGs into
-src/main/resources/assets/formicary/textures/block/ (and textures/item/
-for the resin item sprite).
+src/main/resources/assets/formicary/textures/block/ (and textures/item/ for
+the resin item sprite), plus an 8x-upscaled labelled contact sheet at
+assets-src/previews/blocks_sheet.png for QA.
 """
 
 import random
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 SIZE = 16
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BLOCK_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/block"
 ITEM_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/item"
+PREVIEW_DIR = Path(__file__).resolve().parent / "previews"
 
 
 def rng(name):
@@ -37,83 +42,83 @@ def blank(rgba=(0, 0, 0, 0)):
     return Image.new("RGBA", (SIZE, SIZE), rgba)
 
 
-def speckle_fill(img, seed, base, dark, light, dark_chance=0.10, light_chance=0.12):
-    """Flat base color with random darker/lighter single-pixel speckle noise."""
-    r = rng(seed)
+def wrap(v):
+    return v % SIZE
+
+
+def value_noise_fill(name, palette, weights=None, jitter=0.22):
+    """Clumped multi-tone fill: coarse 8x8 tone grid upscaled 2x, then per-pixel
+    +/-1 tone jitter. Tones cluster in 2x2-ish patches like vanilla soil/stone."""
+    r = rng(name)
+    n = len(palette)
+    if weights is None:
+        # bell-shaped: mid tones dominate, extremes are accents
+        weights = [1, 3, 6, 3, 1][:n] if n == 5 else [1] * n
+    grid = [[r.choices(range(n), weights)[0] for _ in range(8)] for _ in range(8)]
+    img = blank()
     px = img.load()
     for y in range(SIZE):
         for x in range(SIZE):
-            roll = r.random()
-            if roll < dark_chance:
-                px[x, y] = dark
-            elif roll < dark_chance + light_chance:
-                px[x, y] = light
-            else:
-                px[x, y] = base
+            t = grid[y // 2][x // 2]
+            if r.random() < jitter:
+                t = max(0, min(n - 1, t + r.choice((-1, 1))))
+            px[x, y] = palette[t]
     return img
 
 
-def blotch_fill(img, seed, base, dark, light, blotch_chance=0.06, dark_chance=0.10):
-    """Like speckle_fill but with small 2x1/1x2 blotches instead of single pixels
-    (reads as coarser, blockier mottling -- used for the tougher/stony blocks)."""
-    r = rng(seed)
+def stamp_clumps(img, name, count, color, highlight=None, size_range=(2, 3)):
+    """Small rectangular clumps (pebbles/inclusions) with an optional 1px
+    top-left highlight. Wraps mod 16 so the texture still tiles."""
+    r = rng(name + ":clumps")
     px = img.load()
-    for y in range(SIZE):
-        for x in range(SIZE):
-            px[x, y] = base
-    for y in range(SIZE):
-        for x in range(SIZE):
-            roll = r.random()
-            if roll < blotch_chance:
-                color = dark if r.random() < 0.6 else light
-                px[x, y] = color
-                if x + 1 < SIZE and r.random() < 0.5:
-                    px[x + 1, y] = color
-                if y + 1 < SIZE and r.random() < 0.5:
-                    px[x, y + 1] = color
+    for _ in range(count):
+        cx, cy = r.randrange(SIZE), r.randrange(SIZE)
+        w, h = r.randint(*size_range), r.randint(*size_range)
+        for dy in range(h):
+            for dx in range(w):
+                px[wrap(cx + dx), wrap(cy + dy)] = color
+        if highlight:
+            px[wrap(cx), wrap(cy)] = highlight
     return img
 
 
-def hex_comb(img, seed, base, line, cell, cell_w=4, cell_h=4):
-    """Stylized honeycomb: a coarse hex-cell grid (offset alternating rows),
-    dark grid lines, lighter cell interiors. Low-res approximation, reads as
-    a comb pattern at 16x16."""
+def comb(name, line, hollow, hollow_lit, cap, cap_rim, cap_shade, cell_w=4, cell_h=4):
+    """Organic wax comb, bee-nest style: 4x4 cells on an offset grid. Each cell
+    is randomly either OPEN (a dark hollow whose bottom inner edge catches the
+    light) or CAPPED (a waxy dome, lit top-left with a shaded lower-right).
+    The mix is what keeps it from reading as stamped metal tiles."""
+    img = blank()
     px = img.load()
+    r = rng(name)
+    n_rows = SIZE // cell_h
+    n_cols = SIZE // cell_w + 1  # +1: offset rows straddle the seam
+    capped = {(cr, cc): r.random() < 0.5 for cr in range(n_rows) for cc in range(n_cols)}
     for y in range(SIZE):
         row = y // cell_h
-        x_off = (cell_w // 2) if (row % 2 == 1) else 0
+        xo = (cell_w // 2) if row % 2 else 0
         for x in range(SIZE):
-            cx = (x + x_off) % cell_w
+            col = (x + xo) // cell_w
+            cx = (x + xo) % cell_w
             cy = y % cell_h
-            on_border = cx == 0 or cy == 0
-            px[x, y] = line if on_border else cell
-    # scatter a few base-color highlight pixels for texture
-    r = rng(seed)
-    for _ in range(SIZE):
-        x, y = r.randrange(SIZE), r.randrange(SIZE)
-        if px[x, y] == cell and r.random() < 0.5:
-            px[x, y] = base
-    return img
-
-
-def radial_glow(img, seed, edge, mid, center, cx=7.5, cy=7.5):
-    """Radial glow: bright center fading to a darker edge color, with a touch
-    of per-pixel jitter so it doesn't look like a perfect vector gradient."""
-    r = rng(seed)
-    px = img.load()
-    max_d = ((SIZE / 2) ** 2 + (SIZE / 2) ** 2) ** 0.5
-    for y in range(SIZE):
-        for x in range(SIZE):
-            d = (((x + 0.5) - cx) ** 2 + ((y + 0.5) - cy) ** 2) ** 0.5
-            t = min(1.0, d / max_d)
-            jitter = r.uniform(-0.06, 0.06)
-            t = min(1.0, max(0.0, t + jitter))
-            if t < 0.35:
-                px[x, y] = center
-            elif t < 0.7:
-                px[x, y] = mid
+            if cx == 0 or cy == 0:
+                px[x, y] = line
+            elif capped[(row, col % n_cols)]:
+                if cx == 1 and cy == 1:
+                    px[x, y] = cap_rim
+                elif cx == cell_w - 1 or cy == cell_h - 1:
+                    px[x, y] = cap_shade
+                else:
+                    px[x, y] = cap
             else:
-                px[x, y] = edge
+                if cy == cell_h - 1:
+                    px[x, y] = hollow_lit
+                elif cx == cell_w - 1:
+                    px[x, y] = hollow
+                elif cx == 1 and cy == 1:
+                    px[x, y] = (max(hollow[0] - 20, 0), max(hollow[1] - 16, 0),
+                                max(hollow[2] - 8, 0), 255)
+                else:
+                    px[x, y] = hollow
     return img
 
 
@@ -125,155 +130,253 @@ def lerp_color(a, b, t):
 # Palette / fabric soils (tier soils top -> bottom get visibly darker)
 # ---------------------------------------------------------------------------
 
+PACKED_SOIL_PAL = [(94, 70, 45, 255), (117, 88, 58, 255), (139, 107, 74, 255),
+                   (160, 127, 89, 255), (182, 149, 106, 255)]
+
+
 def packed_soil():
-    return speckle_fill(blank(), "packed_soil",
-                         base=(139, 107, 74, 255), dark=(110, 79, 52, 255), light=(161, 127, 88, 255))
+    img = value_noise_fill("packed_soil", PACKED_SOIL_PAL)
+    # a couple of embedded grit pebbles, vanilla-dirt style
+    stamp_clumps(img, "packed_soil", 3, (104, 79, 51, 255),
+                 highlight=(171, 138, 97, 255), size_range=(2, 2))
+    return img
 
 
 def amber_earth():
-    return speckle_fill(blank(), "amber_earth",
-                         base=(168, 90, 46, 255), dark=(126, 63, 29, 255), light=(201, 122, 68, 255))
+    img = value_noise_fill("amber_earth",
+                           [(110, 55, 24, 255), (136, 71, 33, 255), (163, 89, 43, 255),
+                            (189, 111, 58, 255), (212, 134, 76, 255)])
+    # occasional resin fleck bedded in the earth
+    stamp_clumps(img, "amber_earth", 2, (224, 152, 56, 255),
+                 highlight=(250, 205, 120, 255), size_range=(1, 2))
+    return img
 
 
 def deep_loam():
-    return speckle_fill(blank(), "deep_loam",
-                         base=(92, 46, 29, 255), dark=(62, 27, 16, 255), light=(122, 64, 40, 255))
+    img = value_noise_fill("deep_loam",
+                           [(44, 22, 14, 255), (62, 32, 20, 255), (82, 44, 28, 255),
+                            (103, 58, 37, 255), (124, 74, 48, 255)])
+    stamp_clumps(img, "deep_loam", 3, (36, 18, 12, 255),
+                 highlight=(110, 64, 40, 255), size_range=(2, 3))
+    return img
 
 
 def hardened_soil():
-    return blotch_fill(blank(), "hardened_soil",
-                        base=(117, 107, 96, 255), dark=(94, 86, 76, 255), light=(141, 131, 119, 255))
+    img = value_noise_fill("hardened_soil",
+                           [(74, 66, 58, 255), (92, 83, 73, 255), (110, 100, 89, 255),
+                            (128, 118, 105, 255), (146, 136, 122, 255)])
+    # embedded stones: darker blobs with a bright catch-light, coarse-dirt style
+    stamp_clumps(img, "hardened_soil", 4, (66, 59, 52, 255),
+                 highlight=(152, 142, 128, 255), size_range=(2, 3))
+    return img
 
 
 def anthill_soil():
-    return speckle_fill(blank(), "anthill_soil",
-                         base=(176, 141, 91, 255), dark=(140, 107, 62, 255), light=(199, 168, 118, 255))
+    img = value_noise_fill("anthill_soil",
+                           [(128, 99, 60, 255), (150, 119, 76, 255), (172, 139, 92, 255),
+                            (192, 159, 110, 255), (211, 180, 130, 255)])
+    # tiny tunnel mouths -- dark pinpricks the ants come and go by
+    r = rng("anthill_soil:holes")
+    px = img.load()
+    for _ in range(4):
+        x, y = r.randrange(SIZE), r.randrange(SIZE)
+        px[x, y] = (96, 72, 42, 255)
+        px[wrap(x + 1), y] = (112, 86, 52, 255)
+    return img
 
 
 # ---------------------------------------------------------------------------
-# Resin family
+# Resin family (ambers)
 # ---------------------------------------------------------------------------
+
+AMBER_DARK = (140, 77, 16, 255)
+AMBER_BASE = (178, 104, 26, 255)
+AMBER_MID = (208, 130, 38, 255)
+AMBER_LIGHT = (232, 160, 64, 255)
+AMBER_PALE = (250, 205, 120, 255)
+AMBER_SPARK = (255, 238, 190, 255)
+
 
 def resin_weep():
-    img = speckle_fill(blank(), "resin_weep",
-                        base=(139, 107, 74, 255), dark=(110, 79, 52, 255), light=(161, 127, 88, 255),
-                        dark_chance=0.08, light_chance=0.06)
+    """Packed-soil face with amber drips running down it -- the 'weep'."""
+    img = value_noise_fill("resin_weep", PACKED_SOIL_PAL)
     px = img.load()
-    r = rng("resin_weep_droplets")
-    droplets = [(3, 4), (9, 3), (12, 9), (5, 11), (8, 8), (2, 12)]
-    for (dx, dy) in droplets:
-        for (ox, oy) in [(0, 0), (1, 0), (0, 1), (1, 1)]:
-            x, y = dx + ox, dy + oy
-            if 0 <= x < SIZE and 0 <= y < SIZE:
-                px[x, y] = (232, 162, 61, 255)
-        hx, hy = dx, dy
-        if 0 <= hx < SIZE and 0 <= hy < SIZE:
-            px[hx, hy] = (255, 217, 138, 255)
+    r = rng("resin_weep:drips")
+    for x0 in (2, 6, 10, 13):
+        y0 = r.randint(0, 3)
+        length = r.randint(5, 9)
+        # dark seep hole at the source
+        px[x0, y0] = (84, 60, 38, 255)
+        for y in range(y0 + 1, min(SIZE - 1, y0 + length)):
+            px[x0, y] = AMBER_MID
+            if r.random() < 0.4:
+                px[wrap(x0 + 1), y] = AMBER_BASE
+        # glossy bead at the bottom of the drip
+        yb = min(SIZE - 1, y0 + length)
+        px[x0, yb] = AMBER_PALE
+        px[wrap(x0 + 1), yb] = AMBER_LIGHT
     return img
 
 
 def resin_block():
-    img = blank((201, 122, 30, 255))
+    """Honey-block-style: light outer frame, deep amber interior with a
+    diagonal gloss band."""
+    img = value_noise_fill("resin_block",
+                           [AMBER_DARK, AMBER_BASE, (196, 118, 32, 255),
+                            AMBER_MID, AMBER_LIGHT],
+                           weights=[2, 5, 6, 4, 1])
     px = img.load()
-    r = rng("resin_block")
-    for x in range(SIZE):
-        if r.random() < 0.6:
-            for y in range(SIZE):
-                if r.random() < 0.5:
-                    px[x, y] = (168, 90, 14, 255)
-    for _ in range(10):
-        x, y = r.randrange(SIZE), r.randrange(SIZE)
-        px[x, y] = (255, 217, 138, 255)
+    for i in range(SIZE):
+        px[i, 0] = AMBER_LIGHT
+        px[0, i] = AMBER_LIGHT
+        px[i, SIZE - 1] = AMBER_DARK
+        px[SIZE - 1, i] = AMBER_DARK
+    # diagonal gloss running top-right to centre
+    for (x, y) in [(11, 2), (10, 3), (9, 4), (8, 5), (12, 3), (11, 4)]:
+        px[x, y] = AMBER_PALE
+    px[11, 3] = AMBER_SPARK
+    r = rng("resin_block:bubbles")
+    for _ in range(4):
+        x, y = r.randint(2, SIZE - 3), r.randint(2, SIZE - 3)
+        px[x, y] = AMBER_DARK
     return img
 
 
 def amber_glass():
-    img = Image.new("RGBA", (SIZE, SIZE), (196, 130, 54, 150))
+    """Vanilla-glass-style: mostly-clear tinted interior, beveled frame,
+    a short diagonal streak near the top-left corner."""
+    img = Image.new("RGBA", (SIZE, SIZE), (216, 148, 60, 88))
     px = img.load()
-    r = rng("amber_glass")
-    # translucent amber pane with a couple of lighter "glassy" streaks
-    for y in range(SIZE):
-        for x in range(SIZE):
-            if x == y or x == y + 1:
-                px[x, y] = (255, 214, 150, 190)
-            elif r.random() < 0.05:
-                px[x, y] = (150, 95, 35, 130)
-    # a slightly more opaque frame edge, like a pane border
+    # beveled frame: light top/left, dark bottom/right
     for i in range(SIZE):
-        px[i, 0] = (215, 150, 70, 200)
-        px[i, SIZE - 1] = (215, 150, 70, 200)
-        px[0, i] = (215, 150, 70, 200)
-        px[SIZE - 1, i] = (215, 150, 70, 200)
+        px[i, 0] = (250, 205, 120, 240)
+        px[0, i] = (250, 205, 120, 240)
+        px[i, SIZE - 1] = (160, 95, 25, 240)
+        px[SIZE - 1, i] = (160, 95, 25, 240)
+    px[SIZE - 1, 0] = (216, 148, 60, 240)
+    px[0, SIZE - 1] = (216, 148, 60, 240)
+    # glass streak
+    for (x, y) in [(4, 2), (3, 3), (2, 4), (6, 3), (5, 4)]:
+        px[x, y] = (255, 238, 190, 170)
+    r = rng("amber_glass:motes")
+    for _ in range(3):
+        x, y = r.randint(3, SIZE - 4), r.randint(6, SIZE - 3)
+        px[x, y] = (240, 190, 110, 140)
     return img
 
 
 # ---------------------------------------------------------------------------
-# Fungal family (teal-green, pale glow spots)
+# Fungal family (teal-green, pale glow)
 # ---------------------------------------------------------------------------
 
+FUNGAL_PAL = [(18, 54, 44, 255), (28, 77, 61, 255), (40, 101, 80, 255),
+              (58, 128, 101, 255), (86, 160, 126, 255)]
+FUNGAL_GLOW = (168, 232, 198, 255)
+FUNGAL_BRIGHT = (210, 250, 228, 255)
+
+
 def fungal_bloom():
-    img = blank((0, 0, 0, 0))
+    """Cross-plant sprite: broad luminous cap on a pale stem, transparent bg."""
+    img = blank()
     px = img.load()
-    stem = (24, 74, 62, 255)
-    cap = (46, 139, 114, 255)
-    cap_light = (90, 199, 168, 255)
-    glow = (191, 245, 224, 255)
-    # stem
-    for y in range(10, 16):
-        px[7, y] = stem
-        px[8, y] = stem
-    # cap (a small rounded cluster)
-    cap_pixels = [
-        (5, 9), (6, 9), (9, 9), (10, 9),
-        (4, 8), (5, 8), (6, 8), (7, 8), (8, 8), (9, 8), (10, 8), (11, 8),
-        (4, 7), (5, 7), (6, 7), (7, 7), (8, 7), (9, 7), (10, 7), (11, 7),
-        (5, 6), (6, 6), (7, 6), (8, 6), (9, 6), (10, 6),
-        (6, 5), (7, 5), (8, 5), (9, 5),
-        (7, 4), (8, 4),
-    ]
-    for (x, y) in cap_pixels:
-        px[x, y] = cap
-    for (x, y) in [(6, 7), (9, 7), (7, 6), (8, 8)]:
-        px[x, y] = cap_light
-    for (x, y) in [(7, 5), (9, 8), (5, 8)]:
-        px[x, y] = glow
+    stem_l = (94, 168, 138, 255)
+    stem_d = (40, 101, 80, 255)
+    cap_d = (28, 77, 61, 255)
+    cap = (46, 121, 96, 255)
+    cap_l = (86, 160, 126, 255)
+    # stem: 2px, lit on the left
+    for y in range(9, 16):
+        px[7, y] = stem_l
+        px[8, y] = stem_d
+    # cap silhouette (rows top to bottom), gently domed
+    rows = {
+        3: range(6, 10),
+        4: range(5, 11),
+        5: range(4, 12),
+        6: range(3, 13),
+        7: range(3, 13),
+        8: range(4, 12),
+    }
+    for y, xs in rows.items():
+        for x in xs:
+            px[x, y] = cap
+    # shading: top-left lit, bottom-right shaded, dark under-rim (gills)
+    for (x, y) in [(6, 3), (7, 3), (5, 4), (6, 4), (4, 5), (5, 5), (6, 5), (3, 6), (4, 6), (5, 6)]:
+        px[x, y] = cap_l
+    for (x, y) in [(11, 6), (12, 6), (10, 7), (11, 7), (12, 7), (10, 8), (11, 8)]:
+        px[x, y] = cap_d
+    for x in range(4, 12):
+        px[x, 8] = cap_d
+    # luminous spots + spore motes
+    for (x, y) in [(8, 4), (5, 6), (10, 5)]:
+        px[x, y] = FUNGAL_GLOW
+    px[9, 4] = FUNGAL_BRIGHT
+    for (x, y) in [(2, 9), (13, 4), (12, 11)]:
+        px[x, y] = (168, 232, 198, 180)
     return img
 
 
 def fungal_carpet():
-    img = speckle_fill(blank(), "fungal_carpet",
-                        base=(46, 107, 84, 255), dark=(31, 74, 58, 255), light=(159, 230, 199, 255),
-                        dark_chance=0.12, light_chance=0.08)
+    img = value_noise_fill("fungal_carpet", FUNGAL_PAL)
+    px = img.load()
+    r = rng("fungal_carpet:flecks")
+    for _ in range(5):
+        x, y = r.randrange(SIZE), r.randrange(SIZE)
+        px[x, y] = FUNGAL_GLOW
+    for _ in range(3):
+        x, y = r.randrange(SIZE), r.randrange(SIZE)
+        px[x, y] = (12, 40, 32, 255)
     return img
 
 
 # ---------------------------------------------------------------------------
-# Hive family (waxy / golden hex-comb)
+# Hive family (beveled wax comb)
 # ---------------------------------------------------------------------------
 
 def brood_comb():
-    return hex_comb(blank(), "brood_comb",
-                     base=(224, 193, 88, 255), line=(140, 110, 21, 255), cell=(201, 162, 39, 255))
+    return comb("brood_comb",
+                line=(134, 96, 26, 255),
+                hollow=(92, 62, 14, 255), hollow_lit=(178, 132, 40, 255),
+                cap=(206, 162, 60, 255), cap_rim=(236, 196, 98, 255),
+                cap_shade=(166, 124, 34, 255))
 
 
 def royal_comb():
-    return hex_comb(blank(), "royal_comb",
-                     base=(255, 221, 112, 255), line=(168, 121, 12, 255), cell=(232, 185, 35, 255))
+    return comb("royal_comb",
+                line=(158, 108, 12, 255),
+                hollow=(112, 74, 8, 255), hollow_lit=(216, 158, 32, 255),
+                cap=(240, 190, 56, 255), cap_rim=(255, 232, 140, 255),
+                cap_shade=(198, 144, 24, 255))
 
 
 def egg_cluster():
-    img = blank((232, 220, 192, 255))
+    """Pale ant eggs bedded on dark wax -- 3-tone shells, top-left lit."""
+    img = value_noise_fill("egg_cluster",
+                           [(104, 74, 20, 255), (122, 88, 26, 255), (136, 100, 32, 255),
+                            (146, 106, 34, 255), (160, 118, 40, 255)])
     px = img.load()
-    r = rng("egg_cluster")
-    eggs = [(3, 3, 3), (9, 4, 2), (5, 9, 3), (11, 10, 2), (2, 12, 2)]
+    shell_hi = (243, 235, 210, 255)
+    shell = (226, 214, 184, 255)
+    shell_lo = (196, 180, 146, 255)
+    shell_rim = (158, 138, 100, 255)
+    eggs = [(3, 3, 3), (9, 2, 2), (13, 5, 2), (5, 9, 3), (11, 10, 3), (2, 13, 2), (8, 14, 2)]
     for (ex, ey, rad) in eggs:
         for dy in range(-rad, rad + 1):
             for dx in range(-rad, rad + 1):
-                if dx * dx + dy * dy * 1.3 <= rad * rad:
+                if dx * dx + dy * dy * 1.4 <= rad * rad:
                     x, y = ex + dx, ey + dy
                     if 0 <= x < SIZE and 0 <= y < SIZE:
-                        shade = 245 if (dx <= 0 and dy <= 0) else 201
-                        px[x, y] = (shade, shade - 5, shade - 30, 255)
+                        if dx == rad or dy == rad - 1 and dx >= 0:
+                            px[x, y] = shell_lo
+                        elif dx <= -1 and dy <= -1:
+                            px[x, y] = shell_hi
+                        else:
+                            px[x, y] = shell
+        # partial dark outline anchoring the egg into the wax
+        for (ox, oy) in [(rad, 0), (rad - 1, 1), (0, rad)]:
+            x, y = ex + ox, ey + oy
+            if 0 <= x < SIZE and 0 <= y < SIZE:
+                px[x, y] = shell_rim
     return img
 
 
@@ -282,33 +385,96 @@ def egg_cluster():
 # ---------------------------------------------------------------------------
 
 def daylight_membrane():
-    return radial_glow(blank(), "daylight_membrane",
-                        edge=(255, 178, 56, 255), mid=(255, 214, 130, 255), center=(255, 243, 208, 255))
+    """Glowstone-style dithered amber patches, brightest at the centre --
+    unmistakably 'the way out'."""
+    img = value_noise_fill("daylight_membrane",
+                           [(232, 152, 44, 255), (247, 180, 66, 255), (252, 203, 106, 255),
+                            (255, 222, 148, 255), (255, 238, 190, 255)],
+                           weights=[2, 4, 6, 4, 2])
+    px = img.load()
+    # centre bias: bump pixels near the middle one tone brighter
+    tones = [(232, 152, 44, 255), (247, 180, 66, 255), (252, 203, 106, 255),
+             (255, 222, 148, 255), (255, 238, 190, 255)]
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if abs(x - 7.5) + abs(y - 7.5) < 5:
+                t = tones.index(px[x, y]) if px[x, y] in tones else 2
+                px[x, y] = tones[min(len(tones) - 1, t + 1)]
+    for (x, y) in [(7, 7), (8, 8), (6, 9)]:
+        px[x, y] = (255, 250, 230, 255)
+    return img
 
 
 def anthill_core():
-    return radial_glow(blank(), "anthill_core",
-                        edge=(26, 21, 18, 255), mid=(90, 58, 24, 255), center=(255, 178, 56, 255))
+    """Magma-block-style: near-black base with branching bright amber veins
+    and a hot 2x2 heart."""
+    img = value_noise_fill("anthill_core",
+                           [(18, 14, 12, 255), (26, 20, 17, 255), (32, 25, 20, 255),
+                            (40, 31, 25, 255), (48, 38, 30, 255)])
+    px = img.load()
+    r = rng("anthill_core:veins")
+    halo = (150, 90, 30, 255)
+
+    def paint_vein(x, y, steps):
+        for _ in range(steps):
+            px[wrap(x), wrap(y)] = (255, 178, 56, 255)
+            for (hx, hy) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]:
+                if px[wrap(hx), wrap(hy)][0] < 100:
+                    px[wrap(hx), wrap(hy)] = halo
+            if r.random() < 0.5:
+                x += r.choice((-1, 1))
+            else:
+                y += r.choice((-1, 1))
+
+    paint_vein(7, 7, 7)
+    paint_vein(8, 8, 7)
+    paint_vein(3, 12, 5)
+    paint_vein(12, 3, 5)
+    # hot heart
+    for (x, y) in [(7, 7), (8, 7), (7, 8), (8, 8)]:
+        px[x, y] = (255, 220, 140, 255)
+    return img
 
 
 def queens_crest():
-    img = blank((184, 134, 11, 255))
+    """Gold trophy plaque: double-beveled frame, corner studs, faceted gem."""
+    img = value_noise_fill("queens_crest",
+                           [(168, 122, 10, 255), (184, 134, 11, 255), (196, 146, 20, 255),
+                            (208, 158, 32, 255), (220, 170, 44, 255)],
+                           weights=[2, 5, 6, 3, 1])
     px = img.load()
-    # ornate border
+    # outer dark frame
     for i in range(SIZE):
         px[i, 0] = (122, 90, 6, 255)
         px[i, SIZE - 1] = (122, 90, 6, 255)
         px[0, i] = (122, 90, 6, 255)
         px[SIZE - 1, i] = (122, 90, 6, 255)
-    # center gem (diamond)
+    # inner bevel: light top/left, dark bottom/right
+    for i in range(1, SIZE - 1):
+        px[i, 1] = (255, 232, 140, 255)
+        px[1, i] = (255, 232, 140, 255)
+        px[i, SIZE - 2] = (150, 108, 8, 255)
+        px[SIZE - 2, i] = (150, 108, 8, 255)
+    px[SIZE - 2, 1] = (208, 158, 32, 255)
+    px[1, SIZE - 2] = (208, 158, 32, 255)
+    # corner studs
+    for (x, y) in [(3, 3), (12, 3), (3, 12), (12, 12)]:
+        px[x, y] = (255, 232, 140, 255)
+        px[x + 1, y + 1] = (150, 108, 8, 255)
+    # faceted centre gem (diamond): lit upper-left facet, shaded lower-right
     cx, cy = 7.5, 7.5
     for y in range(SIZE):
         for x in range(SIZE):
             d = abs(x + 0.5 - cx) + abs(y + 0.5 - cy)
-            if d < 2.5:
-                px[x, y] = (255, 234, 112, 255)
-            elif d < 4.0:
-                px[x, y] = (255, 215, 0, 255)
+            if d < 3.5:
+                if x + y < 14:
+                    px[x, y] = (255, 244, 180, 255)
+                elif x + y > 16:
+                    px[x, y] = (216, 164, 20, 255)
+                else:
+                    px[x, y] = (244, 208, 72, 255)
+            elif d < 4.5:
+                px[x, y] = (122, 90, 6, 255)
     return img
 
 
@@ -317,8 +483,8 @@ def queens_crest():
 # ---------------------------------------------------------------------------
 
 def resin_item():
-    """16x16 amber blob item sprite on a transparent background."""
-    img = blank((0, 0, 0, 0))
+    """Amber glob item sprite: dark outline, warm core, specular highlight."""
+    img = blank()
     px = img.load()
     cx, cy = 7.5, 8.5
     for y in range(SIZE):
@@ -327,11 +493,20 @@ def resin_item():
             d = (dx * dx + dy * dy) ** 0.5
             if d < 5.6:
                 t = d / 5.6
-                color = lerp_color((255, 224, 150, 255), (196, 122, 24, 255), t)
-                px[x, y] = color
-    # highlight
+                px[x, y] = lerp_color((255, 224, 150, 255), (178, 104, 26, 255), t)
+    # dark outline ring
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if px[x, y][3] == 0:
+                continue
+            dx, dy = (x + 0.5 - cx), (y + 0.5 - cy) * 1.15
+            if (dx * dx + dy * dy) ** 0.5 > 4.7:
+                px[x, y] = (124, 68, 14, 255)
+    # drip tail up top + specular
+    px[7, 2] = (208, 130, 38, 255)
+    px[7, 3] = (232, 160, 64, 255)
     for (x, y) in [(5, 5), (6, 5), (5, 6)]:
-        px[x, y] = (255, 244, 214, 255)
+        px[x, y] = AMBER_SPARK
     return img
 
 
@@ -359,21 +534,54 @@ ITEM_TEXTURES = {
 }
 
 
+def contact_sheet(images, scale=8, cols=4):
+    """Labelled QA sheet: every texture upscaled with a checkerboard backing
+    so alpha reads correctly."""
+    tile = SIZE * scale
+    label_h = 14
+    rows = (len(images) + cols - 1) // cols
+    sheet = Image.new("RGBA", (cols * (tile + 8) + 8, rows * (tile + label_h + 8) + 8),
+                      (34, 34, 34, 255))
+    draw = ImageDraw.Draw(sheet)
+    for i, (name, img) in enumerate(images):
+        gx = 8 + (i % cols) * (tile + 8)
+        gy = 8 + (i // cols) * (tile + label_h + 8)
+        # checkerboard backing
+        for cy_ in range(0, tile, 16):
+            for cx_ in range(0, tile, 16):
+                shade = 72 if ((cx_ // 16 + cy_ // 16) % 2 == 0) else 56
+                draw.rectangle([gx + cx_, gy + cy_, gx + cx_ + 15, gy + cy_ + 15],
+                               fill=(shade, shade, shade, 255))
+        big = img.resize((tile, tile), Image.NEAREST)
+        sheet.alpha_composite(big, (gx, gy))
+        draw.text((gx + 2, gy + tile + 2), name, fill=(220, 220, 220, 255))
+    return sheet
+
+
 def main():
     BLOCK_TEX_DIR.mkdir(parents=True, exist_ok=True)
     ITEM_TEX_DIR.mkdir(parents=True, exist_ok=True)
+    PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 
+    generated = []
     for name, make in BLOCK_TEXTURES.items():
         img = make()
         out = BLOCK_TEX_DIR / f"{name}.png"
         img.save(out)
+        generated.append((name, img))
         print(f"wrote {out.relative_to(REPO_ROOT)}")
 
     for name, make in ITEM_TEXTURES.items():
         img = make()
         out = ITEM_TEX_DIR / f"{name}.png"
         img.save(out)
+        generated.append((name, img))
         print(f"wrote {out.relative_to(REPO_ROOT)}")
+
+    sheet = contact_sheet(generated)
+    sheet_path = PREVIEW_DIR / "blocks_sheet.png"
+    sheet.save(sheet_path)
+    print(f"wrote {sheet_path.relative_to(REPO_ROOT)}")
 
 
 if __name__ == "__main__":
