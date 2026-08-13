@@ -5,6 +5,7 @@ import java.util.stream.Collectors;
 
 import com.nogal.formicary.block.ModBlocks;
 import com.nogal.formicary.item.ModItems;
+import com.nogal.formicary.loot.WearingFullChitinCondition;
 
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
@@ -28,6 +29,8 @@ import net.neoforged.neoforge.registries.DeferredHolder;
  *   <li>Resin Weep -- drops 1-2 resin, fortune-sensitive (does NOT regenerate in M1,
  *       it's a plain block that just breaks like any node).</li>
  *   <li>Amber Glass -- vanilla-glass convention, self-drops only with silk touch.</li>
+ *   <li>The four {@code #formicary:colony_fabric} soils (M3b) -- self-drop only for a
+ *       player in the full Chitin Armor set.</li>
  * </ul>
  * Royal Comb and Fungal Bloom deliberately self-drop as M1 placeholders (Royal Jelly
  * lands in M7, spores in M8 -- see {@code docs/DECISIONS.md}).
@@ -44,10 +47,13 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
 
     @Override
     protected void generate() {
-        dropSelf(ModBlocks.PACKED_SOIL.get());
-        dropSelf(ModBlocks.AMBER_EARTH.get());
-        dropSelf(ModBlocks.DEEP_LOAM.get());
-        dropSelf(ModBlocks.HARDENED_SOIL.get());
+        // The four #formicary:colony_fabric blocks: self-drop ONLY behind the full
+        // chitin set (spec section 5). Break speed is gated separately in ChitinArmor.
+        dropSelfWearingFullChitin(ModBlocks.PACKED_SOIL.get());
+        dropSelfWearingFullChitin(ModBlocks.AMBER_EARTH.get());
+        dropSelfWearingFullChitin(ModBlocks.DEEP_LOAM.get());
+        dropSelfWearingFullChitin(ModBlocks.HARDENED_SOIL.get());
+
         dropSelf(ModBlocks.RESIN_BLOCK.get());
         dropSelf(ModBlocks.FUNGAL_BLOOM.get());
         dropSelf(ModBlocks.FUNGAL_CARPET.get());
@@ -62,6 +68,18 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
         dropWhenSilkTouch(ModBlocks.AMBER_GLASS.get());
 
         add(ModBlocks.RESIN_WEEP.get(), resinWeepTable());
+    }
+
+    /**
+     * {@code dropSelf} plus the {@code formicary:wearing_full_chitin} condition on the
+     * pool, so the block yields nothing to a player without the set.
+     */
+    private void dropSelfWearingFullChitin(Block block) {
+        add(block, LootTable.lootTable().withPool(
+                this.applyExplosionCondition(block, LootPool.lootPool()
+                        .setRolls(ConstantValue.exactly(1.0F))
+                        .add(LootItem.lootTableItem(block))
+                        .when(WearingFullChitinCondition.wearingFullChitin()))));
     }
 
     private LootTable.Builder resinWeepTable() {

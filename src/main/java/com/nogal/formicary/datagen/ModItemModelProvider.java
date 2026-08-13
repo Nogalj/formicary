@@ -46,6 +46,11 @@ public class ModItemModelProvider extends ItemModelProvider {
         basicItem(ModItems.CHITIN.get());
         basicItem(ModItems.LARVA.get());
 
+        basicItem(ModItems.CHITIN_HELMET.get());
+        basicItem(ModItems.CHITIN_CHESTPLATE.get());
+        basicItem(ModItems.CHITIN_LEGGINGS.get());
+        basicItem(ModItems.CHITIN_BOOTS.get());
+
         // Spawn eggs reuse the vanilla two-layer template; the shell/spot colours come
         // from DeferredSpawnEggItem's tint handler, not from a texture of our own.
         withExistingParent("worker_ant_spawn_egg", "item/template_spawn_egg");

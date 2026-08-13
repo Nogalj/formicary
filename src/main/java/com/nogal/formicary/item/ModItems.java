@@ -3,6 +3,7 @@ package com.nogal.formicary.item;
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.ModBlocks;
 
+import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -12,7 +13,8 @@ import net.neoforged.neoforge.registries.DeferredRegister;
  * M1 items: the resin resource item, plus a {@code BlockItem} for every M1 block via
  * {@link DeferredRegister.Items#registerSimpleBlockItem(net.minecraft.core.Holder)}.
  * M3a adds chitin (worker/soldier loot) and the larva item (the capture interaction's
- * export good -- placement lands in M6, so it's a plain item for now).
+ * export good -- placement lands in M6, so it's a plain item for now). M3b adds the
+ * four-piece Chitin Armor set, which is what gates mining the dimension's fabric.
  */
 public class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(Formicary.MODID);
@@ -20,6 +22,19 @@ public class ModItems {
     public static final DeferredItem<Item> RESIN = ITEMS.registerSimpleItem("resin");
     public static final DeferredItem<Item> CHITIN = ITEMS.registerSimpleItem("chitin");
     public static final DeferredItem<Item> LARVA = ITEMS.registerSimpleItem("larva");
+
+    // --- Chitin Armor (spec section 5). No recipes until M8: creative-only for now. ---
+
+    public static final DeferredItem<ArmorItem> CHITIN_HELMET = armorPiece("chitin_helmet", ArmorItem.Type.HELMET);
+    public static final DeferredItem<ArmorItem> CHITIN_CHESTPLATE = armorPiece("chitin_chestplate", ArmorItem.Type.CHESTPLATE);
+    public static final DeferredItem<ArmorItem> CHITIN_LEGGINGS = armorPiece("chitin_leggings", ArmorItem.Type.LEGGINGS);
+    public static final DeferredItem<ArmorItem> CHITIN_BOOTS = armorPiece("chitin_boots", ArmorItem.Type.BOOTS);
+
+    private static DeferredItem<ArmorItem> armorPiece(String name, ArmorItem.Type type) {
+        return ITEMS.registerItem(name,
+                props -> new ArmorItem(ModArmorMaterials.CHITIN, type,
+                        props.durability(type.getDurability(ModArmorMaterials.DURABILITY_FACTOR))));
+    }
 
     public static final DeferredItem<BlockItem> PACKED_SOIL = ITEMS.registerSimpleBlockItem(ModBlocks.PACKED_SOIL);
     public static final DeferredItem<BlockItem> AMBER_EARTH = ITEMS.registerSimpleBlockItem(ModBlocks.AMBER_EARTH);

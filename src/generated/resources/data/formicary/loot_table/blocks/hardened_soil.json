@@ -5,6 +5,9 @@
       "bonus_rolls": 0.0,
       "conditions": [
         {
+          "condition": "formicary:wearing_full_chitin"
+        },
+        {
           "condition": "minecraft:survives_explosion"
         }
       ],

@@ -28,6 +28,10 @@ public class ModCreativeModeTabs {
                         output.accept(ModItems.RESIN.get());
                         output.accept(ModItems.CHITIN.get());
                         output.accept(ModItems.LARVA.get());
+                        output.accept(ModItems.CHITIN_HELMET.get());
+                        output.accept(ModItems.CHITIN_CHESTPLATE.get());
+                        output.accept(ModItems.CHITIN_LEGGINGS.get());
+                        output.accept(ModItems.CHITIN_BOOTS.get());
                         output.accept(ModEntities.WORKER_ANT_SPAWN_EGG.get());
                         output.accept(ModEntities.SOLDIER_ANT_SPAWN_EGG.get());
                         output.accept(ModEntities.LARVA_SPAWN_EGG.get());

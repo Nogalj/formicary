@@ -5,8 +5,10 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 import com.nogal.formicary.block.ModBlocks;
 import com.nogal.formicary.entity.ModEntities;
+import com.nogal.formicary.item.ModArmorMaterials;
 import com.nogal.formicary.item.ModCreativeModeTabs;
 import com.nogal.formicary.item.ModItems;
+import com.nogal.formicary.loot.ModLootConditions;
 
 import net.minecraft.world.item.CreativeModeTabs;
 import net.neoforged.bus.api.IEventBus;
@@ -25,8 +27,13 @@ public class Formicary {
         // here does that.
         ModEntities.ENTITY_TYPES.register(modEventBus);
         ModBlocks.BLOCKS.register(modEventBus);
+        // Armor materials must be on the bus before the items that hold a Holder of one;
+        // ArmorItem only dereferences the holder lazily, but registering it here keeps
+        // the dependency obvious.
+        ModArmorMaterials.ARMOR_MATERIALS.register(modEventBus);
         ModItems.ITEMS.register(modEventBus);
         ModCreativeModeTabs.CREATIVE_MODE_TABS.register(modEventBus);
+        ModLootConditions.LOOT_CONDITION_TYPES.register(modEventBus);
 
         modEventBus.addListener(this::addCreative);
 

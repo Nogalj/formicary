@@ -17,8 +17,9 @@ aimed at reading like vanilla resources rather than flat speckle:
 Run with: python assets-src\\blocks.py
 Requires: Pillow (PIL). Outputs 16x16 PNGs into
 src/main/resources/assets/formicary/textures/block/ (and textures/item/ for
-the resin item sprite), plus an 8x-upscaled labelled contact sheet at
-assets-src/previews/blocks_sheet.png for QA.
+the item sprites), the two 64x32 Chitin Armor overlays into
+textures/models/armor/, plus labelled contact sheets at
+assets-src/previews/blocks_sheet.png and previews/armor_layers_sheet.png for QA.
 """
 
 import random
@@ -30,6 +31,7 @@ SIZE = 16
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BLOCK_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/block"
 ITEM_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/item"
+ARMOR_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/models/armor"
 PREVIEW_DIR = Path(__file__).resolve().parent / "previews"
 
 
@@ -574,6 +576,202 @@ def larva_item():
     return img
 
 
+# ---------------------------------------------------------------------------
+# Chitin Armor (M3b) -- four item sprites + the two humanoid overlay layers
+# ---------------------------------------------------------------------------
+
+CHITIN_OUTLINE = (34, 12, 8, 255)
+CHITIN_DARK = (58, 22, 14, 255)
+CHITIN_BASE = (104, 40, 24, 255)
+CHITIN_MID = (156, 64, 38, 255)
+CHITIN_RIM = (196, 96, 58, 255)
+CHITIN_SPARK = (222, 130, 84, 255)
+
+# Legend shared by the four armor item masks below. Same five tones the chitin
+# item sprite uses, so the set reads as made of that drop.
+ARMOR_LEGEND = {
+    ".": None,
+    "o": CHITIN_OUTLINE,
+    "d": CHITIN_DARK,
+    "b": CHITIN_BASE,
+    "m": CHITIN_MID,
+    "r": CHITIN_RIM,
+    "s": CHITIN_SPARK,
+}
+
+CHITIN_HELMET_MASK = [
+    "................",
+    "................",
+    "....oooooooo....",
+    "...orrrrrrrro...",
+    "..ormmmmmmmmro..",
+    "..ormmssmmmmro..",
+    "..ormmmmmmmmro..",
+    "..orbbbbbbbbro..",
+    "..ordbbbbbbdro..",
+    "..ordo....odro..",
+    "..ordo....odro..",
+    "..oddo....oddo..",
+    "...oo......oo...",
+    "................",
+    "................",
+    "................",
+]
+
+CHITIN_CHESTPLATE_MASK = [
+    "................",
+    "..oo........oo..",
+    ".ormo......omro.",
+    ".ormmoooooommro.",
+    ".ormmrrrrrrmmro.",
+    ".ormmmmmmmmmmro.",
+    ".ormmmsmmmmmmro.",
+    ".ormmmmmmmmmmro.",
+    ".ordbbbbbbbbdro.",
+    ".ordbbbbbbbbdro.",
+    "..odbbbbbbbbdo..",
+    "..odbbbbbbbbdo..",
+    "..oddbbbbbbddo..",
+    "...ooddddddoo...",
+    ".....oooooo.....",
+    "................",
+]
+
+CHITIN_LEGGINGS_MASK = [
+    "................",
+    "................",
+    "..oooooooooooo..",
+    ".ormmmmmmmmmmro.",
+    ".ormmmsmmmmmmro.",
+    ".ormmmmmmmmmmro.",
+    ".orbbbbbbbbbbro.",
+    ".orbbbbbbbbbbro.",
+    ".ordbbboobbbdro.",
+    ".ordbo....obdro.",
+    ".ordbo....obdro.",
+    ".oddbo....obddo.",
+    "..oddo....oddo..",
+    "..ooo......ooo..",
+    "................",
+    "................",
+]
+
+CHITIN_BOOTS_MASK = [
+    "................",
+    "................",
+    "................",
+    "................",
+    "..oooo....oooo..",
+    ".orsmro..orsmro.",
+    ".ormmro..ormmro.",
+    ".ormmro..ormmro.",
+    ".orbbro..orbbro.",
+    ".orbbbo..orbbbo.",
+    ".oddddo..oddddo.",
+    ".oooooo..oooooo.",
+    "................",
+    "................",
+    "................",
+    "................",
+]
+
+
+def from_mask(mask):
+    """Paints a 16x16 sprite from a character mask via ARMOR_LEGEND."""
+    if len(mask) != SIZE or any(len(row) != SIZE for row in mask):
+        raise ValueError("armor mask must be 16 rows of 16 chars")
+    img = blank()
+    px = img.load()
+    for y, row in enumerate(mask):
+        for x, ch in enumerate(row):
+            colour = ARMOR_LEGEND[ch]
+            if colour is not None:
+                px[x, y] = colour
+    return img
+
+
+def chitin_helmet_item():
+    return from_mask(CHITIN_HELMET_MASK)
+
+
+def chitin_chestplate_item():
+    return from_mask(CHITIN_CHESTPLATE_MASK)
+
+
+def chitin_leggings_item():
+    return from_mask(CHITIN_LEGGINGS_MASK)
+
+
+def chitin_boots_item():
+    return from_mask(CHITIN_BOOTS_MASK)
+
+
+def chitin_panel(img, name, x0, y0, w, h, band=4):
+    """Fills a UV rect with banded chitin plate: each band lit along its top row,
+    dark seam along its bottom row, faint per-pixel tone jitter in between."""
+    r = rng(f"{name}:{x0},{y0}")
+    px = img.load()
+    for yy in range(h):
+        t = min(1.0, (yy % band) / max(1, band - 1) * 0.9 + 0.1)
+        base = lerp_color(CHITIN_RIM, CHITIN_DARK, t)
+        for xx in range(w):
+            j = r.choice((-8, -4, 0, 0, 0, 4, 8))
+            px[x0 + xx, y0 + yy] = tuple(
+                max(0, min(255, base[i] + j)) for i in range(3)) + (255,)
+    for yy in range(band - 1, h, band):
+        for xx in range(w):
+            px[x0 + xx, y0 + yy] = CHITIN_OUTLINE
+
+
+# Box-UV rects for the vanilla humanoid armor model, read off HumanoidModel /
+# HumanoidArmorModel in the decompiled 1.21 sources rather than from memory:
+#   head  texOffs(0,0)   8x8x8   -> sides x0..31  y8..15,  caps x8..23  y0..7
+#   body  texOffs(16,16) 8x12x4  -> sides x16..39 y20..31, caps x20..35 y16..19
+#   arm   texOffs(40,16) 4x12x4  -> sides x40..55 y20..31, caps x44..51 y16..19
+#   leg   texOffs(0,16)  4x12x4  -> sides x0..15  y20..31, caps x4..11  y16..19
+# (mirrored left arm/leg reuse the same rects, so each is painted once.)
+ARMOR_TEX_W, ARMOR_TEX_H = 64, 32
+
+
+def chitin_layer_1():
+    """Outer layer: helmet (HEAD), chestplate + sleeves (CHEST), boots (FEET).
+    HumanoidArmorLayer.usesInnerModel() is true only for LEGS, so everything
+    except the leggings reads this file."""
+    img = Image.new("RGBA", (ARMOR_TEX_W, ARMOR_TEX_H), (0, 0, 0, 0))
+    # helmet: head side faces + skull cap
+    chitin_panel(img, "helm_sides", 0, 8, 32, 8)
+    chitin_panel(img, "helm_top", 8, 0, 8, 8)
+    chitin_panel(img, "helm_bottom", 16, 0, 8, 8)
+    # chestplate: full body box
+    chitin_panel(img, "chest_sides", 16, 20, 24, 12)
+    chitin_panel(img, "chest_caps", 20, 16, 16, 4)
+    # sleeves: full arm box
+    chitin_panel(img, "arm_sides", 40, 20, 16, 12)
+    chitin_panel(img, "arm_caps", 44, 16, 8, 4)
+    # boots: only the bottom of the leg box, or they'd read as full greaves
+    chitin_panel(img, "boot_sides", 0, 27, 16, 5, band=3)
+    chitin_panel(img, "boot_sole", 8, 16, 4, 4, band=3)
+    return img
+
+
+def chitin_layer_2():
+    """Inner layer: leggings only (LEGS is the sole slot using the inner model).
+    Belt across the body box, greaves down the leg box, stopping above the ankle
+    so the boots' own band is not doubled."""
+    img = Image.new("RGBA", (ARMOR_TEX_W, ARMOR_TEX_H), (0, 0, 0, 0))
+    chitin_panel(img, "belt_sides", 16, 20, 24, 5, band=3)
+    chitin_panel(img, "belt_top", 20, 16, 8, 4, band=3)
+    chitin_panel(img, "greave_sides", 0, 20, 16, 8)
+    chitin_panel(img, "greave_top", 4, 16, 4, 4)
+    return img
+
+
+ARMOR_LAYER_TEXTURES = {
+    "chitin_layer_1": chitin_layer_1,
+    "chitin_layer_2": chitin_layer_2,
+}
+
+
 BLOCK_TEXTURES = {
     "packed_soil": packed_soil,
     "amber_earth": amber_earth,
@@ -597,6 +795,10 @@ ITEM_TEXTURES = {
     "resin": resin_item,
     "chitin": chitin_item,
     "larva": larva_item,
+    "chitin_helmet": chitin_helmet_item,
+    "chitin_chestplate": chitin_chestplate_item,
+    "chitin_leggings": chitin_leggings_item,
+    "chitin_boots": chitin_boots_item,
 }
 
 
@@ -624,9 +826,40 @@ def contact_sheet(images, scale=8, cols=4):
     return sheet
 
 
+def armor_layer_sheet(layers, scale=6):
+    """QA sheet for the 64x32 humanoid overlays, with the UV rects the armor model
+    actually samples outlined so a blank region is obvious at a glance."""
+    rects = [
+        ("head", 0, 8, 32, 8), ("head-cap", 8, 0, 16, 8),
+        ("body", 16, 20, 24, 12), ("body-cap", 20, 16, 16, 4),
+        ("arm", 40, 20, 16, 12), ("arm-cap", 44, 16, 8, 4),
+        ("leg", 0, 20, 16, 12), ("leg-cap", 4, 16, 8, 4),
+    ]
+    tile_w, tile_h = ARMOR_TEX_W * scale, ARMOR_TEX_H * scale
+    label_h = 14
+    sheet = Image.new("RGBA", (tile_w + 16, len(layers) * (tile_h + label_h + 8) + 8),
+                      (34, 34, 34, 255))
+    draw = ImageDraw.Draw(sheet)
+    for i, (name, img) in enumerate(layers):
+        gx, gy = 8, 8 + i * (tile_h + label_h + 8)
+        for cy_ in range(0, tile_h, 12):
+            for cx_ in range(0, tile_w, 12):
+                shade = 72 if ((cx_ // 12 + cy_ // 12) % 2 == 0) else 56
+                draw.rectangle([gx + cx_, gy + cy_, gx + cx_ + 11, gy + cy_ + 11],
+                               fill=(shade, shade, shade, 255))
+        sheet.alpha_composite(img.resize((tile_w, tile_h), Image.NEAREST), (gx, gy))
+        for (_, rx, ry, rw, rh) in rects:
+            draw.rectangle([gx + rx * scale, gy + ry * scale,
+                            gx + (rx + rw) * scale - 1, gy + (ry + rh) * scale - 1],
+                           outline=(90, 200, 255, 255))
+        draw.text((gx + 2, gy + tile_h + 2), name, fill=(220, 220, 220, 255))
+    return sheet
+
+
 def main():
     BLOCK_TEX_DIR.mkdir(parents=True, exist_ok=True)
     ITEM_TEX_DIR.mkdir(parents=True, exist_ok=True)
+    ARMOR_TEX_DIR.mkdir(parents=True, exist_ok=True)
     PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 
     generated = []
@@ -644,10 +877,23 @@ def main():
         generated.append((name, img))
         print(f"wrote {out.relative_to(REPO_ROOT)}")
 
+    layers = []
+    for name, make in ARMOR_LAYER_TEXTURES.items():
+        img = make()
+        out = ARMOR_TEX_DIR / f"{name}.png"
+        img.save(out)
+        layers.append((name, img))
+        print(f"wrote {out.relative_to(REPO_ROOT)}")
+
     sheet = contact_sheet(generated)
     sheet_path = PREVIEW_DIR / "blocks_sheet.png"
     sheet.save(sheet_path)
     print(f"wrote {sheet_path.relative_to(REPO_ROOT)}")
+
+    armor_sheet = armor_layer_sheet(layers)
+    armor_sheet_path = PREVIEW_DIR / "armor_layers_sheet.png"
+    armor_sheet.save(armor_sheet_path)
+    print(f"wrote {armor_sheet_path.relative_to(REPO_ROOT)}")
 
 
 if __name__ == "__main__":
