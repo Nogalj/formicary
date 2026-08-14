@@ -13,6 +13,9 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FLOOR_TOP;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.HARDENED_ACCENT_THRESHOLD_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_THICKNESS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_THRESHOLD;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_XZ_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MIN_Y;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.RAMP_AIR_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.RAMP_CENTER_RADIUS;
@@ -69,6 +72,7 @@ public final class ColonyNoise {
     private final PerlinNoise chamberLarge;
     private final PerlinNoise accent;
     private final PerlinNoise wallJitter;
+    private final PerlinNoise membrane;
 
     public ColonyNoise(PositionalRandomFactory factory) {
         this.factory = factory;
@@ -78,6 +82,7 @@ public final class ColonyNoise {
         this.chamberLarge = octave(factory, "colony_chamber_large");
         this.accent = octave(factory, "colony_accent");
         this.wallJitter = octave(factory, "colony_wall_jitter");
+        this.membrane = octave(factory, "colony_membrane");
     }
 
     private static PerlinNoise octave(PositionalRandomFactory factory, String name) {
@@ -278,6 +283,39 @@ public final class ColonyNoise {
     }
 
     // ------------------------------------------------------------------
+    // Daylight Membrane -- the M5 exit, embedded in the ceiling cap
+    // ------------------------------------------------------------------
+
+    /**
+     * Whether the ceiling block at (x, y, z) is a Daylight Membrane rather than plain cap.
+     *
+     * <p>Three conditions, all necessary:
+     * <ul>
+     *   <li>{@code y} is in the bottom {@link ColonyGeneratorTunables#MEMBRANE_THICKNESS}
+     *       layers of the cap, so the patch is flush with the ceiling's underside.</li>
+     *   <li>The block directly below the cap is air, so the patch is actually <i>visible</i>
+     *       from inside the Upper Galleries. Roughly two thirds of the ceiling in this
+     *       dimension is backed by solid fabric; a patch there would be a decoration nobody
+     *       ever sees, and would make the reachability number a lie.</li>
+     *   <li>The 2D patch field is above {@link ColonyGeneratorTunables#MEMBRANE_THRESHOLD}.</li>
+     * </ul>
+     *
+     * <p>The visibility test reads {@link #isAir} at a fixed Y rather than the chunk, so it
+     * stays a pure function of world position -- the same property that lets
+     * {@code ColonyChunkGenerator#getBaseColumn} and the chunk fill agree without either
+     * looking at the other's output.
+     */
+    public boolean isDaylightMembrane(Shaft[] columnShafts, int x, int y, int z) {
+        if (y < CEILING_BOTTOM || y >= CEILING_BOTTOM + MEMBRANE_THICKNESS) {
+            return false;
+        }
+        if (!isAir(columnShafts, x, CEILING_BOTTOM - 1, z)) {
+            return false;
+        }
+        return probeMembrane(x, z) > MEMBRANE_THRESHOLD;
+    }
+
+    // ------------------------------------------------------------------
     // Raw field readouts -- only for NoiseProbe and addDebugScreenInfo. Thresholds in
     // ColonyGeneratorTunables are in these units, so being able to print the real span of
     // each field is what keeps them tuned from measurement rather than from guesswork.
@@ -303,6 +341,11 @@ public final class ColonyNoise {
 
     public double probeAccent(int x, int y, int z) {
         return this.accent.getValue(x * ACCENT_XZ_SCALE, y * ACCENT_Y_SCALE, z * ACCENT_XZ_SCALE);
+    }
+
+    /** The Daylight Membrane patch field, before the threshold and the visibility mask. */
+    public double probeMembrane(int x, int z) {
+        return this.membrane.getValue(x * MEMBRANE_XZ_SCALE, 0.0, z * MEMBRANE_XZ_SCALE);
     }
 
     // ------------------------------------------------------------------

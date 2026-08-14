@@ -113,8 +113,12 @@ public class ColonyChunkGenerator extends ChunkGenerator {
     /** Resolved once at construction, which happens at world load, long after registration. */
     private final BlockState[] fabricStates;
 
+    /** The M5 exit block, patched into the ceiling cap. Resolved with the fabric states. */
+    private final BlockState membraneState;
+
     public ColonyChunkGenerator(BiomeSource biomeSource) {
         super(biomeSource);
+        this.membraneState = ModBlocks.DAYLIGHT_MEMBRANE.get().defaultBlockState();
         this.fabricStates = new BlockState[5];
         this.fabricStates[ColonyNoise.FABRIC_PACKED_SOIL] = ModBlocks.PACKED_SOIL.get().defaultBlockState();
         this.fabricStates[ColonyNoise.FABRIC_AMBER_EARTH] = ModBlocks.AMBER_EARTH.get().defaultBlockState();
@@ -182,7 +186,9 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                             sectionIndex = index;
                             section = chunk.getSection(index);
                         }
-                        BlockState state = this.fabricStates[noise.fabricKind(x, y, z)];
+                        BlockState state = noise.isDaylightMembrane(columnShafts, x, y, z)
+                                ? this.membraneState
+                                : this.fabricStates[noise.fabricKind(x, y, z)];
                         section.setBlockState(localX, y & 15, localZ, state, false);
                         oceanFloor.update(localX, y, localZ, state);
                         worldSurface.update(localX, y, localZ, state);
@@ -559,7 +565,13 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         BlockState[] column = new BlockState[height.getHeight()];
         for (int i = 0; i < column.length; i++) {
             int y = bottom + i;
-            column[i] = noise.isAir(shafts, x, y, z) ? AIR : this.fabricStates[noise.fabricKind(x, y, z)];
+            if (noise.isAir(shafts, x, y, z)) {
+                column[i] = AIR;
+            } else if (noise.isDaylightMembrane(shafts, x, y, z)) {
+                column[i] = this.membraneState;
+            } else {
+                column[i] = this.fabricStates[noise.fabricKind(x, y, z)];
+            }
         }
         return new NoiseColumn(bottom, column);
     }

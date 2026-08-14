@@ -10,6 +10,7 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierMaxY;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierMinY;
 
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.Locale;
 
@@ -48,7 +49,11 @@ public final class NoiseProbe {
         if (what.equals("all") || what.equals("stats")) {
             rawNoiseDistribution(noise);
             airFractions(noise, seed);
+            membranes(noise);
             connectivity(noise);
+        }
+        if (what.equals("membrane")) {
+            membranes(noise);
         }
         if (what.equals("all") || what.equals("slices")) {
             // Slice straight through the ramp axis nearest the origin, so the connectivity
@@ -81,6 +86,127 @@ public final class NoiseProbe {
         field(noise, "chamberSmall (v > t)", false, (x, y, z) -> noise.probeChamberSmall(x, y, z));
         field(noise, "chamberLarge (v > t)", false, (x, y, z) -> noise.probeChamberLarge(x, y, z));
         field(noise, "accent (v > t)", false, (x, y, z) -> noise.probeAccent(x, y, z));
+        field(noise, "membrane (v > t, 2D)", false, (x, y, z) -> noise.probeMembrane(x, z));
+    }
+
+    /** Candidate {@code MEMBRANE_THRESHOLD} values the sweep below reports on. */
+    private static final double[] MEMBRANE_THRESHOLD_LADDER = {-0.10, 0.00, 0.10, 0.20, 0.30, 0.40, 0.50};
+
+    /**
+     * The M5 acceptance criterion for the exit: from anywhere under the Upper Galleries
+     * ceiling, how far is the nearest <i>visible</i> Daylight Membrane?
+     *
+     * <p>Two numbers matter and neither is the raw field coverage. Visible coverage is the
+     * fraction of ceiling columns that actually turn into membrane, which the patch field
+     * alone badly overstates: only about an eighth of the ceiling in this dimension has air
+     * under it at all, and a patch anywhere else is a decoration nobody ever sees. Distance
+     * is a multi-source BFS over <b>every</b> column -- straight-line-ish (Manhattan), not a
+     * walk -- reported over the exposed columns only. Straight line rather than a path
+     * because the spec's "one patch reachable within ~40-60 blocks of any point" is a
+     * spatial-density statement; the ceiling's exposed columns are islands in plan view and
+     * measuring 4-connectivity between them says nothing about whether a player can get
+     * there (they walk on the floor, tens of blocks below).
+     *
+     * <p>Every candidate threshold is reported in one pass so the live constant can be
+     * chosen against measured numbers rather than nudged and re-run.
+     */
+    private static void membranes(ColonyNoise noise) {
+        int span = SAMPLE_RADIUS * 2;
+        boolean[] exposed = new boolean[span * span];
+        double[] field = new double[span * span];
+        ColonyNoise.Shaft[] cached = null;
+        int cachedChunkX = Integer.MIN_VALUE;
+        int cachedChunkZ = Integer.MIN_VALUE;
+
+        int exposedCount = 0;
+        for (int ix = 0; ix < span; ix++) {
+            int x = ix - SAMPLE_RADIUS;
+            for (int iz = 0; iz < span; iz++) {
+                int z = iz - SAMPLE_RADIUS;
+                int chunkX = x >> 4;
+                int chunkZ = z >> 4;
+                if (chunkX != cachedChunkX || chunkZ != cachedChunkZ) {
+                    cached = noise.shaftsNear(chunkX << 4, chunkZ << 4);
+                    cachedChunkX = chunkX;
+                    cachedChunkZ = chunkZ;
+                }
+                ColonyNoise.Shaft[] col = noise.shaftsForColumn(cached, x, z);
+                int i = ix * span + iz;
+                exposed[i] = noise.isAir(col, x, CEILING_BOTTOM - 1, z);
+                field[i] = noise.probeMembrane(x, z);
+                if (exposed[i]) {
+                    exposedCount++;
+                }
+            }
+        }
+
+        System.out.printf(Locale.ROOT, "%ndaylight membranes over %dx%d blocks (scale %.4f):%n",
+                span, span, ColonyGeneratorTunables.MEMBRANE_XZ_SCALE);
+        System.out.printf(Locale.ROOT, "  ceiling with air under it: %5.2f%% of columns%n",
+                100.0 * exposedCount / (span * span));
+        System.out.println("  threshold  fieldCover  visibleCover   dist-to-nearest (blocks, over exposed columns)");
+        for (double threshold : MEMBRANE_THRESHOLD_LADDER) {
+            membraneRow(span, exposed, exposedCount, field, threshold);
+        }
+        System.out.printf(Locale.ROOT, "  live MEMBRANE_THRESHOLD = %.2f%n",
+                ColonyGeneratorTunables.MEMBRANE_THRESHOLD);
+    }
+
+    private static void membraneRow(int span, boolean[] exposed, int exposedCount, double[] field, double threshold) {
+        int[] dist = new int[span * span];
+        Arrays.fill(dist, -1);
+        Deque<Integer> queue = new ArrayDeque<>();
+        int fieldCount = 0;
+        int patchCount = 0;
+        for (int i = 0; i < dist.length; i++) {
+            if (field[i] > threshold) {
+                fieldCount++;
+                if (exposed[i]) {
+                    patchCount++;
+                    dist[i] = 0;
+                    queue.add(i);
+                }
+            }
+        }
+        if (patchCount == 0) {
+            System.out.printf(Locale.ROOT, "  %8.2f  %9.2f%%  %11.2f%%   (no visible patch in sample)%n",
+                    threshold, 100.0 * fieldCount / dist.length, 0.0);
+            return;
+        }
+
+        while (!queue.isEmpty()) {
+            int i = queue.poll();
+            int ix = i / span;
+            int iz = i % span;
+            for (int d = 0; d < 4; d++) {
+                int nx = ix + (d == 0 ? 1 : d == 1 ? -1 : 0);
+                int nz = iz + (d == 2 ? 1 : d == 3 ? -1 : 0);
+                if (nx < 0 || nz < 0 || nx >= span || nz >= span) {
+                    continue;
+                }
+                int j = nx * span + nz;
+                if (dist[j] >= 0) {
+                    continue;
+                }
+                dist[j] = dist[i] + 1;
+                queue.add(j);
+            }
+        }
+
+        int[] sorted = new int[exposedCount];
+        int n = 0;
+        long sum = 0;
+        for (int i = 0; i < dist.length; i++) {
+            if (exposed[i]) {
+                sorted[n++] = dist[i];
+                sum += dist[i];
+            }
+        }
+        Arrays.sort(sorted, 0, n);
+        System.out.printf(Locale.ROOT,
+                "  %8.2f  %9.2f%%  %11.2f%%   mean %5.1f  median %3d  p95 %3d  max %3d%n",
+                threshold, 100.0 * fieldCount / dist.length, 100.0 * patchCount / dist.length,
+                (double) sum / n, sorted[n / 2], sorted[(int) (n * 0.95)], sorted[n - 1]);
     }
 
     private interface Field {

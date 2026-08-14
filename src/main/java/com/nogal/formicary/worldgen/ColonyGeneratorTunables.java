@@ -38,7 +38,7 @@ public final class ColonyGeneratorTunables {
 
     /** Solid Hardened Soil cap at the bottom -- never carved, so there is no exposed void. */
     public static final int FLOOR_THICKNESS = 5;
-    /** Solid Packed Soil cap at the top. M5 embeds exit membranes here; keep it plain. */
+    /** Solid Packed Soil cap at the top, apart from the M5 membrane patches below. */
     public static final int CEILING_THICKNESS = 6;
 
     /** Lowest carvable Y. */
@@ -185,6 +185,70 @@ public final class ColonyGeneratorTunables {
     public static final double[] ROYAL_COMB_CHANCE_BY_TIER = {0.004, 0.008, 0.000, 0.000};
     /** Royal Depths' sparse amber accents: Resin Block exposed in a wall. */
     public static final double[] RESIN_BLOCK_CHANCE_BY_TIER = {0.020, 0.000, 0.000, 0.000};
+
+    // ------------------------------------------------------------------
+    // Daylight Membrane exit patches (M5) -- the way out, embedded in the ceiling cap
+    //
+    // Deliberately a 2D field: a patch is a hole in the roof, and a roof is flat. It is
+    // masked by "is the block directly under the cap actually air", so a patch only ever
+    // appears where a player standing in the Upper Galleries can see it -- which is also
+    // why the threshold has to be generous. Roughly two thirds of ceiling columns in this
+    // dimension sit over solid fabric, so a patch that lands there is invisible and does
+    // not count toward reachability. NoiseProbe's `membrane` section measures what these
+    // two numbers actually produce (coverage, and the distance from an exposed ceiling
+    // point to the nearest visible patch); do not change them without re-running it.
+    // ------------------------------------------------------------------
+
+    /**
+     * Horizontal sampling scale of the patch field. Feature size is about {@code 1/scale}
+     * blocks, so 0.035 gives roughly 29-block cells. Chosen over a coarser 0.022 because
+     * the coarse field left blob-free regions with the nearest exit 110-135 blocks away
+     * however the threshold was set; smaller, more numerous cells bring the worst case in
+     * without making the patches themselves any bigger.
+     */
+    public static final double MEMBRANE_XZ_SCALE = 0.035;
+
+    /**
+     * A patch forms where the field is above this. Lower = more and bigger patches. The
+     * field is single-octave Perlin, measured span about [-0.90, 0.91], so 0.30 keeps the
+     * peaks only: 10-16% of columns, which after the visibility mask is 1.0-1.8% of the
+     * ceiling. Measured distance from an exposed ceiling point to the nearest visible patch
+     * (NoiseProbe, {@code -PprobeWhat=membrane}), median / p95 / max in blocks:
+     * <pre>
+     *   seed 1234567 : 24 /  47 /  56
+     *   seed 42      : 22 /  61 /  86
+     *   seed 987654321: 21 / 54 /  61
+     * </pre>
+     * against the spec's "roughly one patch reachable within ~40-60 blocks of any point".
+     * 0.40 was rejected: it holds on two seeds but drifts to median 53 / max 102 on the
+     * third.
+     */
+    public static final double MEMBRANE_THRESHOLD = 0.30;
+
+    /**
+     * How many layers of the ceiling cap a patch replaces, counting up from
+     * {@link #CEILING_BOTTOM}. Two, so breaking the exposed layer does not delete the exit.
+     */
+    public static final int MEMBRANE_THICKNESS = 2;
+
+    // ------------------------------------------------------------------
+    // Arrival pocket (M5) -- where an ender pearl thrown at an anthill puts the player
+    // ------------------------------------------------------------------
+
+    /** Highest Y the arrival search will stand a player on. Leaves headroom under the cap. */
+    public static final int ENTRY_SCAN_TOP = CEILING_BOTTOM - 2;
+
+    /** Lowest Y the arrival search will accept -- still well inside the Upper Galleries. */
+    public static final int ENTRY_SCAN_BOTTOM = MIN_Y + 3 * TIER_HEIGHT + 4;
+
+    /** Where a pocket gets carved when the scan finds no natural floor at the anthill's XZ. */
+    public static final int ENTRY_CARVE_FLOOR_Y = 168;
+
+    /** Half-width of the carved pocket in X/Z; 2 gives a 5x5 footprint. */
+    public static final int ENTRY_CARVE_RADIUS = 2;
+
+    /** Air blocks carved above the pocket floor. */
+    public static final int ENTRY_CARVE_HEIGHT = 4;
 
     // ------------------------------------------------------------------
     // Mob spawning at chunk generation (see ColonyChunkGenerator#spawnOriginalMobs)
