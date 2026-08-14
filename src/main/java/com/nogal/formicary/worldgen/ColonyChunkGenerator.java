@@ -14,6 +14,12 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ROOMY_CLEARAN
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ROYAL_COMB_CHANCE_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SPAWN_FLOOR_ATTEMPTS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SPAWN_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_BROOD_COMB_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_DAIS_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_EGG_CLUSTER_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_RESIN_BLOCK_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_RESIN_WEEP_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_ROYAL_COMB_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.TIER_COUNT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierIndex;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierMaxY;
@@ -116,9 +122,13 @@ public class ColonyChunkGenerator extends ChunkGenerator {
     /** The M5 exit block, patched into the ceiling cap. Resolved with the fabric states. */
     private final BlockState membraneState;
 
+    /** The M7 throne chamber's plinth block. */
+    private final BlockState daisState;
+
     public ColonyChunkGenerator(BiomeSource biomeSource) {
         super(biomeSource);
         this.membraneState = ModBlocks.DAYLIGHT_MEMBRANE.get().defaultBlockState();
+        this.daisState = ModBlocks.RESIN_BLOCK.get().defaultBlockState();
         this.fabricStates = new BlockState[5];
         this.fabricStates[ColonyNoise.FABRIC_PACKED_SOIL] = ModBlocks.PACKED_SOIL.get().defaultBlockState();
         this.fabricStates[ColonyNoise.FABRIC_AMBER_EARTH] = ModBlocks.AMBER_EARTH.get().defaultBlockState();
@@ -160,6 +170,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         int top = Math.min(MIN_Y + HEIGHT, chunk.getMaxBuildHeight());
 
         ColonyNoise.Shaft[] chunkShafts = noise.shaftsNear(minX, minZ);
+        ColonyNoise.Throne[] chunkThrones = noise.thronesNear(minX, minZ);
         Heightmap oceanFloor = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.OCEAN_FLOOR_WG);
         Heightmap worldSurface = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.WORLD_SURFACE_WG);
 
@@ -175,10 +186,11 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                 for (int localZ = 0; localZ < 16; localZ++) {
                     int z = minZ + localZ;
                     ColonyNoise.Shaft[] columnShafts = noise.shaftsForColumn(chunkShafts, x, z);
+                    ColonyNoise.Throne[] columnThrones = noise.thronesForColumn(chunkThrones, x, z);
                     int sectionIndex = -1;
                     LevelChunkSection section = null;
                     for (int y = top - 1; y >= bottom; y--) {
-                        if (noise.isAir(columnShafts, x, y, z)) {
+                        if (noise.isAir(columnShafts, columnThrones, x, y, z)) {
                             continue;
                         }
                         int index = chunk.getSectionIndex(y);
@@ -186,9 +198,16 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                             sectionIndex = index;
                             section = chunk.getSection(index);
                         }
-                        BlockState state = noise.isDaylightMembrane(columnShafts, x, y, z)
-                                ? this.membraneState
-                                : this.fabricStates[noise.fabricKind(x, y, z)];
+                        BlockState state;
+                        if (noise.isDaylightMembrane(columnShafts, columnThrones, x, y, z)) {
+                            state = this.membraneState;
+                        } else if (noise.isThroneDais(columnThrones, x, y, z)) {
+                            // The queen's plinth: resin, so the dais reads as built rather
+                            // than as a lump the carve happened to leave behind.
+                            state = this.daisState;
+                        } else {
+                            state = this.fabricStates[noise.fabricKind(x, y, z)];
+                        }
                         section.setBlockState(localX, y & 15, localZ, state, false);
                         oceanFloor.update(localX, y, localZ, state);
                         worldSurface.update(localX, y, localZ, state);
@@ -232,21 +251,24 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         }
 
         byte[] airRun = airRunLengths(noise, chunk, minX, minZ, bottom, top);
+        ColonyNoise.Throne[] chunkThrones = noise.thronesNear(minX, minZ);
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 
         for (int localX = 0; localX < 16; localX++) {
             int x = minX + localX;
             for (int localZ = 0; localZ < 16; localZ++) {
                 int z = minZ + localZ;
+                ColonyNoise.Throne[] columnThrones = noise.thronesForColumn(chunkThrones, x, z);
                 for (int y = bottom; y < top; y++) {
                     int tier = tierIndex(y);
+                    boolean throne = noise.isInThroneRoom(columnThrones, x, y, z);
                     boolean here = run(airRun, localX + 1, localZ + 1, y, bottom, top) > 0;
                     if (here) {
                         decorateFloorSpace(chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z, tier,
-                                bottom, top);
+                                throne, bottom, top);
                     } else {
                         decorateSurface(chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z, tier,
-                                bottom, top);
+                                throne, bottom, top);
                     }
                 }
             }
@@ -279,10 +301,12 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                         column[y - bottom] = chunk.getBlockState(cursor.set(x, y, z)).isAir();
                     }
                 } else {
-                    ColonyNoise.Shaft[] shafts = noise.shaftsForColumn(
-                            noise.shaftsNear(x - Math.floorMod(x, 16), z - Math.floorMod(z, 16)), x, z);
+                    int chunkX = x - Math.floorMod(x, 16);
+                    int chunkZ = z - Math.floorMod(z, 16);
+                    ColonyNoise.Shaft[] shafts = noise.shaftsForColumn(noise.shaftsNear(chunkX, chunkZ), x, z);
+                    ColonyNoise.Throne[] thrones = noise.thronesForColumn(noise.thronesNear(chunkX, chunkZ), x, z);
                     for (int y = bottom; y < top; y++) {
-                        column[y - bottom] = noise.isAir(shafts, x, y, z);
+                        column[y - bottom] = noise.isAir(shafts, thrones, x, y, z);
                     }
                 }
 
@@ -318,7 +342,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
     /** Air standing on a floor: fungus, carpet, egg clusters. */
     private void decorateFloorSpace(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
             PositionalRandomFactory randomFactory, byte[] airRun, int localX, int localZ,
-            int x, int y, int z, int tier, int bottom, int top) {
+            int x, int y, int z, int tier, boolean throne, int bottom, int top) {
         boolean solidBelow = run(airRun, localX + 1, localZ + 1, y - 1, bottom, top) == 0;
         if (!solidBelow || run(airRun, localX + 1, localZ + 1, y + 1, bottom, top) == 0) {
             return;
@@ -326,6 +350,13 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         boolean roomy = run(airRun, localX + 1, localZ + 1, y, bottom, top) >= ROOMY_CLEARANCE + 1;
 
         double roll = randomFactory.at(x, y, z).nextDouble();
+        if (throne) {
+            // The queen's floor: egg clusters, nothing fungal (the Royal Depths grow none).
+            if (roomy && roll < THRONE_EGG_CLUSTER_CHANCE) {
+                chunk.setBlockState(cursor.set(x, y, z), ModBlocks.EGG_CLUSTER.get().defaultBlockState(), false);
+            }
+            return;
+        }
         double cumulative = FUNGAL_BLOOM_CHANCE_BY_TIER[tier];
         if (roll < cumulative) {
             chunk.setBlockState(cursor.set(x, y, z), ModBlocks.FUNGAL_BLOOM.get().defaultBlockState(), false);
@@ -347,7 +378,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
     /** Solid fabric with air against it: comb lining, resin weeps, amber veins. */
     private void decorateSurface(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
             PositionalRandomFactory randomFactory, byte[] airRun, int localX, int localZ,
-            int x, int y, int z, int tier, int bottom, int top) {
+            int x, int y, int z, int tier, boolean throne, int bottom, int top) {
         int above = run(airRun, localX + 1, localZ + 1, y + 1, bottom, top);
         int below = run(airRun, localX + 1, localZ + 1, y - 1, bottom, top);
         int north = run(airRun, localX + 1, localZ, y, bottom, top);
@@ -362,6 +393,10 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         boolean sideOrCeiling = below > 0 || north > 0 || south > 0 || west > 0 || east > 0;
 
         double roll = randomFactory.at(x, y, z).nextDouble();
+        if (throne) {
+            decorateThroneSurface(chunk, cursor, x, y, z, roll, sideOrCeiling);
+            return;
+        }
         double cumulative = 0.0;
         if (roomy) {
             cumulative += ROYAL_COMB_CHANCE_BY_TIER[tier];
@@ -384,6 +419,39 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             cumulative += RESIN_BLOCK_CHANCE_BY_TIER[tier];
             if (roll < cumulative) {
                 chunk.setBlockState(cursor.set(x, y, z), ModBlocks.RESIN_BLOCK.get().defaultBlockState(), false);
+            }
+        }
+    }
+
+    /**
+     * The throne chamber's own dressing (M7): comb and resin, laid on thick.
+     *
+     * <p>The per-tier chances are skipped entirely rather than scaled, because the Royal
+     * Depths' Royal Comb chance is 0.004 -- a multiplier big enough to matter here would be
+     * absurd everywhere else. This is where the block belongs: the spec makes Royal Comb the
+     * non-boss source of Royal Jelly, and the queen's chamber is the room it names.
+     */
+    private void decorateThroneSurface(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
+            int x, int y, int z, double roll, boolean sideOrCeiling) {
+        double cumulative = THRONE_ROYAL_COMB_CHANCE;
+        if (roll < cumulative) {
+            chunk.setBlockState(cursor.set(x, y, z), ModBlocks.ROYAL_COMB.get().defaultBlockState(), false);
+            return;
+        }
+        cumulative += THRONE_BROOD_COMB_CHANCE;
+        if (roll < cumulative) {
+            chunk.setBlockState(cursor.set(x, y, z), ModBlocks.BROOD_COMB.get().defaultBlockState(), false);
+            return;
+        }
+        cumulative += THRONE_RESIN_BLOCK_CHANCE;
+        if (roll < cumulative) {
+            chunk.setBlockState(cursor.set(x, y, z), ModBlocks.RESIN_BLOCK.get().defaultBlockState(), false);
+            return;
+        }
+        if (sideOrCeiling) {
+            cumulative += THRONE_RESIN_WEEP_CHANCE;
+            if (roll < cumulative) {
+                chunk.setBlockState(cursor.set(x, y, z), ModBlocks.RESIN_WEEP.get().defaultBlockState(), false);
             }
         }
     }
@@ -559,16 +627,20 @@ public class ColonyChunkGenerator extends ChunkGenerator {
     @Override
     public NoiseColumn getBaseColumn(int x, int z, LevelHeightAccessor height, RandomState random) {
         ColonyNoise noise = noise(random);
-        ColonyNoise.Shaft[] shafts = noise.shaftsForColumn(
-                noise.shaftsNear(x - Math.floorMod(x, 16), z - Math.floorMod(z, 16)), x, z);
+        int chunkX = x - Math.floorMod(x, 16);
+        int chunkZ = z - Math.floorMod(z, 16);
+        ColonyNoise.Shaft[] shafts = noise.shaftsForColumn(noise.shaftsNear(chunkX, chunkZ), x, z);
+        ColonyNoise.Throne[] thrones = noise.thronesForColumn(noise.thronesNear(chunkX, chunkZ), x, z);
         int bottom = height.getMinBuildHeight();
         BlockState[] column = new BlockState[height.getHeight()];
         for (int i = 0; i < column.length; i++) {
             int y = bottom + i;
-            if (noise.isAir(shafts, x, y, z)) {
+            if (noise.isAir(shafts, thrones, x, y, z)) {
                 column[i] = AIR;
-            } else if (noise.isDaylightMembrane(shafts, x, y, z)) {
+            } else if (noise.isDaylightMembrane(shafts, thrones, x, y, z)) {
                 column[i] = this.membraneState;
+            } else if (noise.isThroneDais(thrones, x, y, z)) {
+                column[i] = this.daisState;
             } else {
                 column[i] = this.fabricStates[noise.fabricKind(x, y, z)];
             }

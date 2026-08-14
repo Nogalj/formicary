@@ -51,9 +51,13 @@ public final class NoiseProbe {
             airFractions(noise, seed);
             membranes(noise);
             connectivity(noise);
+            thrones(noise);
         }
         if (what.equals("membrane")) {
             membranes(noise);
+        }
+        if (what.equals("throne")) {
+            thrones(noise);
         }
         if (what.equals("all") || what.equals("slices")) {
             // Slice straight through the ramp axis nearest the origin, so the connectivity
@@ -115,6 +119,7 @@ public final class NoiseProbe {
         boolean[] exposed = new boolean[span * span];
         double[] field = new double[span * span];
         ColonyNoise.Shaft[] cached = null;
+        ColonyNoise.Throne[] cachedThrones = null;
         int cachedChunkX = Integer.MIN_VALUE;
         int cachedChunkZ = Integer.MIN_VALUE;
 
@@ -127,12 +132,14 @@ public final class NoiseProbe {
                 int chunkZ = z >> 4;
                 if (chunkX != cachedChunkX || chunkZ != cachedChunkZ) {
                     cached = noise.shaftsNear(chunkX << 4, chunkZ << 4);
+                    cachedThrones = noise.thronesNear(chunkX << 4, chunkZ << 4);
                     cachedChunkX = chunkX;
                     cachedChunkZ = chunkZ;
                 }
                 ColonyNoise.Shaft[] col = noise.shaftsForColumn(cached, x, z);
+                ColonyNoise.Throne[] tcol = noise.thronesForColumn(cachedThrones, x, z);
                 int i = ix * span + iz;
-                exposed[i] = noise.isAir(col, x, CEILING_BOTTOM - 1, z);
+                exposed[i] = noise.isAir(col, tcol, x, CEILING_BOTTOM - 1, z);
                 field[i] = noise.probeMembrane(x, z);
                 if (exposed[i]) {
                     exposedCount++;
@@ -253,6 +260,7 @@ public final class NoiseProbe {
         long[] floors = new long[TIER_COUNT];
 
         ColonyNoise.Shaft[] cached = null;
+        ColonyNoise.Throne[] cachedThrones = null;
         int cachedChunkX = Integer.MIN_VALUE;
         int cachedChunkZ = Integer.MIN_VALUE;
 
@@ -262,15 +270,17 @@ public final class NoiseProbe {
                 int chunkZ = z >> 4;
                 if (chunkX != cachedChunkX || chunkZ != cachedChunkZ) {
                     cached = noise.shaftsNear(chunkX << 4, chunkZ << 4);
+                    cachedThrones = noise.thronesNear(chunkX << 4, chunkZ << 4);
                     cachedChunkX = chunkX;
                     cachedChunkZ = chunkZ;
                 }
                 ColonyNoise.Shaft[] col = noise.shaftsForColumn(cached, x, z);
+                ColonyNoise.Throne[] tcol = noise.thronesForColumn(cachedThrones, x, z);
                 boolean belowAir = false;
                 for (int y = MIN_Y; y < MIN_Y + HEIGHT; y++) {
                     int tier = tierIndex(y);
                     total[tier]++;
-                    boolean isAir = noise.isAir(col, x, y, z);
+                    boolean isAir = noise.isAir(col, tcol, x, y, z);
                     if (isAir) {
                         air[tier]++;
                         if (noise.shaftState(col, x, y, z) == ColonyNoise.SHAFT_AIR) {
@@ -280,7 +290,7 @@ public final class NoiseProbe {
                         } else {
                             chamber[tier]++;
                         }
-                        if (!belowAir && y + 1 < MIN_Y + HEIGHT && noise.isAir(col, x, y + 1, z)) {
+                        if (!belowAir && y + 1 < MIN_Y + HEIGHT && noise.isAir(col, tcol, x, y + 1, z)) {
                             floors[tier]++;
                         }
                     }
@@ -321,6 +331,7 @@ public final class NoiseProbe {
         int half = SLAB / 2;
         boolean[] air = new boolean[SLAB * SLAB * HEIGHT];
         ColonyNoise.Shaft[] cached = null;
+        ColonyNoise.Throne[] cachedThrones = null;
         int cachedChunkX = Integer.MIN_VALUE;
         int cachedChunkZ = Integer.MIN_VALUE;
         for (int ix = 0; ix < SLAB; ix++) {
@@ -331,12 +342,14 @@ public final class NoiseProbe {
                 int chunkZ = z >> 4;
                 if (chunkX != cachedChunkX || chunkZ != cachedChunkZ) {
                     cached = noise.shaftsNear(chunkX << 4, chunkZ << 4);
+                    cachedThrones = noise.thronesNear(chunkX << 4, chunkZ << 4);
                     cachedChunkX = chunkX;
                     cachedChunkZ = chunkZ;
                 }
                 ColonyNoise.Shaft[] col = noise.shaftsForColumn(cached, x, z);
+                ColonyNoise.Throne[] tcol = noise.thronesForColumn(cachedThrones, x, z);
                 for (int y = 0; y < HEIGHT; y++) {
-                    air[index(ix, y, iz)] = noise.isAir(col, x, MIN_Y + y, z);
+                    air[index(ix, y, iz)] = noise.isAir(col, tcol, x, MIN_Y + y, z);
                 }
             }
         }
@@ -416,6 +429,166 @@ public final class NoiseProbe {
                 : "  FAIL: cannot walk from the Upper Galleries into the Royal Depths.");
     }
 
+    /**
+     * M7's acceptance criterion: the queen's chamber has to be somewhere a player can
+     * <i>walk into</i>, and the boss is the one piece of content that is unrecoverable if
+     * it generates sealed.
+     *
+     * <p>Reports every chamber in the 3x3 cells around the origin (position, floor Y, the
+     * ramp it hangs off, distance from spawn), then runs the same symmetric walkability BFS
+     * {@link #connectivity} uses over a box containing one chamber and its ramp -- seeded
+     * from the ramp's walkway only. If the dais top is reached, the room is enterable on
+     * foot from the connectivity spine, and the spine is already known to reach the surface.
+     */
+    private static void thrones(ColonyNoise noise) {
+        System.out.printf(Locale.ROOT,
+                "%nthrone chambers (one per %d-block cell, radius %.0f, interior %d tall):%n",
+                ColonyGeneratorTunables.THRONE_SPACING, ColonyGeneratorTunables.THRONE_RADIUS,
+                ColonyGeneratorTunables.THRONE_WALL_HEIGHT + ColonyGeneratorTunables.THRONE_DOME_HEIGHT);
+
+        ColonyNoise.Throne[] near = noise.thronesNear(0, 0);
+        ColonyNoise.Throne closest = near[0];
+        for (ColonyNoise.Throne throne : near) {
+            double distance = Math.hypot(throne.centreX(), throne.centreZ());
+            System.out.printf(Locale.ROOT,
+                    "  centre (%7.1f, %7.1f)  floorY %3d  ramp axis (%7.1f, %7.1f)  %6.1f blocks from origin%n",
+                    throne.centreX(), throne.centreZ(), throne.floorY(), throne.axisX(), throne.axisZ(), distance);
+            if (distance < Math.hypot(closest.centreX(), closest.centreZ())) {
+                closest = throne;
+            }
+        }
+        throneWalk(noise, closest);
+    }
+
+    private static void throneWalk(ColonyNoise noise, ColonyNoise.Throne throne) {
+        int centreX = (int) Math.round(throne.centreX());
+        int centreZ = (int) Math.round(throne.centreZ());
+        int axisX = (int) Math.round(throne.axisX());
+        int axisZ = (int) Math.round(throne.axisZ());
+        int minX = Math.min(centreX, axisX) - 24;
+        int minZ = Math.min(centreZ, axisZ) - 24;
+        int span = Math.max(Math.max(centreX, axisX) - minX, Math.max(centreZ, axisZ) - minZ) + 25;
+
+        boolean[] air = new boolean[span * span * HEIGHT];
+        for (int ix = 0; ix < span; ix++) {
+            int x = minX + ix;
+            for (int iz = 0; iz < span; iz++) {
+                int z = minZ + iz;
+                ColonyNoise.Shaft[] col = noise.shaftsForColumn(
+                        noise.shaftsNear(x - Math.floorMod(x, 16), z - Math.floorMod(z, 16)), x, z);
+                ColonyNoise.Throne[] tcol = noise.thronesForColumn(
+                        noise.thronesNear(x - Math.floorMod(x, 16), z - Math.floorMod(z, 16)), x, z);
+                for (int y = 0; y < HEIGHT; y++) {
+                    air[(ix * HEIGHT + y) * span + iz] = noise.isAir(col, tcol, x, MIN_Y + y, z);
+                }
+            }
+        }
+
+        boolean[] standable = new boolean[air.length];
+        for (int ix = 0; ix < span; ix++) {
+            for (int iz = 0; iz < span; iz++) {
+                for (int y = 1; y < HEIGHT - 1; y++) {
+                    int i = (ix * HEIGHT + y) * span + iz;
+                    if (air[i] && air[i + span] && !air[i - span]) {
+                        standable[i] = true;
+                    }
+                }
+            }
+        }
+
+        // Seed from the ramp's own walkway only: the question is whether the chamber joins
+        // the connectivity spine, not whether it joins some nearby noise pocket.
+        boolean[] seen = new boolean[air.length];
+        Deque<Integer> queue = new ArrayDeque<>();
+        int seeds = 0;
+        for (int ix = 0; ix < span; ix++) {
+            int x = minX + ix;
+            for (int iz = 0; iz < span; iz++) {
+                int z = minZ + iz;
+                if (Math.hypot(x - throne.axisX(), z - throne.axisZ()) > ColonyGeneratorTunables.SHAFT_MAX_REACH) {
+                    continue;
+                }
+                ColonyNoise.Shaft[] col = noise.shaftsForColumn(
+                        noise.shaftsNear(x - Math.floorMod(x, 16), z - Math.floorMod(z, 16)), x, z);
+                for (int y = 1; y < HEIGHT - 1; y++) {
+                    int i = (ix * HEIGHT + y) * span + iz;
+                    if (standable[i] && !seen[i]
+                            && noise.shaftState(col, x, MIN_Y + y, z) == ColonyNoise.SHAFT_AIR) {
+                        seen[i] = true;
+                        queue.add(i);
+                        seeds++;
+                    }
+                }
+            }
+        }
+
+        while (!queue.isEmpty()) {
+            int cur = queue.poll();
+            int iz = cur % span;
+            int y = (cur / span) % HEIGHT;
+            int ix = cur / (span * HEIGHT);
+            throneStep(queue, seen, standable, span, ix + 1, y, iz);
+            throneStep(queue, seen, standable, span, ix - 1, y, iz);
+            throneStep(queue, seen, standable, span, ix, y, iz + 1);
+            throneStep(queue, seen, standable, span, ix, y, iz - 1);
+        }
+
+        int daisTop = throne.floorY() + ColonyGeneratorTunables.THRONE_DAIS_HEIGHT + 1;
+        int daisIndex = ((centreX - minX) * HEIGHT + (daisTop - MIN_Y)) * span + (centreZ - minZ);
+        boolean reached = seen[daisIndex];
+
+        // Count only the room's own Y band, so the number is about the chamber rather than
+        // about every noise pocket that happens to share its footprint.
+        int roomFloors = 0;
+        int roomReached = 0;
+        int interiorTop = throne.floorY() + ColonyGeneratorTunables.THRONE_WALL_HEIGHT
+                + ColonyGeneratorTunables.THRONE_DOME_HEIGHT;
+        for (int ix = 0; ix < span; ix++) {
+            int x = minX + ix;
+            for (int iz = 0; iz < span; iz++) {
+                int z = minZ + iz;
+                if (Math.hypot(x - throne.centreX(), z - throne.centreZ()) > ColonyGeneratorTunables.THRONE_RADIUS) {
+                    continue;
+                }
+                for (int y = throne.floorY() + 1; y <= interiorTop; y++) {
+                    int i = (ix * HEIGHT + (y - MIN_Y)) * span + iz;
+                    if (standable[i]) {
+                        roomFloors++;
+                        if (seen[i]) {
+                            roomReached++;
+                        }
+                    }
+                }
+            }
+        }
+
+        System.out.printf(Locale.ROOT,
+                "  nearest chamber: centre (%d, %d) floor y=%d, dais top y=%d%n"
+                        + "  ramp walkway seeds: %d; standable floors in the room's own band: %d, reached: %d%n",
+                centreX, centreZ, throne.floorY(), daisTop, seeds, roomFloors, roomReached);
+        System.out.println(reached
+                ? "  PASS: the queen's dais is walkable from the connectivity ramp (edges are symmetric, so also back out)."
+                : "  FAIL: the throne chamber does not join the ramp on foot.");
+    }
+
+    private static void throneStep(Deque<Integer> queue, boolean[] seen, boolean[] standable, int span,
+            int ix, int y, int iz) {
+        if (ix < 0 || iz < 0 || ix >= span || iz >= span) {
+            return;
+        }
+        for (int dy = -1; dy <= 1; dy++) {
+            int ny = y + dy;
+            if (ny < 1 || ny >= HEIGHT - 1) {
+                continue;
+            }
+            int i = (ix * HEIGHT + ny) * span + iz;
+            if (standable[i] && !seen[i]) {
+                seen[i] = true;
+                queue.add(i);
+            }
+        }
+    }
+
     /** Walk into a neighbouring column, allowing at most a one-block rise or fall. */
     private static void step(Deque<Integer> queue, boolean[] seen, boolean[] standable, int ix, int y, int iz) {
         if (ix < 0 || iz < 0 || ix >= SLAB || iz >= SLAB) {
@@ -450,7 +623,8 @@ public final class NoiseProbe {
             StringBuilder row = new StringBuilder();
             for (int x = centreX - 24; x < centreX + 24; x++) {
                 ColonyNoise.Shaft[] col = noise.shaftsForColumn(noise.shaftsNear(x & ~15, z & ~15), x, z);
-                if (!noise.isAir(col, x, y, z)) {
+                ColonyNoise.Throne[] tcol = noise.thronesForColumn(noise.thronesNear(x & ~15, z & ~15), x, z);
+                if (!noise.isAir(col, tcol, x, y, z)) {
                     row.append(noise.shaftState(col, x, y, z) == ColonyNoise.SHAFT_SOLID ? '_' : glyph(tierIndex(y)));
                 } else {
                     row.append(noise.shaftState(col, x, y, z) == ColonyNoise.SHAFT_AIR ? 'o' : ' ');
@@ -468,7 +642,8 @@ public final class NoiseProbe {
             StringBuilder row = new StringBuilder();
             for (int x = -60; x < 60; x++) {
                 ColonyNoise.Shaft[] col = noise.shaftsForColumn(noise.shaftsNear(x & ~15, z & ~15), x, z);
-                if (!noise.isAir(col, x, y, z)) {
+                ColonyNoise.Throne[] tcol = noise.thronesForColumn(noise.thronesNear(x & ~15, z & ~15), x, z);
+                if (!noise.isAir(col, tcol, x, y, z)) {
                     row.append(noise.shaftState(col, x, y, z) == ColonyNoise.SHAFT_SOLID ? '_' : '#');
                 } else {
                     row.append(noise.shaftState(col, x, y, z) == ColonyNoise.SHAFT_AIR ? 'o' : ' ');

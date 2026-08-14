@@ -25,6 +25,21 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ROYAL_RESIN_T
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SHAFT_JITTER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SHAFT_MAX_REACH;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SHAFT_SPACING;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_APPROACH_DISTANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_CORRIDOR_END;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_CORRIDOR_HALF_WIDTH;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_CORRIDOR_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_CORRIDOR_START;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_DAIS_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_DAIS_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_DAIS_STEP_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_DOME_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_FLOOR_MIN_Y;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_MAX_REACH;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_SHELL_THICKNESS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_SPACING;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_WALL_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.TIER_COUNT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.TIER_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.TUNNEL_HALF_WIDTH_BY_TIER;
@@ -228,6 +243,198 @@ public final class ColonyNoise {
     }
 
     // ------------------------------------------------------------------
+    // The queen's throne chamber (M7)
+    // ------------------------------------------------------------------
+
+    /**
+     * One throne chamber: a domed room centred at ({@code centreX}, {@code centreZ}) whose
+     * floor is at {@code floorY}, joined to the connectivity ramp at
+     * ({@code axisX}, {@code axisZ}) by a straight corridor running along the unit vector
+     * ({@code dirX}, {@code dirZ}).
+     */
+    public record Throne(double centreX, double centreZ, double axisX, double axisZ,
+            double dirX, double dirZ, int floorY) {
+    }
+
+    /** {@link #throneState} verdicts. */
+    public static final int THRONE_NONE = 0;
+    public static final int THRONE_AIR = 1;
+    public static final int THRONE_SOLID = -1;
+    /** The raised platform the queen is seated on -- solid, but a different block. */
+    public static final int THRONE_DAIS = -2;
+
+    public static final Throne[] NO_THRONES = new Throne[0];
+
+    /**
+     * The chamber belonging to one {@link ColonyGeneratorTunables#THRONE_SPACING} cell.
+     *
+     * <p>Its XZ is <em>derived from a connectivity ramp</em> rather than jittered freely,
+     * and that is the whole trick: the chamber sits {@code THRONE_APPROACH_DISTANCE} from
+     * the ramp axis at a seed-chosen bearing, and its floor is set to the exact height the
+     * ramp's walkway reaches at that bearing. So the approach corridor -- carved flat at
+     * that height, straight back to the axis -- lands on the spine's walkway, and the room
+     * is reachable by construction. Placing the room at a free XZ instead would have made
+     * "can the player get in?" a property of the noise, which is exactly the sort of thing
+     * the M4a walkability work established cannot be assumed.
+     *
+     * <p>The ramp floor at bearing {@code t} is {@code MIN_Y + t / RAMP_RADIANS_PER_BLOCK}
+     * plus any whole number of {@link #RAMP_PERIOD}s; the turn taken is the first one at or
+     * above {@link ColonyGeneratorTunables#THRONE_FLOOR_MIN_Y}, which keeps the whole room
+     * (13 of interior plus its shell) inside the Royal Depths band.
+     */
+    private Throne throneForCell(int cellX, int cellZ) {
+        // y = 1 rather than 0 so this never draws the same stream as shaftForCell.
+        RandomSource random = this.factory.at(cellX, 1, cellZ);
+        int centreX = cellX * THRONE_SPACING + THRONE_SPACING / 2;
+        int centreZ = cellZ * THRONE_SPACING + THRONE_SPACING / 2;
+        Shaft shaft = shaftForCell(Math.floorDiv(centreX, SHAFT_SPACING), Math.floorDiv(centreZ, SHAFT_SPACING));
+
+        double approach = random.nextDouble() * TWO_PI;
+        double dirX = Math.cos(approach);
+        double dirZ = Math.sin(approach);
+
+        // Same bearing arithmetic shaftState uses, so the two agree on where the floor is.
+        double bearing = approach - shaft.phase();
+        bearing -= Math.floor(bearing / TWO_PI) * TWO_PI;
+        double base = MIN_Y + bearing / RAMP_RADIANS_PER_BLOCK;
+        int turn = (int) Math.ceil((THRONE_FLOOR_MIN_Y - base) / RAMP_PERIOD);
+        int floorY = (int) Math.floor(base + turn * RAMP_PERIOD);
+
+        return new Throne(shaft.axisX() + THRONE_APPROACH_DISTANCE * dirX,
+                shaft.axisZ() + THRONE_APPROACH_DISTANCE * dirZ,
+                shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY);
+    }
+
+    /**
+     * Every throne chamber that can possibly reach into the 16x16 area rooted at
+     * ({@code blockMinX}, {@code blockMinZ}).
+     *
+     * <p>A 3x3 cell neighbourhood is far more than enough -- a chamber's centre lands
+     * within 66 blocks of its cell centre (24 to the ramp cell, 8 of ramp jitter, 34 of
+     * approach) and reaches {@link ColonyGeneratorTunables#THRONE_MAX_REACH} from there,
+     * so no chamber ever crosses a 224-block cell boundary -- but it is kept at 3x3 so the
+     * pruning stays correct if those numbers are retuned.
+     */
+    public Throne[] thronesNear(int blockMinX, int blockMinZ) {
+        int cellX = Math.floorDiv(blockMinX, THRONE_SPACING);
+        int cellZ = Math.floorDiv(blockMinZ, THRONE_SPACING);
+        Throne[] out = new Throne[9];
+        int i = 0;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                out[i++] = throneForCell(cellX + dx, cellZ + dz);
+            }
+        }
+        return out;
+    }
+
+    /** Chambers from {@code candidates} whose carve can reach the column at (x, z). */
+    public Throne[] thronesForColumn(Throne[] candidates, int x, int z) {
+        int count = 0;
+        Throne[] scratch = new Throne[candidates.length];
+        for (Throne throne : candidates) {
+            double dx = x - throne.centreX();
+            double dz = z - throne.centreZ();
+            if (dx * dx + dz * dz <= THRONE_MAX_REACH * THRONE_MAX_REACH) {
+                scratch[count++] = throne;
+            }
+        }
+        if (count == 0) {
+            return NO_THRONES;
+        }
+        Throne[] out = new Throne[count];
+        System.arraycopy(scratch, 0, out, 0, count);
+        return out;
+    }
+
+    /**
+     * What a throne chamber says about (x, y, z): the dais, the shell, the hollow interior,
+     * the approach corridor, or nothing.
+     *
+     * <p>Order matters. The dais outranks the interior (it is a plinth standing in the
+     * room), and the corridor outranks the shell (it is the doorway through it).
+     */
+    public int throneState(Throne[] thrones, int x, int y, int z) {
+        for (Throne throne : thrones) {
+            double dx = x - throne.centreX();
+            double dz = z - throne.centreZ();
+            double distance = Math.sqrt(dx * dx + dz * dz);
+            int height = y - throne.floorY();
+
+            if (height >= 1 && height <= THRONE_DAIS_HEIGHT && distance <= THRONE_DAIS_RADIUS) {
+                return THRONE_DAIS;
+            }
+            // One-block step ring, so the plinth can be climbed rather than only fallen off.
+            if (height == 1 && distance <= THRONE_DAIS_STEP_RADIUS) {
+                return THRONE_DAIS;
+            }
+            if (height >= 1 && height <= THRONE_CORRIDOR_HEIGHT && isInCorridor(throne, x, z)) {
+                return THRONE_AIR;
+            }
+            if (isInsideThrone(distance, height, 0.0)) {
+                return THRONE_AIR;
+            }
+            if (isInsideThrone(distance, height, THRONE_SHELL_THICKNESS)) {
+                return THRONE_SOLID;
+            }
+        }
+        return THRONE_NONE;
+    }
+
+    /**
+     * The room's shape: a cylinder of {@link ColonyGeneratorTunables#THRONE_RADIUS} topped
+     * by a half-ellipsoid dome. {@code grow} inflates it in every direction at once, which
+     * is how the shell is derived -- "inside the grown shape but not the real one" -- so
+     * the wall thickness never has to be reasoned about face by face, and the floor slab
+     * below {@code height = 1} comes out of the same expression.
+     */
+    private static boolean isInsideThrone(double distance, double height, double grow) {
+        double radius = THRONE_RADIUS + grow;
+        double dome = THRONE_DOME_HEIGHT + grow;
+        if (height < 1.0 - grow || height > THRONE_WALL_HEIGHT + dome) {
+            return false;
+        }
+        if (height <= THRONE_WALL_HEIGHT) {
+            return distance <= radius;
+        }
+        double t = (height - THRONE_WALL_HEIGHT) / dome;
+        return distance <= radius * Math.sqrt(Math.max(0.0, 1.0 - t * t));
+    }
+
+    /** Whether (x, z) is inside the corridor's footprint, measured along the axis ray. */
+    private static boolean isInCorridor(Throne throne, int x, int z) {
+        double px = x - throne.axisX();
+        double pz = z - throne.axisZ();
+        double along = px * throne.dirX() + pz * throne.dirZ();
+        if (along < THRONE_CORRIDOR_START || along > THRONE_CORRIDOR_END) {
+            return false;
+        }
+        return Math.abs(px * throne.dirZ() - pz * throne.dirX()) <= THRONE_CORRIDOR_HALF_WIDTH;
+    }
+
+    /** Whether the solid block at (x, y, z) is part of a throne chamber's dais. */
+    public boolean isThroneDais(Throne[] thrones, int x, int y, int z) {
+        return thrones.length > 0 && throneState(thrones, x, y, z) == THRONE_DAIS;
+    }
+
+    /** Whether (x, y, z) is inside a throne chamber's hollow (used to pick decoration). */
+    public boolean isInThroneRoom(Throne[] thrones, int x, int y, int z) {
+        if (thrones.length == 0) {
+            return false;
+        }
+        for (Throne throne : thrones) {
+            double dx = x - throne.centreX();
+            double dz = z - throne.centreZ();
+            double distance = Math.sqrt(dx * dx + dz * dz);
+            double height = y - throne.floorY();
+            if (isInsideThrone(distance, height, THRONE_SHELL_THICKNESS)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------
     // Noise carve
     // ------------------------------------------------------------------
 
@@ -265,8 +472,13 @@ public final class ColonyNoise {
      * where a cathedral chamber would have hollowed it out. Without that the ramp loses its
      * walkway wherever a big room crosses it and the descent becomes a one-way drop, which
      * is a soft-lock: mining the fabric is gated behind a full set of Chitin Armor.
+     *
+     * <p>The throne chamber (M7) sits <em>below</em> the spine in that order, deliberately:
+     * it may carve through the noise and force its own shell solid, but it never overrides
+     * a ramp floor or a ramp walkway. That keeps M4a's walkability guarantee exactly as it
+     * was -- the room hangs off the spine, it does not cut into it.
      */
-    public boolean isAir(Shaft[] columnShafts, int x, int y, int z) {
+    public boolean isAir(Shaft[] columnShafts, Throne[] columnThrones, int x, int y, int z) {
         if (y < FLOOR_TOP || y >= CEILING_BOTTOM) {
             return false;
         }
@@ -276,6 +488,15 @@ public final class ColonyNoise {
                 return true;
             }
             if (state == SHAFT_SOLID) {
+                return false;
+            }
+        }
+        if (columnThrones.length > 0) {
+            int state = throneState(columnThrones, x, y, z);
+            if (state == THRONE_AIR) {
+                return true;
+            }
+            if (state != THRONE_NONE) {
                 return false;
             }
         }
@@ -305,11 +526,11 @@ public final class ColonyNoise {
      * {@code ColonyChunkGenerator#getBaseColumn} and the chunk fill agree without either
      * looking at the other's output.
      */
-    public boolean isDaylightMembrane(Shaft[] columnShafts, int x, int y, int z) {
+    public boolean isDaylightMembrane(Shaft[] columnShafts, Throne[] columnThrones, int x, int y, int z) {
         if (y < CEILING_BOTTOM || y >= CEILING_BOTTOM + MEMBRANE_THICKNESS) {
             return false;
         }
-        if (!isAir(columnShafts, x, CEILING_BOTTOM - 1, z)) {
+        if (!isAir(columnShafts, columnThrones, x, CEILING_BOTTOM - 1, z)) {
             return false;
         }
         return probeMembrane(x, z) > MEMBRANE_THRESHOLD;

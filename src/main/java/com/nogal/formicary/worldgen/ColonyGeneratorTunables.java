@@ -255,6 +255,98 @@ public final class ColonyGeneratorTunables {
     public static final int ENTRY_CARVE_HEIGHT = 4;
 
     // ------------------------------------------------------------------
+    // The queen's throne chamber (M7) -- a rare domed room in the Royal Depths
+    //
+    // Rarity is a grid, like the connectivity shafts: one chamber per THRONE_SPACING
+    // cell, so a committed explorer always finds one and most entry points have none.
+    //
+    // The chamber is deliberately NOT placed at a free XZ. It hangs off the nearest
+    // connectivity ramp at a fixed offset, and its floor is set to the exact Y that
+    // ramp's walkway reaches at the approach bearing -- which is what makes the
+    // approach corridor meet the spine at a walkable height by construction rather
+    // than by luck. See ColonyNoise#throneForCell for the arithmetic.
+    // ------------------------------------------------------------------
+
+    /** One throne chamber per this many blocks on each axis. */
+    public static final int THRONE_SPACING = 224;
+
+    /** Interior radius of the chamber: 14 gives a 28-block-wide room. */
+    public static final double THRONE_RADIUS = 14.0;
+
+    /** Height of the vertical wall before the dome starts, above the floor. */
+    public static final int THRONE_WALL_HEIGHT = 6;
+
+    /** Height of the dome above the wall. Interior clearance is the sum: 13. */
+    public static final int THRONE_DOME_HEIGHT = 7;
+
+    /** How thick the forced-solid shell around the interior is. */
+    public static final double THRONE_SHELL_THICKNESS = 2.0;
+
+    /** Radius of the raised dais the queen is seated on. */
+    public static final double THRONE_DAIS_RADIUS = 4.0;
+
+    /** Layers of dais above the chamber floor. The queen stands one block above it. */
+    public static final int THRONE_DAIS_HEIGHT = 2;
+
+    /**
+     * Radius of the one-block step ring around the dais.
+     *
+     * <p>Not decoration: without it the dais is a two-block ledge, which nothing can climb.
+     * {@code NoiseProbe -PprobeWhat=throne} caught exactly that -- the room joined the ramp
+     * but the plinth itself was unreachable, so the queen could step off it and never get
+     * back, and her home-restriction goal would have spent the fight pathing at a wall.
+     */
+    public static final double THRONE_DAIS_STEP_RADIUS = 7.0;
+
+    /**
+     * Distance from the ramp axis to the chamber's centre. Must exceed
+     * {@code THRONE_RADIUS + THRONE_SHELL_THICKNESS + SHAFT_MAX_REACH} so the helicoid
+     * never intrudes into the room itself -- at 34 the nearest the ramp's carve gets to
+     * the interior is 34 - 11.6 - 14 = 8 blocks of solid fabric.
+     */
+    public static final double THRONE_APPROACH_DISTANCE = 34.0;
+
+    /** Half-width of the approach corridor; 1.5 gives a 3-block-wide passage. */
+    public static final double THRONE_CORRIDOR_HALF_WIDTH = 1.5;
+
+    /** Air blocks carved above the corridor floor. */
+    public static final int THRONE_CORRIDOR_HEIGHT = 4;
+
+    /** Where the corridor starts, measured from the ramp axis outward. */
+    public static final double THRONE_CORRIDOR_START = 3.0;
+
+    /** Where it stops -- just inside the chamber's shell, which is already air. */
+    public static final double THRONE_CORRIDOR_END =
+            THRONE_APPROACH_DISTANCE - THRONE_RADIUS + 2.0;
+
+    /**
+     * Lowest floor the chamber will sit at. The ramp turn chosen is the first one at or
+     * above this, and the ramp descends {@code 2*PI / RAMP_RADIANS_PER_BLOCK} = 24 blocks
+     * per turn, so the floor always lands in {@code [8, 33)} and the interior
+     * ({@code floor + 13}) plus its shell stays inside the Royal Depths band (y &lt; 48).
+     */
+    public static final int THRONE_FLOOR_MIN_Y = 8;
+
+    /**
+     * Widest a chamber's carve can reach from its centre; used to prune the per-column
+     * search. The corridor, not the dome, is what sets it: its far end sits
+     * {@code THRONE_APPROACH_DISTANCE - THRONE_CORRIDOR_START} from the centre.
+     */
+    public static final double THRONE_MAX_REACH = Math.max(
+            THRONE_RADIUS + THRONE_SHELL_THICKNESS,
+            THRONE_APPROACH_DISTANCE - THRONE_CORRIDOR_START + THRONE_CORRIDOR_HALF_WIDTH) + 1.0;
+
+    // --- decoration inside the chamber, replacing the per-tier chances above ---
+    // This is the Royal Comb's natural home: the non-boss source of Royal Jelly, and
+    // the reason a throne room is worth walking into even before the fight.
+
+    public static final double THRONE_ROYAL_COMB_CHANCE = 0.090;
+    public static final double THRONE_BROOD_COMB_CHANCE = 0.060;
+    public static final double THRONE_RESIN_WEEP_CHANCE = 0.050;
+    public static final double THRONE_RESIN_BLOCK_CHANCE = 0.040;
+    public static final double THRONE_EGG_CLUSTER_CHANCE = 0.060;
+
+    // ------------------------------------------------------------------
     // Mob spawning at chunk generation (see ColonyChunkGenerator#spawnOriginalMobs)
     // ------------------------------------------------------------------
 
