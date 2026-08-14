@@ -9,6 +9,7 @@ import com.nogal.formicary.item.ModArmorMaterials;
 import com.nogal.formicary.item.ModCreativeModeTabs;
 import com.nogal.formicary.item.ModItems;
 import com.nogal.formicary.loot.ModLootConditions;
+import com.nogal.formicary.worldgen.ModWorldgen;
 
 import net.minecraft.world.item.CreativeModeTabs;
 import net.neoforged.bus.api.IEventBus;
@@ -34,6 +35,10 @@ public class Formicary {
         ModItems.ITEMS.register(modEventBus);
         ModCreativeModeTabs.CREATIVE_MODE_TABS.register(modEventBus);
         ModLootConditions.LOOT_CONDITION_TYPES.register(modEventBus);
+        // The dimension JSON names our generator and biome source by type id, so their
+        // MapCodecs must be in the registries before any world loads.
+        ModWorldgen.CHUNK_GENERATORS.register(modEventBus);
+        ModWorldgen.BIOME_SOURCES.register(modEventBus);
 
         modEventBus.addListener(this::addCreative);
 
