@@ -120,6 +120,15 @@ public class LarvaEntity extends PathfinderMob {
                 if (this.level() instanceof ServerLevel level) {
                     if (this.growInto(level, caste, player) != null) {
                         held.consume(1, player);
+                        if (player instanceof net.minecraft.server.level.ServerPlayer sp) {
+                            boolean hasWorker = !level.getEntitiesOfClass(TamedWorkerAntEntity.class,
+                                    player.getBoundingBox().inflate(256), e -> player.getUUID().equals(e.getOwnerUUID())).isEmpty();
+                            boolean hasSoldier = !level.getEntitiesOfClass(TamedSoldierAntEntity.class,
+                                    player.getBoundingBox().inflate(256), e -> player.getUUID().equals(e.getOwnerUUID())).isEmpty();
+                            if (hasWorker && hasSoldier) {
+                                com.nogal.formicary.ModAdvancementTriggers.RAISE_BOTH_CASTES.get().trigger(sp);
+                            }
+                        }
                     }
                 }
                 return InteractionResult.sidedSuccess(this.level().isClientSide);

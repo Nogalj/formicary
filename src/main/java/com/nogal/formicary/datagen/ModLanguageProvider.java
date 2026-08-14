@@ -85,5 +85,19 @@ public class ModLanguageProvider extends LanguageProvider {
         add("item.minecraft.splash_potion.effect.pheromonal_disguise", "Splash Potion of Pheromonal Disguise");
         add("item.minecraft.lingering_potion.effect.pheromonal_disguise", "Lingering Potion of Pheromonal Disguise");
         add("item.minecraft.tipped_arrow.effect.pheromonal_disguise", "Arrow of Pheromonal Disguise");
+        add("advancements.formicary.root.title", "Formicary");
+        add("advancements.formicary.root.description", "Discover the colony beneath the savanna.");
+        add("advancements.formicary.enter_dimension.title", "Down the Tunnel");
+        add("advancements.formicary.enter_dimension.description", "Enter the Formicary dimension for the first time.");
+        add("advancements.formicary.brew_disguise.title", "Smells Like One of Them");
+        add("advancements.formicary.brew_disguise.description", "Brew a Potion of Pheromonal Disguise.");
+        add("advancements.formicary.capture_larva.title", "Found the Brood");
+        add("advancements.formicary.capture_larva.description", "Pick up a larva from the Nurseries.");
+        add("advancements.formicary.defeat_queen.title", "Regicide");
+        add("advancements.formicary.defeat_queen.description", "Defeat the Queen Ant.");
+        add("advancements.formicary.first_harvest.title", "A Good Worker");
+        add("advancements.formicary.first_harvest.description", "Your tamed worker ant deposits its first harvest.");
+        add("advancements.formicary.raise_both_castes.title", "Colony of Your Own");
+        add("advancements.formicary.raise_both_castes.description", "Raise both a worker ant and a soldier ant.");
     }
 }

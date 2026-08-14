@@ -1,0 +1,27 @@
+{
+  "parent": "formicary:root",
+  "criteria": {
+    "raised_castes": {
+      "trigger": "formicary:raise_both_castes"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.formicary.raise_both_castes.description"
+    },
+    "frame": "goal",
+    "icon": {
+      "count": 1,
+      "id": "formicary:royal_jelly"
+    },
+    "title": {
+      "translate": "advancements.formicary.raise_both_castes.title"
+    }
+  },
+  "requirements": [
+    [
+      "raised_castes"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

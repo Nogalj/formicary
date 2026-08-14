@@ -1,0 +1,29 @@
+{
+  "parent": "formicary:root",
+  "criteria": {
+    "entered_formicary": {
+      "conditions": {
+        "to": "formicary:formicary"
+      },
+      "trigger": "minecraft:changed_dimension"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.formicary.enter_dimension.description"
+    },
+    "icon": {
+      "count": 1,
+      "id": "formicary:anthill_soil"
+    },
+    "title": {
+      "translate": "advancements.formicary.enter_dimension.title"
+    }
+  },
+  "requirements": [
+    [
+      "entered_formicary"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

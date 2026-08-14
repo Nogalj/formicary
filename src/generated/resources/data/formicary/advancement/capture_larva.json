@@ -1,0 +1,33 @@
+{
+  "parent": "formicary:root",
+  "criteria": {
+    "has_larva": {
+      "conditions": {
+        "items": [
+          {
+            "items": "formicary:larva"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.formicary.capture_larva.description"
+    },
+    "icon": {
+      "count": 1,
+      "id": "formicary:larva"
+    },
+    "title": {
+      "translate": "advancements.formicary.capture_larva.title"
+    }
+  },
+  "requirements": [
+    [
+      "has_larva"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

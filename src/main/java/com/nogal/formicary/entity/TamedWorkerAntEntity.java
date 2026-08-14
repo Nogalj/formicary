@@ -311,6 +311,10 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
             moved |= remainder.getCount() != before;
         }
         this.syncCarriedItem();
+        net.minecraft.world.entity.LivingEntity owner = this.getOwner();
+        if (owner instanceof net.minecraft.server.level.ServerPlayer sp) {
+            com.nogal.formicary.ModAdvancementTriggers.FIRST_TAMED_HARVEST.get().trigger(sp);
+        }
         return moved;
     }
 

@@ -1,0 +1,26 @@
+{
+  "parent": "formicary:root",
+  "criteria": {
+    "first_harvest": {
+      "trigger": "formicary:first_tamed_harvest"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.formicary.first_harvest.description"
+    },
+    "icon": {
+      "count": 1,
+      "id": "formicary:chitin"
+    },
+    "title": {
+      "translate": "advancements.formicary.first_harvest.title"
+    }
+  },
+  "requirements": [
+    [
+      "first_harvest"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

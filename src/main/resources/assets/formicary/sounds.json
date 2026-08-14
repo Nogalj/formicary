@@ -1,0 +1,18 @@
+{
+  "entity.worker_ant.ambient": {
+    "subtitle": "subtitles.entity.worker_ant.ambient",
+    "sounds": []
+  },
+  "entity.soldier_ant.ambient": {
+    "subtitle": "subtitles.entity.soldier_ant.ambient",
+    "sounds": []
+  },
+  "entity.larva.ambient": {
+    "subtitle": "subtitles.entity.larva.ambient",
+    "sounds": []
+  },
+  "entity.queen_ant.ambient": {
+    "subtitle": "subtitles.entity.queen_ant.ambient",
+    "sounds": []
+  }
+}
