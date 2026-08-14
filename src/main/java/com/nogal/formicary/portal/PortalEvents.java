@@ -113,14 +113,17 @@ public final class PortalEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return;
         }
-        TrailPath path = player.getData(ModAttachments.TRAIL_PATH);
         if (player.level().dimension() != ModWorldgen.FORMICARY_LEVEL) {
-            if (path.size() > 0 || path.isLit()) {
-                path.clear();
-            }
+            // getExistingData, not getData: the latter stores its default in the holder, so
+            // asking it here would hang an empty ring buffer on every player on the server
+            // who has never been anywhere near the colony.
+            player.getExistingData(ModAttachments.TRAIL_PATH)
+                    .filter(existing -> existing.size() > 0 || existing.isLit())
+                    .ifPresent(TrailPath::clear);
             return;
         }
 
+        TrailPath path = player.getData(ModAttachments.TRAIL_PATH);
         path.record(player.blockPosition());
         if (path.tickLitTrail()) {
             drawTrail(player, path.litTrail());
