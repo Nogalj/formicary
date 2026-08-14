@@ -185,3 +185,76 @@ meaningfully change gameplay go to Logan instead of here.
   never calls `ColonyAnger.provoke` or anything that reaches the `// M4: strip disguise
   here` seam, so the "capturing a larva does NOT break the disguise" requirement holds by
   construction, not by an added check.
+
+## M5 Portals
+
+- **The anthill is a `minecraft:jigsaw` structure with a one-element template pool**, not one
+  of the friendlier-sounding types. Checked against the vanilla JSONs in the client-extra
+  jar: `desert_pyramid`, `igloo` and `swamp_hut` all name a structure type whose pieces are
+  generated in Java, so their JSON has no way to point at a template. `minecraft:jigsaw` is
+  the only registered type a datapack can hand an arbitrary `.nbt` to, and with `size: 1`
+  and a template containing no jigsaw blocks the expansion pass is a no-op -- so it behaves
+  exactly like a single-piece structure.
+- **The mound is 5 blocks wide even though the spec says ~7.** Entry detection is "the core
+  or any block within 2 blocks of a core", implemented as a Chebyshev radius-2 cube around
+  the core at template (3, 2, 3). A wider mound would have corners outside that cube, i.e.
+  parts of a visible anthill that silently swallow a pearl. The 7 comes from the flat ring
+  of excavated soil at template y=0, which replaces the surface block around the mound and
+  reads (correctly) as spoil dug out of the nest.
+- **`anthill.nbt` deliberately lists no air.** `StructureTemplate.placeInWorld` only touches
+  positions present in `blocks`, so omitting air stamps the mound onto the savanna instead
+  of carving a 7x5x7 box of air around it first. A vanilla-saved structure does list its
+  air, which is the entire reason `legacy_single_pool_element` (with
+  `BlockIgnoreProcessor.STRUCTURE_AND_AIR`) exists; hand-writing the NBT sidesteps the
+  question and lets the regular `single_pool_element` be used.
+- **`terrain_adaptation: beard_thin`**, matching `pillager_outpost` -- another surface
+  structure with a flat base plate. Without it the mound floats where the savanna slopes.
+- **Membrane patches are masked by "is there air under the ceiling here".** Only ~12% of the
+  Upper Galleries ceiling has air below it (the tier is narrow tunnels, not open cavern), so
+  an unmasked patch field would put most of its output inside solid rock -- invisible, and
+  making any "one patch within N blocks" claim meaningless. The mask is `ColonyNoise#isAir`
+  at a fixed Y, which keeps the whole thing a pure function of position, so the chunk fill
+  and `getBaseColumn` agree without either reading the other's output.
+- **Membrane scale/threshold picked from a measurement, not by eye.** `NoiseProbe` gained a
+  `membrane` section that sweeps a ladder of thresholds and reports visible coverage plus
+  the distance from an exposed ceiling point to the nearest patch. 0.022 was rejected: at
+  every threshold it left blob-free regions 110-135 blocks from an exit. 0.035 / 0.30 gives
+  median 21-24, p95 47-61, max 56-86 across three seeds.
+- **The arrival pocket only ever removes solid blocks.** The dimension's no-soft-lock
+  guarantee is a helicoid ramp whose floor is *forced solid* so a chamber cannot swallow the
+  walkway (`ColonyNoise#shaftState`). Dropping a 5x5 slab of soil at a fixed Y would be the
+  one operation in the mod that can put blocks back into that carve, so the carve instead
+  searches for a Y that already has ground beneath it and hollows upward from there. The
+  single exception is patching holes in the pocket's own floor, which at worst raises a ramp
+  walkway by one block -- still passable, since the ramp is carved three tall.
+- **Arrival takes the HIGHEST legal Y in the Upper Galleries**, not the nearest to a target.
+  The spec's whole vertical structure is "the player enters at the TOP and descends", so
+  entering near the ceiling is the correct read of "an Upper Galleries entry chamber".
+- **Exit puts the player beside the mound, not on it.** The summit is one block wide; landing
+  there is a slide off a cone. The search tries a ring at radius 4 (just outside the
+  structure's 7x7 footprint, on open savanna) before falling back to the summit and then to
+  the heightmap position.
+- **The entry anthill attachment is `copyOnDeath()`.** Dying in the colony is the expected
+  outcome of a bad run rather than an edge case, and respawning without a recorded anthill
+  would strand the player's exit route behind a fresh trip through a savanna.
+- **The breadcrumb path is NOT persisted across relogs**, per the spec's allowance. It is a
+  session aid for the descent you are currently on; a two-minute-old route through terrain
+  you have since left is worse than no route, and the buffer refills within seconds of
+  walking. It is also cleared whenever the player leaves the dimension.
+- **A used Trail Pheromone freezes a snapshot rather than reading the live buffer.** The
+  player's next move after using one is to walk *back along the trail*, which records new
+  samples straight over the history they are following. This is also why the display state
+  lives on the same per-player attachment as the ring buffer rather than in a static
+  UUID-keyed map: the attachment is already per-player, already server-side, and is cleaned
+  up with the player object instead of needing its own eviction.
+- **Trail particles are sent to the using player alone** (`ServerLevel#sendParticles`'s
+  `ServerPlayer` overload). The trail is that player's own memory of where they walked, not
+  a beacon every other player in the colony can read.
+- **Membrane is checked before anthill core in the impact handler.** The membrane test is an
+  exact block match and the anthill test is a radius search, so checking the exact one first
+  keeps a membrane placed next to a core unambiguous.
+- **Entity hits resolve to the block containing the hit point.** An ant standing on the mound
+  should count as hitting the mound.
+- **`tall_platform` (5x8x5) added to the GameTest arenas.** The 3-tall `platform` cannot stack
+  two candidate landing spots in one column, which is what testing "the floor search takes
+  the highest legal Y" requires.

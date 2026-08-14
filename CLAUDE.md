@@ -220,6 +220,64 @@ is a known-correct 1.21 entity model reference.
   outside the chunk silently wraps to the opposite edge of the *same* chunk instead of
   failing. Anything in worldgen that looks sideways must either stay inside the chunk or
   recompute from a position-pure function. (`verified: 2026-08-13`)
+- **`GameTestHelper.absolutePos(0,0,0)` is the STRUCTURE BLOCK, not the template's own
+  origin** -- the placed template sits one block above it, so a template's `y=0` layer (the
+  arena floor) is at *relative* `y=1`, and standable air starts at relative `y=2`. Every
+  existing test in this repo happens to work either way (they place blocks at rel y=1,
+  overwriting a floor block, and `helper.spawn` pushes entities out of solids), which is why
+  it went unnoticed until M5 wrote a test that read the floor. Rule of thumb for anything
+  height-sensitive: write every block the assertion reads, and derive Ys from
+  `absolutePos` of a position you wrote. (`verified: 2026-08-13`)
+- **A data-driven structure a mod can point at its own `.nbt` must be `minecraft:jigsaw`.**
+  Every other registered structure type (`desert_pyramid`, `igloo`, `swamp_hut`,
+  `ocean_ruin`, ...) generates its pieces in Java, so its JSON has no template field at all
+  -- checked against the vanilla files in
+  `build/moddev/artifacts/neoforge-21.0.167-client-extra-aka-minecraft-resources.jar`, which
+  is the place to read real 1.21 worldgen JSON shapes. Jigsaw with `size: 1` and a
+  one-element `template_pool` is the single-piece case. Datapack dirs (all under
+  `data/<ns>/`): `worldgen/structure`, `worldgen/template_pool`, `worldgen/structure_set`,
+  and the template itself in `structure/`. `spawn_overrides` is a REQUIRED field of every
+  structure JSON; `terrain_adaptation` is optional. Placement: with
+  `"project_start_to_heightmap"` set, `JigsawPlacement.addPieces` moves the piece so
+  `boundingBox.minY() + getGroundLevelDelta() == firstFreeHeight`, and
+  `getGroundLevelDelta()` is **1** and is not overridden by `SinglePoolElement` -- so
+  template `y=0` lands on the topmost solid block (replacing the surface block) and `y=1` is
+  the first block standing proud of the ground. (`verified: 2026-08-13`)
+- **A hand-written structure NBT that omits air leaves the terrain alone.**
+  `StructureTemplate.placeInWorld` only ever touches positions listed in `blocks`, so a
+  template with no air entries stamps its shape onto the world instead of clearing a box
+  first. (Vanilla-saved structures DO list their air, which is why
+  `legacy_single_pool_element` and its `BlockIgnoreProcessor.STRUCTURE_AND_AIR` exist.)
+  `assets-src/structures.py` writes layered templates this way. (`verified: 2026-08-13`)
+- **`ProjectileImpactEvent` cancel does not stop the projectile.** `ThrowableProjectile#tick`
+  reads `if (hit != MISS && !EventHooks.onProjectileImpact(this, hit)) hitTargetOrDeflectSelf(hit);`
+  -- cancelling suppresses `onHit` (and with it the pearl's teleport, fall damage and
+  endermite roll) but leaves the entity alive and still moving, so it must be `discard()`ed
+  explicitly or it fires the event again on the next block. Event class is
+  `net.neoforged.neoforge.event.entity.ProjectileImpactEvent`. Also: there is no bare
+  `PlayerTickEvent` to subscribe to in 1.21 -- it is an abstract `Pre`/`Post` pair under
+  `net.neoforged.neoforge.event.tick`. (`verified: 2026-08-13`)
+- **Data attachments are a real registry**, `NeoForgeRegistries.Keys.ATTACHMENT_TYPES`, so
+  `DeferredRegister.create(...)` + registering `AttachmentType.builder(...).build()` is the
+  pattern. Three traps: `getData` *stores the default in the holder* and so can never mean
+  "absent" -- use `getExistingData` for optional state; `copyOnDeath()` throws unless a
+  serializer was set first, and without it a serialised attachment survives relogs but NOT
+  respawns; and `serialize(Codec)` is the easy route (`BlockPos.CODEC` exists).
+  (`verified: 2026-08-13`)
+- **Cross-dimension teleport in 1.21 is `DimensionTransition`, not `PortalInfo`.** The
+  command-equivalent entry point is
+  `ServerPlayer#teleportTo(ServerLevel, x, y, z, Set<RelativeMovement>, yRot, xRot)` -- it
+  adds the `TicketType.POST_TELEPORT` chunk ticket, then delegates to
+  `teleportTo(ServerLevel, x, y, z, yaw, pitch)`, which routes a cross-dimension move through
+  `changeDimension(new DimensionTransition(...))`. The plain `teleportTo(double, double,
+  double)` cannot change dimension at all. Generate the destination chunk yourself
+  (`level.getChunk(cx, cz)`) before reading blocks there: an ungenerated chunk reads as air
+  all the way down, which looks exactly like a safe landing spot. (`verified: 2026-08-13`)
+- **`RecipeProvider`'s hook is `protected void buildRecipes(RecipeOutput)`** (the
+  `(RecipeOutput, HolderLookup.Provider)` overload just delegates), and its constructor takes
+  the `CompletableFuture<HolderLookup.Provider>` from `GatherDataEvent#getLookupProvider`,
+  not a resolved provider. Output folders are `data/<ns>/recipe/` (singular, like
+  `loot_table`) and `data/<ns>/advancement/recipes/<category>/`. (`verified: 2026-08-13`)
 
 ## Workflow
 
