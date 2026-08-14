@@ -164,6 +164,12 @@ TEMPLATES = {
     # platform puts everything within one step and proves nothing about the walk),
     # and 5 tall so a 0.6-high ant has clear headroom over the farmland layer.
     "farm_platform": (9, 5, 9),
+    # M7's boss arena. The queen's pheromone burst places its soldier wave on a
+    # ring 9 blocks out, so anything narrower drops the reinforcements off the
+    # edge of the world and the test can only assert on an entity that is already
+    # falling. 25x25 puts that whole ring inside the arena with a block to spare,
+    # and 7 tall clears her 1.8-block hitbox with room to jump.
+    "arena_platform": (25, 7, 25),
 }
 
 
