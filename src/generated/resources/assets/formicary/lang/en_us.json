@@ -29,6 +29,8 @@
   "item.formicary.resin": "Resin",
   "item.formicary.scent_gland": "Scent Gland",
   "item.formicary.soldier_ant_spawn_egg": "Soldier Ant Spawn Egg",
+  "item.formicary.trail_pheromone": "Trail Pheromone",
+  "item.formicary.trail_pheromone.no_trail": "No trail to follow yet.",
   "item.formicary.worker_ant_spawn_egg": "Worker Ant Spawn Egg",
   "item.minecraft.lingering_potion.effect.pheromonal_disguise": "Lingering Potion of Pheromonal Disguise",
   "item.minecraft.potion.effect.pheromonal_disguise": "Potion of Pheromonal Disguise",

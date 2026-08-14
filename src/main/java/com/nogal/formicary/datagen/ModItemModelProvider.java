@@ -46,6 +46,7 @@ public class ModItemModelProvider extends ItemModelProvider {
         basicItem(ModItems.CHITIN.get());
         basicItem(ModItems.LARVA.get());
         basicItem(ModItems.SCENT_GLAND.get());
+        basicItem(ModItems.TRAIL_PHEROMONE.get());
 
         basicItem(ModItems.CHITIN_HELMET.get());
         basicItem(ModItems.CHITIN_CHESTPLATE.get());

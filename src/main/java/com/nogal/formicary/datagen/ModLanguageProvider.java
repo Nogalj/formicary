@@ -42,6 +42,9 @@ public class ModLanguageProvider extends LanguageProvider {
         addItem(ModItems.CHITIN, "Chitin");
         addItem(ModItems.LARVA, "Larva");
         addItem(ModItems.SCENT_GLAND, "Scent Gland");
+        addItem(ModItems.TRAIL_PHEROMONE, "Trail Pheromone");
+        // Shown above the hotbar when a pheromone is used with nothing recorded to retrace.
+        add("item.formicary.trail_pheromone.no_trail", "No trail to follow yet.");
 
         addItem(ModItems.CHITIN_HELMET, "Chitin Helmet");
         addItem(ModItems.CHITIN_CHESTPLATE, "Chitin Chestplate");

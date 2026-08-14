@@ -642,6 +642,55 @@ def larva_item():
     return img
 
 
+TRAIL_PHEROMONE_LEGEND = {
+    ".": None,
+    "o": (96, 52, 12, 255),          # dark glass rim
+    "g": (250, 224, 176, 110),       # empty glass, mostly see-through
+    "G": (255, 246, 222, 190),       # lit glass edge
+    "s": AMBER_SPARK,                # specular on the shoulder
+    "F": AMBER_LIGHT,                # fluid surface
+    "f": AMBER_MID,                  # fluid body
+    "d": AMBER_BASE,                 # fluid shaded edge
+    "c": (124, 92, 54, 255),         # cork
+    "C": (156, 120, 76, 255),        # cork, lit
+    "m": (250, 205, 120, 170),       # escaping scent mote
+}
+
+# A stoppered vial, three quarters full. Shares the resin/scent-gland amber ramp so it
+# reads as the same family of colony-made goo, and keeps the silhouette narrow and
+# vertical so it is not mistaken for the Scent Gland's round sac at inventory scale.
+TRAIL_PHEROMONE_MASK = [
+    "................",
+    ".........m......",
+    "......m.........",
+    "......cCCc......",
+    "......cCCc......",
+    "......oGGo......",
+    ".....ogGGgo.....",
+    "....osgGGggo....",
+    "....ogFFFFgo....",
+    "....odffffdo....",
+    "....odffffdo....",
+    "....odffffdo....",
+    "....odffffdo....",
+    "....oddffddo....",
+    ".....oooooo.....",
+    "................",
+]
+
+
+def trail_pheromone_item():
+    """Trail Pheromone (M5): a corked vial of amber pheromone with a mote or two
+    escaping the stopper."""
+    img = paint_mask(TRAIL_PHEROMONE_MASK, TRAIL_PHEROMONE_LEGEND)
+    px = img.load()
+    # specular running down the left of the fluid, and one bright mote on the surface
+    px[5, 9] = AMBER_LIGHT
+    px[5, 10] = AMBER_MID
+    px[6, 8] = AMBER_PALE
+    return img
+
+
 # ---------------------------------------------------------------------------
 # Mob effect icons (M4b) -- 18x18, vanilla's status-icon size (not SIZE=16)
 # ---------------------------------------------------------------------------
@@ -789,18 +838,23 @@ CHITIN_BOOTS_MASK = [
 ]
 
 
-def from_mask(mask):
-    """Paints a 16x16 sprite from a character mask via ARMOR_LEGEND."""
+def paint_mask(mask, legend):
+    """Paints a 16x16 sprite from a character mask and a legend of colours."""
     if len(mask) != SIZE or any(len(row) != SIZE for row in mask):
-        raise ValueError("armor mask must be 16 rows of 16 chars")
+        raise ValueError("mask must be 16 rows of 16 chars")
     img = blank()
     px = img.load()
     for y, row in enumerate(mask):
         for x, ch in enumerate(row):
-            colour = ARMOR_LEGEND[ch]
+            colour = legend[ch]
             if colour is not None:
                 px[x, y] = colour
     return img
+
+
+def from_mask(mask):
+    """Paints a 16x16 sprite from a character mask via ARMOR_LEGEND."""
+    return paint_mask(mask, ARMOR_LEGEND)
 
 
 def chitin_helmet_item():
@@ -1007,6 +1061,7 @@ ITEM_TEXTURES = {
     "chitin": chitin_item,
     "larva": larva_item,
     "scent_gland": scent_gland_item,
+    "trail_pheromone": trail_pheromone_item,
     "chitin_helmet": chitin_helmet_item,
     "chitin_chestplate": chitin_chestplate_item,
     "chitin_leggings": chitin_leggings_item,

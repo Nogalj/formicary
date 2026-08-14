@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_scent_gland": {
+      "conditions": {
+        "items": [
+          {
+            "items": "formicary:scent_gland"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "formicary:trail_pheromone"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_scent_gland"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "formicary:trail_pheromone"
+    ]
+  }
+}

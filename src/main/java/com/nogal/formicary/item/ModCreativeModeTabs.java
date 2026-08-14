@@ -29,6 +29,7 @@ public class ModCreativeModeTabs {
                         output.accept(ModItems.CHITIN.get());
                         output.accept(ModItems.LARVA.get());
                         output.accept(ModItems.SCENT_GLAND.get());
+                        output.accept(ModItems.TRAIL_PHEROMONE.get());
                         output.accept(ModItems.CHITIN_HELMET.get());
                         output.accept(ModItems.CHITIN_CHESTPLATE.get());
                         output.accept(ModItems.CHITIN_LEGGINGS.get());

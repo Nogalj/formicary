@@ -15,7 +15,8 @@ import net.neoforged.neoforge.registries.DeferredRegister;
  * M3a adds chitin (worker/soldier loot) and the larva item (the capture interaction's
  * export good -- placement lands in M6, so it's a plain item for now). M3b adds the
  * four-piece Chitin Armor set, which is what gates mining the dimension's fabric. M4b
- * adds the Scent Gland (worker/soldier loot, brewed into Pheromonal Disguise).
+ * adds the Scent Gland (worker/soldier loot, brewed into Pheromonal Disguise). M5 adds the
+ * Trail Pheromone, the breadcrumb consumable, which is the mod's first crafted item.
  */
 public class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(Formicary.MODID);
@@ -24,6 +25,10 @@ public class ModItems {
     public static final DeferredItem<Item> CHITIN = ITEMS.registerSimpleItem("chitin");
     public static final DeferredItem<Item> LARVA = ITEMS.registerSimpleItem("larva");
     public static final DeferredItem<Item> SCENT_GLAND = ITEMS.registerSimpleItem("scent_gland");
+
+    /** M5: lights up the player's own recorded route back out of the colony. */
+    public static final DeferredItem<TrailPheromoneItem> TRAIL_PHEROMONE =
+            ITEMS.registerItem("trail_pheromone", TrailPheromoneItem::new);
 
     // --- Chitin Armor (spec section 5). No recipes until M8: creative-only for now. ---
 
