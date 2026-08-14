@@ -340,6 +340,44 @@ is a known-correct 1.21 entity model reference.
   the `CompletableFuture<HolderLookup.Provider>` from `GatherDataEvent#getLookupProvider`,
   not a resolved provider. Output folders are `data/<ns>/recipe/` (singular, like
   `loot_table`) and `data/<ns>/advancement/recipes/<category>/`. (`verified: 2026-08-13`)
+- **`ShapedRecipeBuilder.pattern`'s empty-slot character is a literal space (`' '`), not
+  `#`** -- only `' '` is special-cased (and reserved: `.define(' ', ...)` throws); any other
+  character, `#` included, must be `.define`d or `runData` fails with "Pattern references
+  symbol '#' but it's not defined in the key". (`verified: 2026-08-14`)
+- **A `CropBlock` subclass needing a non-default age range must override
+  `createBlockStateDefinition` too, not just `getAgeProperty`/`getMaxAge`.**
+  `CropBlock.createBlockStateDefinition` does `builder.add(AGE)` -- a direct reference to
+  `CropBlock`'s own *static* `AGE` field (`AGE_7`), not `this.getAgeProperty()`. A field
+  reference inside an inherited, unoverridden method is not virtual, so skipping this
+  override silently builds the block with wheat's 8-value property while every other method
+  asks for the subclass's own one -- caught at registration with "Cannot get property ...
+  does not exist in Block". `BeetrootBlock` re-overrides this for the identical reason, and
+  is the pattern to copy wholesale (`getAgeProperty`, `getMaxAge`, `getBaseSeedId`,
+  `randomTick`, `createBlockStateDefinition`, `getShape` if the age count changed the
+  render height too). (`verified: 2026-08-14`)
+- **`CropBlock.getGrowthSpeed` is `static`, so a subclass cannot override it virtually** --
+  `CropBlock.randomTick` calls it unqualified, which resolves at compile time to
+  `CropBlock`'s own copy regardless of the runtime type. To retune growth speed, override
+  `randomTick` itself and gate the `super.randomTick(...)` call behind an extra random
+  check -- `BeetrootBlock` is vanilla's own proof of this exact technique
+  (`random.nextInt(3) != 0`). (`verified: 2026-08-14`)
+- **A custom advancement `CriterionTrigger` registers into `Registries.TRIGGER_TYPE`
+  (`BuiltInRegistries.TRIGGER_TYPES`) via `DeferredRegister`** -- the same shape
+  `ModLootConditions` already uses for `Registries.LOOT_CONDITION_TYPE`. Vanilla's own
+  `CriteriaTriggers` registers each trigger the same way with a bare `new` instead of a
+  deferred constructor reference. A trigger class extends `SimpleCriterionTrigger<T>` (T a
+  record implementing `SimpleCriterionTrigger.SimpleInstance`, at minimum an `Optional
+  <ContextAwarePredicate> player()`); firing is `myTrigger.get().trigger(serverPlayer, ...)`
+  from the gameplay code that earns it. `Advancement`'s own codec rejects an empty criteria
+  map, so even a root advancement needs at least one -- vanilla's `story/root` uses
+  `PlayerTrigger.TriggerInstance.tick()`, a criterion granted the moment the player exists,
+  for exactly this reason. (`verified: 2026-08-14`)
+- **`GameTestHelper.makeMockPlayer` returns a bare `Player`, not a `ServerPlayer`** -- it
+  has no `getAdvancements()`, so a custom `CriterionTrigger`'s actual award cannot be
+  asserted through it. The only alternative, `makeMockServerPlayerInLevel()`, is
+  `@Deprecated(forRemoval = true)` and adds a real player to the level via the player list.
+  A trigger's own matching/predicate logic (a pure function on its `TriggerInstance`) is
+  still directly testable; the award itself is not, headlessly. (`verified: 2026-08-14`)
 
 ## Workflow
 

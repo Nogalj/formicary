@@ -503,3 +503,174 @@ meaningfully change gameplay go to Logan instead of here.
   a later edit can check the arithmetic rather than discover an overlap as a corrupted face.
   `models.py`'s preview renderer also grew a per-model view box: it *clips* rather than scales,
   and the queen is 60 model units nose to abdomen tip against the worker's 16.
+
+## M8 Polish
+
+- **Recipes shipped, exactly per spec section 5's "keep it modest" rule.** Four standard
+  armor-shape Chitin recipes; Resin <-> Resin Block (9:1, both directions shapeless);
+  Resin Block -> Amber Glass (furnace, 0.35 xp, 200 ticks -- "amber is fossilized resin");
+  Brood Comb from 4 Resin in a 2x2 square (a literal reading of "4 resin in a square"); and
+  Fungal Carpet, 3 for 2 Fungal Bloom items in vanilla's own wool-&gt;carpet shape (`"FF"`,
+  a single 2-wide row). Deliberately NOT reciped, matching the spec's explicit exclusion
+  list: Royal Jelly, Scent Gland, Larva, Queen's Crest, Anthill Core/Soil, Daylight
+  Membrane -- all stay drop/harvest/worldgen-only.
+
+- **`ShapedRecipeBuilder.pattern`'s empty-slot character is a literal space, not `#`.**
+  First draft used `"X#X"` by habit from other datapack conventions; `#` is not
+  special-cased anywhere in `ShapedRecipeBuilder` (only `' '` is reserved), so `runData`
+  failed with "Pattern references symbol '#' but it's not defined in the key" until every
+  armor pattern was corrected to `"X X"`.
+
+- **`FungalSporeCropBlock` needed a fourth override beyond the three anticipated up front,
+  found by `runData` failing registration.** `CropBlock.createBlockStateDefinition` is
+  `builder.add(AGE)` -- a plain reference to `CropBlock`'s own *static* `AGE` field
+  (`AGE_7`), not `this.getAgeProperty()`. A field reference inside an inherited method is
+  not virtual, so leaving it unoverridden built a block whose real state definition
+  carried the 0-7 property while every other override here (light level, `getAgeProperty`,
+  `randomTick`'s replant math) asked for the 5-value `AGE_4` one -- caught immediately as
+  "Cannot get property ... does not exist in Block". `BeetrootBlock` re-overrides this for
+  the identical reason, which is what pointed at the fix.
+
+- **Growth speed: `CropBlock.getGrowthSpeed` is `static`, so it cannot be overridden
+  virtually** -- `CropBlock.randomTick` always calls its own copy, unqualified, resolved at
+  compile time to the declaring class. `BeetrootBlock` is vanilla's own proof of the actual
+  technique for retuning a `CropBlock` subclass's pace: gate the `super.randomTick` call
+  behind an extra coin flip (beetroot uses `random.nextInt(3) != 0`). This crop uses
+  `random.nextInt(2) == 0`, roughly halving wheat's growth rate per the spec's "slow...
+  roughly half wheat's" -- verified by reading the math, not by a soak test (a growth-rate
+  GameTest would need thousands of random ticks to be statistically meaningful, which is
+  out of proportion to what the spec asked for).
+
+- **`mayPlaceOn` had to be widened back, not left at `CropBlock`'s default.** `BushBlock`'s
+  own default is already "dirt tag OR farmland" (`state.is(BlockTags.DIRT) ||
+  state instanceof FarmBlock`) -- but `CropBlock` *narrows* it to farmland only. Spec
+  section 5 says "spores plant... on dirt", so `FungalSporeCropBlock` re-overrides
+  `mayPlaceOn` back to `BushBlock`'s wider rule. No change to `canSurvive` was needed:
+  `CropBlock#canSurvive` delegates to `BushBlock#canSurvive` via `super`, which calls
+  `this.mayPlaceOn` -- a virtual dispatch that already lands on the override.
+
+- **Fungal Spore crop: 5 ages (0-4, `AGE_4`), 3 painted textures.** Mirrors vanilla's own
+  economy for `nether_wart` (4 ages, 3 textures, the middle one shared by two ages) rather
+  than painting one texture per age. Age-to-model mapping: 0-1 share the bare-sprout
+  texture, 2-3 share the small-cluster texture, 4 alone gets the mature look. Self-lit
+  light level rises `{2, 4, 5, 7, 8}` across the five ages -- 8 at maturity, matching (not
+  exceeding) the wild `fungal_bloom` block's own light-10 glow feels appropriately dimmer
+  for a crop-stage plant, not a full decorative bloom.
+
+- **Two separate loot tables carry the "wheat-style" harvest, not one.** The spec's wording
+  ("harvesting a mature Fungal Bloom safely drops the bloom item plus spores, wheat-style")
+  reads as two different survival moments and two different blocks: the *wild*
+  `fungal_bloom` bush (M1, no age property, foraged rather than farmed) now drops itself
+  plus a flat 50% chance at 1 Fungal Spores -- the "start the crop" entry point. The *crop*
+  block's own table (age-conditioned, per `ModBlockLootSubProvider#fungalSporeCropTable`)
+  is the actual farming loop: mature yields the bloom item plus a flat `UniformGenerator
+  (1, 2)` spores, an early break yields a single spore only (the `.when(mature)
+  .otherwise(...)` chain, copied from vanilla's `createDoublePlantWithSeedDrops`). The flat
+  1-2 range was chosen over vanilla's Fortune-binomial second pool (`createCropDrops`'s own
+  shape) because the spec asked for "1-2", not a fortune-scaled count, and this file
+  already sets that precedent for Resin Weep.
+
+- **The seed item is an `ItemNameBlockItem`, not `registerSimpleBlockItem`.** The item's
+  name (`fungal_spores`) differs from the block it places (`fungal_spore_crop`) -- exactly
+  vanilla's own `wheat_seeds` -&gt; `Blocks.WHEAT` shape. `CropHarvest.takeSeed` needed no
+  change: it already identifies "the seed" generically as any `BlockItem` whose
+  `getBlock()` equals the harvested block, which is true of an `ItemNameBlockItem` too.
+
+- **Fungal Bloom's food effect uses `FoodProperties.Builder#effect(Supplier<MobEffect
+  Instance>, float)`, the 1.21 (pre-1.21.2) shape** -- confirmed against the extracted
+  `FoodProperties.java`: the newer per-item `Consumable` data component does not exist in
+  this version's sources at all, and the `effect(MobEffectInstance, float)` overload is
+  `@Deprecated` in favour of the supplier form. `saturationModifier`, not raw `saturation`,
+  is the builder field name -- `FoodProperties.build()` derives the stored `saturation`
+  from it via `FoodConstants.saturationByModifier`, the same shape as vanilla's own foods
+  (e.g. the apple's nutrition 4 / modifier 0.3), so "~2 nutrition, 0.3 saturation" in the
+  spec is read as nutrition 2 / modifier 0.3.
+
+- **Ant feeding takes priority over the sneak-mode toggle, not the other way round.**
+  `FungalBloomFeeding.tryFeed` is checked first in both `TamedWorkerAntEntity` and
+  `TamedSoldierAntEntity`'s `mobInteract`, before the existing shift-key branch --
+  mirroring vanilla's own precedent of an item-based interaction (feeding a wolf)
+  outranking a sneak-based mode toggle (ordering a wolf to sit). No ownership check on who
+  may feed, also matching vanilla's tamed-animal feeding. "No-op at full health" is read as
+  "the click is still handled (so it doesn't fall through to an unrelated interaction) but
+  nothing is healed, consumed, or played" -- `FungalBloomFeeding.tryFeed` returns `true`
+  either way once the held item matches, gating the actual heal/consume/particle/sound
+  block behind a health check.
+
+- **"First tamed harvest" fires from the real chest-deposit code, not the chest-bind
+  proxy the spec offers as an acceptable fallback.** Resolving the worker's owner as a
+  `ServerPlayer` (`TamableAnimal#getOwner()`, then an `instanceof ServerPlayer` check --
+  literally the same check `TamableAnimal` itself makes before sending its own death
+  message) was not the rabbit hole the spec worried about. The proxy was rejected on
+  meaning, not difficulty: binding a chest with nothing ever harvested would satisfy an
+  advancement named for the harvest. Trade-off accepted: this makes the advancement
+  correct in play but impossible to award inside a GameTest (see below).
+
+- **"Raise both castes" is one custom trigger (`CasteGrownTrigger`) with a caste payload,
+  not two trigger classes.** The two criteria in the advancement JSON (`worker_grown`,
+  `soldier_grown`) both listen on `formicary:caste_grown` and differ only in their
+  `"caste"` condition -- mirroring how a single vanilla trigger (`KilledTrigger`) backs
+  both `player_killed_entity` and `entity_killed_player` via different registrations, and
+  keeping "which caste" as data rather than as a reason for a second Java class.
+  `AdvancementRequirements.Strategy.AND` (the builder's own default, called explicitly for
+  the spec's "requirements = ALL") means both groups are required.
+
+- **Custom advancement triggers register into `Registries.TRIGGER_TYPE` via
+  `DeferredRegister`, the same shape `ModLootConditions` already uses for
+  `Registries.LOOT_CONDITION_TYPE`.** Verified against the decompiled `CriteriaTriggers`
+  (which registers each vanilla trigger the same way, just with a bare `new` instead of a
+  deferred constructor reference) and `BuiltInRegistries.TRIGGER_TYPES = registerSimple
+  (Registries.TRIGGER_TYPE, CriteriaTriggers::bootstrap)`.
+
+- **Advancements are datagenned (`ModAdvancementProvider`), not hand-written JSON.** The
+  mod already datagens everything else load-bearing (recipes, loot, tags, lang); NeoForge's
+  `AdvancementProvider` (not vanilla's, which is `@Deprecated` in favour of it) tracks each
+  saved id through the `ExistingFileHelper` so a child can `.parent(AdvancementHolder)`
+  instead of guessing a parent's `ResourceLocation` by hand.
+
+- **The root advancement needed a trivial criterion it doesn't conceptually need.**
+  `Advancement`'s own codec rejects an empty criteria map (`runData` failed with
+  "Advancement criteria cannot be empty" on a first draft with only a `display`). Fixed the
+  way vanilla's own `story/root` is: `PlayerTrigger.TriggerInstance.tick()`, a criterion
+  that is effectively granted the moment the player exists.
+
+- **GameTest coverage of the two custom triggers stops at their own matching logic, not a
+  full award.** `CasteGrownTrigger.TriggerInstance#matches` is a pure function and is
+  asserted directly. Asserting an actual advancement grant needs a real `ServerPlayer` with
+  `PlayerAdvancements` listening; `GameTestHelper.makeMockPlayer` returns a bare `Player`
+  with no `getAdvancements()` at all, and the one alternative,
+  `makeMockServerPlayerInLevel()`, is `@Deprecated(forRemoval = true)` and adds a real
+  player to the level via the player list -- heavier machinery than this test suite uses
+  anywhere else. Both triggers' `trigger(...)` call sites are exercised for real by the
+  crop-harvest and larva-growth GameTests already in this suite; only the last mile (the
+  award itself) goes unverified headlessly, and is a two-line manual check in `runClient`.
+
+- **Sounds: no code changes needed.** Auditing all six entities (`WorkerAntEntity`,
+  `SoldierAntEntity`, `TamedWorkerAntEntity`, `TamedSoldierAntEntity`, `LarvaEntity`,
+  `QueenAntEntity`) found every one already carrying `getAmbientSound`/`getHurtSound`/
+  `getDeathSound` overrides from earlier milestones (M2/M3/M6/M7) -- worker/soldier/tamed
+  variants use the `SPIDER_STEP`/`SPIDER_AMBIENT`/`SPIDER_HURT`/`SPIDER_DEATH` family,
+  the larva already uses `SLIME_SQUISH_SMALL` for hurt/death (deliberately silent
+  ambient), and the queen already overrides `getVoicePitch()` to `0.5F` for the "deeper
+  pitched" sound the spec asks for. Nothing was left on silent/default. Confirmed by
+  reading each file rather than assuming the M8 checklist item implied missing work.
+
+- **The first draft of the crop-harvest GameTest asserted a "spare spore in the chest"
+  and failed about half the time in `--rerun`.** The mature loot table rolls 1-2 {@code
+  fungal_spores}, and the replant always spends exactly one -- so a 1-roll leaves nothing
+  spare. Fixed by dropping that assertion (the bloom deposit and the age-0 replant are
+  both deterministic and stay asserted); five consecutive `--rerun` passes confirmed the
+  fix rather than a lucky roll. Same class of trap `TamingGameTests`' own carrots-vs-wheat
+  note already warns about, one level removed (a shortfall after a guaranteed spend,
+  rather than a zero roll).
+
+- **Spawn-rate pass: no changes made.** Reviewed all four M4a biome JSONs against the
+  spec's three targets. Upper Galleries: worker weight 12 vs soldier 2 (~86% worker
+  share) -- workers plentiful in the upper tier. Fungal Gardens: worker 12 vs soldier 5
+  (~71% worker share) -- still worker-led, appropriately less lopsided one tier down.
+  Nurseries: worker 8 / soldier 12 / larva 6 -- soldiers are the *plurality* caste here,
+  which is exactly "meaningful", and larvae at 6/26 (~23% of spawns, group size 1-3) read
+  as present without carpeting the floor. Royal Depths: soldier-only (weight 10, count
+  1-3), appropriate for a boss-guarding deep tier. All four already matched the spec's
+  intent from M4a; churning the numbers here would have been change for its own sake, which
+  the spec explicitly warns against ("if current rates look right, say so explicitly").
