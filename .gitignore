@@ -43,3 +43,6 @@ repo/
 ### Claude Code modding aids ###
 # Extracted decompiled Minecraft/NeoForge sources for the agent to grep (large, regenerable)
 reference/
+# log4j comes along on the classpath when the worldgen NoiseProbe runs as a plain JavaExec,
+# and drops an empty logs/ in the project root every time
+/logs/

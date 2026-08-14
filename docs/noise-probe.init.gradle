@@ -1,0 +1,25 @@
+// Dev-only Gradle init script: runs com.nogal.formicary.worldgen.NoiseProbe on the
+// project's own runtime classpath.
+//
+// It lives here rather than as a task in build.gradle so the build file stays the stock
+// ModDevGradle one -- the probe is a developer tool for retuning
+// ColonyGeneratorTunables, not part of the mod.
+//
+//   $env:JAVA_HOME = "C:\Users\Family\.jdks\jdk-21.0.11+10"
+//   .\gradlew --init-script docs\noise-probe.init.gradle formicaryProbe
+//   .\gradlew --init-script docs\noise-probe.init.gradle formicaryProbe -PprobeSeed=42 -PprobeWhat=stats
+//
+// probeWhat: all (default) | stats | slices
+//   stats  -- noise field distributions, per-tier air fractions, walkability BFS
+//   slices -- ASCII cross-sections through the ramp axis and each tier
+gradle.rootProject { project ->
+    project.afterEvaluate {
+        project.tasks.register('formicaryProbe', JavaExec) {
+            group = 'verification'
+            description = 'Runs the Formicary colony generator headlessly and reports what it carves.'
+            classpath = project.sourceSets.main.runtimeClasspath + project.sourceSets.main.compileClasspath
+            mainClass = 'com.nogal.formicary.worldgen.NoiseProbe'
+            args = [project.findProperty('probeSeed') ?: '1234567', project.findProperty('probeWhat') ?: 'all']
+        }
+    }
+}
