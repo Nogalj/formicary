@@ -155,6 +155,10 @@ TEMPLATES = {
     # Long enough to put a soldier well outside ColonyAnger.ANGER_RADIUS (24) from
     # a trigger at the near end, without distorting the standard template.
     "long_platform": (48, 3, 5),
+    # Tall enough to stack two candidate standing spots in one column, which is what
+    # AnthillPortal.findFloorInBand's "pick the HIGHEST legal Y" rule needs to be
+    # tested against. The standard 3-tall arena cannot hold two.
+    "tall_platform": (5, 8, 5),
 }
 
 
