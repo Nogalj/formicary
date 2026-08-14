@@ -165,10 +165,13 @@ public class SoldierAntModel<T extends Entity> extends EntityModel<T> {
         this.mandibleLeft.yRot = mandibleFlex;
 
         // The gaster counter-swings a little as the ant walks.
-        this.gaster.yRot = Mth.cos(limbSwing * 0.3331F) * 0.10F * limbSwingAmount;
+        this.gaster.yRot = Mth.cos(limbSwing * 0.65F) * 0.10F * limbSwingAmount;
 
         for (int i = 0; i < this.legs.length; i++) {
-            float cycle = limbSwing * 0.6662F + LEG_PHASE[i];
+            // 1.3 rather than the quadruped-standard 0.6662: ants scuttle (see the
+            // worker model); the soldier steps a touch slower than the worker to
+            // read heavier.
+            float cycle = limbSwing * 1.3F + LEG_PHASE[i];
             this.legs[i].xRot = Mth.cos(cycle) * limbSwingAmount * 0.55F;
             this.legs[i].yRot = LEG_REST_Y[i];
             this.legs[i].zRot = LEG_REST_Z[i] + LEG_SIDE[i] * Mth.sin(cycle) * limbSwingAmount * 0.18F;

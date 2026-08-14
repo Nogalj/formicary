@@ -160,10 +160,13 @@ public class WorkerAntModel<T extends Entity> extends EntityModel<T> {
         this.antennaLeft.zRot = REST_ANTENNA_Z + sway;
 
         // The gaster counter-swings a little as the ant walks.
-        this.gaster.yRot = Mth.cos(limbSwing * 0.3331F) * 0.10F * limbSwingAmount;
+        this.gaster.yRot = Mth.cos(limbSwing * 0.7F) * 0.10F * limbSwingAmount;
 
         for (int i = 0; i < this.legs.length; i++) {
-            float cycle = limbSwing * 0.6662F + LEG_PHASE[i];
+            // 1.4 rather than the quadruped-standard 0.6662: ants scuttle -- many
+            // quick steps -- and at the old rate the legs visibly lagged the ground
+            // speed (Logan's 2026-08-13 review).
+            float cycle = limbSwing * 1.4F + LEG_PHASE[i];
             // cos drives the fore/aft stride, sin the lift a quarter-cycle later,
             // so each foot traces a circle rather than sawing back and forth.
             this.legs[i].xRot = Mth.cos(cycle) * limbSwingAmount * 0.55F;

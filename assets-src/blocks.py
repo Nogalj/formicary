@@ -132,58 +132,77 @@ def lerp_color(a, b, t):
 # Palette / fabric soils (tier soils top -> bottom get visibly darker)
 # ---------------------------------------------------------------------------
 
-PACKED_SOIL_PAL = [(94, 70, 45, 255), (117, 88, 58, 255), (139, 107, 74, 255),
-                   (160, 127, 89, 255), (182, 149, 106, 255)]
+# Tiling note (Logan's 2026-08-13 review): adjacent copies of a 16x16 are IDENTICAL,
+# so any high-contrast one-off feature reads as a grid at world scale, and cube_all
+# rotates the same texture differently on top/bottom faces. The soils therefore keep
+# their value range TIGHT (mid three tones dominate, extremes are subtle) and their
+# features small and isotropic -- nothing directional, nothing eye-catching.
+
+PACKED_SOIL_PAL = [(103, 78, 51, 255), (119, 90, 60, 255), (139, 107, 74, 255),
+                   (153, 119, 83, 255), (166, 131, 93, 255)]
 
 
 def packed_soil():
     img = value_noise_fill("packed_soil", PACKED_SOIL_PAL)
-    # a couple of embedded grit pebbles, vanilla-dirt style
-    stamp_clumps(img, "packed_soil", 3, (104, 79, 51, 255),
-                 highlight=(171, 138, 97, 255), size_range=(2, 2))
+    # a single grit clump, kept close to the base tones so repeats stay quiet
+    stamp_clumps(img, "packed_soil", 1, (110, 83, 55, 255),
+                 highlight=(158, 124, 87, 255), size_range=(2, 2))
     return img
 
 
 def amber_earth():
     img = value_noise_fill("amber_earth",
-                           [(110, 55, 24, 255), (136, 71, 33, 255), (163, 89, 43, 255),
-                            (189, 111, 58, 255), (212, 134, 76, 255)])
-    # occasional resin fleck bedded in the earth
-    stamp_clumps(img, "amber_earth", 2, (224, 152, 56, 255),
-                 highlight=(250, 205, 120, 255), size_range=(1, 2))
+                           [(124, 63, 28, 255), (139, 73, 34, 255), (163, 89, 43, 255),
+                            (178, 101, 51, 255), (193, 114, 61, 255)])
+    # a single subdued resin fleck per tile
+    stamp_clumps(img, "amber_earth", 1, (212, 138, 62, 255),
+                 highlight=(228, 164, 90, 255), size_range=(1, 1))
     return img
 
 
 def deep_loam():
     img = value_noise_fill("deep_loam",
-                           [(44, 22, 14, 255), (62, 32, 20, 255), (82, 44, 28, 255),
-                            (103, 58, 37, 255), (124, 74, 48, 255)])
-    stamp_clumps(img, "deep_loam", 3, (36, 18, 12, 255),
-                 highlight=(110, 64, 40, 255), size_range=(2, 3))
+                           [(54, 27, 17, 255), (64, 33, 21, 255), (82, 44, 28, 255),
+                            (93, 51, 33, 255), (104, 59, 38, 255)])
+    stamp_clumps(img, "deep_loam", 2, (46, 23, 15, 255),
+                 highlight=(96, 54, 34, 255), size_range=(2, 2))
     return img
 
 
 def hardened_soil():
     img = value_noise_fill("hardened_soil",
-                           [(74, 66, 58, 255), (92, 83, 73, 255), (110, 100, 89, 255),
-                            (128, 118, 105, 255), (146, 136, 122, 255)])
-    # embedded stones: darker blobs with a bright catch-light, coarse-dirt style
-    stamp_clumps(img, "hardened_soil", 4, (66, 59, 52, 255),
-                 highlight=(152, 142, 128, 255), size_range=(2, 3))
+                           [(82, 74, 65, 255), (92, 83, 73, 255), (110, 100, 89, 255),
+                            (119, 109, 97, 255), (129, 119, 106, 255)])
+    # embedded stones, low contrast so the repeat stays quiet
+    stamp_clumps(img, "hardened_soil", 3, (73, 66, 58, 255),
+                 highlight=(133, 123, 110, 255), size_range=(2, 2))
     return img
 
 
 def anthill_soil():
+    """Excavated-pellet look: an anthill is thousands of carried soil granules.
+    Dense 2x2 pellets (lit top-left, shaded bottom-right) packed over a sandy
+    base, with a few dark pore openings the ants come and go by."""
     img = value_noise_fill("anthill_soil",
-                           [(128, 99, 60, 255), (150, 119, 76, 255), (172, 139, 92, 255),
-                            (192, 159, 110, 255), (211, 180, 130, 255)])
-    # tiny tunnel mouths -- dark pinpricks the ants come and go by
-    r = rng("anthill_soil:holes")
+                           [(150, 117, 74, 255), (161, 128, 84, 255),
+                            (172, 139, 92, 255), (183, 150, 103, 255)],
+                           weights=[2, 5, 5, 2], jitter=0.15)
     px = img.load()
-    for _ in range(4):
+    r = rng("anthill_soil:pellets")
+    for _ in range(26):
         x, y = r.randrange(SIZE), r.randrange(SIZE)
-        px[x, y] = (96, 72, 42, 255)
-        px[wrap(x + 1), y] = (112, 86, 52, 255)
+        mid = r.choice([(166, 133, 88, 255), (176, 143, 96, 255), (186, 152, 104, 255)])
+        lite = (min(mid[0] + 26, 255), min(mid[1] + 24, 255), min(mid[2] + 20, 255), 255)
+        dark = (max(mid[0] - 30, 0), max(mid[1] - 28, 0), max(mid[2] - 24, 0), 255)
+        px[x, y] = lite
+        px[wrap(x + 1), y] = mid
+        px[x, wrap(y + 1)] = mid
+        px[wrap(x + 1), wrap(y + 1)] = dark
+    for _ in range(3):
+        x, y = r.randrange(SIZE), r.randrange(SIZE)
+        px[x, y] = (82, 60, 36, 255)
+        px[wrap(x + 1), y] = (102, 76, 46, 255)
+        px[x, wrap(y + 1)] = (102, 76, 46, 255)
     return img
 
 
@@ -706,21 +725,78 @@ def chitin_boots_item():
     return from_mask(CHITIN_BOOTS_MASK)
 
 
-def chitin_panel(img, name, x0, y0, w, h, band=4):
-    """Fills a UV rect with banded chitin plate: each band lit along its top row,
-    dark seam along its bottom row, faint per-pixel tone jitter in between."""
-    r = rng(f"{name}:{x0},{y0}")
+# --- Soldier-ant palette, mirrored from models.py S_* constants: the armor is
+# --- literally plates of soldier chitin, so it reuses the exact tones.
+SOLD_DARKEST = (26, 10, 8, 255)
+SOLD_DARK = (58, 18, 14, 255)
+SOLD_BASE = (92, 28, 20, 255)
+SOLD_MID = (118, 40, 28, 255)
+SOLD_LIGHT = (145, 55, 38, 255)
+SOLD_PALE = (168, 70, 48, 255)
+AHEAD_DARK = (30, 13, 11, 255)     # soldier head-plate tones (helmet + pauldrons)
+AHEAD_BASE = (46, 19, 15, 255)
+AHEAD_MID = (64, 27, 21, 255)
+AHEAD_LIGHT = (82, 36, 27, 255)
+AJAW_TIP = (206, 122, 78, 255)     # pale mandible tip -- claw/clasp accents
+AEYE = (196, 98, 52, 255)          # antenna-tip amber -- eye lenses
+
+
+def _jitter(px, name, x0, y0, w, h, amount=6):
+    """Faint per-pixel tone jitter over an already-painted rect."""
+    r = rng(f"{name}:jit:{x0},{y0}")
+    for yy in range(y0, y0 + h):
+        for xx in range(x0, x0 + w):
+            c = px[xx, yy]
+            if c[3] == 0:
+                continue
+            j = r.choice((-amount, 0, 0, 0, amount))
+            px[xx, yy] = (max(0, min(255, c[0] + j)), max(0, min(255, c[1] + j)),
+                          max(0, min(255, c[2] + j)), 255)
+
+
+def segment_plates(img, name, x0, y0, w, h, band=4, rim=None, base=None, seam=None,
+                   face_w=None):
+    """Overlapping chitin segment bands, gaster-style: each band has a lit top
+    rim, a shaded body that bulges (lighter) toward each face's centre columns,
+    and a near-black seam row. face_w splits the strip into faces so the bulge
+    curves per face rather than across the whole UV strip."""
+    rim = rim or SOLD_LIGHT
+    base = base or SOLD_BASE
+    seam = seam or SOLD_DARKEST
+    px = img.load()
+    fw = face_w or w
+    for yy in range(h):
+        phase = yy % band
+        for xx in range(w):
+            fx = xx % fw
+            centre = abs((fx + 0.5) - fw / 2.0) / (fw / 2.0)   # 0 centre .. 1 edge
+            bulge = int((0.5 - centre) * 22)                   # +11 centre, -11 edge
+            if phase == 0:
+                c = rim
+            elif phase == band - 1:
+                c = seam
+            else:
+                c = base
+            if c is not seam:
+                c = (max(0, min(255, c[0] + bulge)), max(0, min(255, c[1] + bulge // 2)),
+                     max(0, min(255, c[2] + bulge // 2)), 255)
+            px[x0 + xx, y0 + yy] = c
+    _jitter(px, name, x0, y0, w, h)
+
+
+def flat_plate(img, name, x0, y0, w, h, base, rim, seam):
+    """A single smooth plate: lit top row, shaded bottom row, jittered body."""
     px = img.load()
     for yy in range(h):
-        t = min(1.0, (yy % band) / max(1, band - 1) * 0.9 + 0.1)
-        base = lerp_color(CHITIN_RIM, CHITIN_DARK, t)
         for xx in range(w):
-            j = r.choice((-8, -4, 0, 0, 0, 4, 8))
-            px[x0 + xx, y0 + yy] = tuple(
-                max(0, min(255, base[i] + j)) for i in range(3)) + (255,)
-    for yy in range(band - 1, h, band):
-        for xx in range(w):
-            px[x0 + xx, y0 + yy] = CHITIN_OUTLINE
+            if yy == 0:
+                c = rim
+            elif yy == h - 1:
+                c = seam
+            else:
+                c = base
+            px[x0 + xx, y0 + yy] = c
+    _jitter(px, name, x0, y0, w, h)
 
 
 # Box-UV rects for the vanilla humanoid armor model, read off HumanoidModel /
@@ -736,33 +812,74 @@ ARMOR_TEX_W, ARMOR_TEX_H = 64, 32
 def chitin_layer_1():
     """Outer layer: helmet (HEAD), chestplate + sleeves (CHEST), boots (FEET).
     HumanoidArmorLayer.usesInnerModel() is true only for LEGS, so everything
-    except the leggings reads this file."""
+    except the leggings reads this file.
+
+    Design pulls straight from the soldier ant model: near-black head plates
+    with a crest ridge and amber eye lenses on the helmet, gaster-style segment
+    bands on the torso with a dark pronotum shield, pauldron plates on the
+    shoulders, mandible-pale claw tips on the boots."""
     img = Image.new("RGBA", (ARMOR_TEX_W, ARMOR_TEX_H), (0, 0, 0, 0))
-    # helmet: head side faces + skull cap
-    chitin_panel(img, "helm_sides", 0, 8, 32, 8)
-    chitin_panel(img, "helm_top", 8, 0, 8, 8)
-    chitin_panel(img, "helm_bottom", 16, 0, 8, 8)
-    # chestplate: full body box
-    chitin_panel(img, "chest_sides", 16, 20, 24, 12)
-    chitin_panel(img, "chest_caps", 20, 16, 16, 4)
-    # sleeves: full arm box
-    chitin_panel(img, "arm_sides", 40, 20, 16, 12)
-    chitin_panel(img, "arm_caps", 44, 16, 8, 4)
-    # boots: only the bottom of the leg box, or they'd read as full greaves
-    chitin_panel(img, "boot_sides", 0, 27, 16, 5, band=3)
-    chitin_panel(img, "boot_sole", 8, 16, 4, 4, band=3)
+    px = img.load()
+
+    # -- helmet: head-plate tones. Side strip is 4 faces of 8: right/front/left/back.
+    flat_plate(img, "helm_sides", 0, 8, 32, 8, AHEAD_BASE, AHEAD_MID, SOLD_DARKEST)
+    # brow ridge -- one lighter row above the eyes, all the way round
+    for xx in range(32):
+        px[xx, 10] = AHEAD_LIGHT
+    # amber eye lenses: two on the front face, one on each side face
+    for (ex, ey) in [(10, 12), (13, 12), (3, 12), (20, 12)]:
+        px[ex, ey] = AEYE
+        px[ex, ey - 1] = lerp_color(AEYE, AHEAD_LIGHT, 0.5)
+    # skull cap with a crest ridge running front-to-back
+    flat_plate(img, "helm_top", 8, 0, 8, 8, AHEAD_BASE, AHEAD_MID, AHEAD_DARK)
+    for yy in range(0, 8):
+        px[11, yy] = AHEAD_MID
+        px[12, yy] = AHEAD_LIGHT
+    px[12, 1] = SOLD_LIGHT
+    flat_plate(img, "helm_bottom", 16, 0, 8, 8, AHEAD_DARK, AHEAD_DARK, AHEAD_DARK)
+
+    # -- chestplate: segment bands (3 bands over 12 rows), bulging per face.
+    # Body side strip is faces of width 4/8/4/8 -- fake it with face_w=4 (the 8-wide
+    # faces just get two gentle bulges, which reads as paired plates).
+    segment_plates(img, "chest_sides", 16, 20, 24, 12, band=4, face_w=4)
+    # pronotum shield: a dark rounded plate on the chest front face (x20..27)
+    flat_plate(img, "chest_shield", 21, 21, 6, 5, AHEAD_BASE, SOLD_PALE, SOLD_DARKEST)
+    px[21, 21] = SOLD_BASE   # knock the corners off so it reads rounded
+    px[26, 21] = SOLD_BASE
+    px[21, 25] = SOLD_DARK
+    px[26, 25] = SOLD_DARK
+    # shoulder caps
+    flat_plate(img, "chest_caps", 20, 16, 16, 4, AHEAD_MID, SOLD_LIGHT, AHEAD_DARK)
+
+    # -- sleeves: pauldron plate over the top, segments below.
+    flat_plate(img, "arm_pauldron", 40, 20, 16, 4, AHEAD_BASE, SOLD_PALE, SOLD_DARKEST)
+    segment_plates(img, "arm_sides", 40, 24, 16, 8, band=4, face_w=4)
+    flat_plate(img, "arm_caps", 44, 16, 8, 4, AHEAD_MID, SOLD_LIGHT, AHEAD_DARK)
+
+    # -- boots: dark chitin with pale claw tips at the toes (front face x4..7).
+    flat_plate(img, "boot_sides", 0, 27, 16, 5, SOLD_DARK, SOLD_MID, SOLD_DARKEST)
+    for (bx, by) in [(5, 31), (6, 31)]:
+        px[bx, by] = AJAW_TIP
+    px[5, 30] = lerp_color(AJAW_TIP, SOLD_DARK, 0.5)
+    flat_plate(img, "boot_sole", 8, 16, 4, 4, SOLD_DARKEST, SOLD_DARKEST, SOLD_DARKEST)
     return img
 
 
 def chitin_layer_2():
-    """Inner layer: leggings only (LEGS is the sole slot using the inner model).
-    Belt across the body box, greaves down the leg box, stopping above the ankle
+    """Inner layer: leggings only. Belt with a mandible-pale clasp across the
+    body box, tight segment greaves down the leg box, stopping above the ankle
     so the boots' own band is not doubled."""
     img = Image.new("RGBA", (ARMOR_TEX_W, ARMOR_TEX_H), (0, 0, 0, 0))
-    chitin_panel(img, "belt_sides", 16, 20, 24, 5, band=3)
-    chitin_panel(img, "belt_top", 20, 16, 8, 4, band=3)
-    chitin_panel(img, "greave_sides", 0, 20, 16, 8)
-    chitin_panel(img, "greave_top", 4, 16, 4, 4)
+    px = img.load()
+    flat_plate(img, "belt_sides", 16, 20, 24, 5, AHEAD_BASE, SOLD_MID, SOLD_DARKEST)
+    # clasp on the front face
+    for (cx_, cy_) in [(23, 21), (24, 21), (23, 22), (24, 22)]:
+        px[cx_, cy_] = AJAW_TIP
+    px[23, 21] = lerp_color(AJAW_TIP, SOLD_PALE, 0.4)
+    flat_plate(img, "belt_top", 20, 16, 8, 4, AHEAD_DARK, AHEAD_DARK, AHEAD_DARK)
+    segment_plates(img, "greave_sides", 0, 20, 16, 8, band=3, face_w=4,
+                   rim=SOLD_MID, base=SOLD_DARK, seam=SOLD_DARKEST)
+    flat_plate(img, "greave_top", 4, 16, 4, 4, AHEAD_DARK, AHEAD_DARK, AHEAD_DARK)
     return img
 
 
