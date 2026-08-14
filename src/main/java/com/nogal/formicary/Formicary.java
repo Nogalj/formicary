@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
 import com.nogal.formicary.block.ModBlocks;
+import com.nogal.formicary.effect.ModMobEffects;
+import com.nogal.formicary.effect.ModPotions;
 import com.nogal.formicary.entity.ModEntities;
 import com.nogal.formicary.item.ModArmorMaterials;
 import com.nogal.formicary.item.ModCreativeModeTabs;
@@ -35,6 +37,10 @@ public class Formicary {
         ModItems.ITEMS.register(modEventBus);
         ModCreativeModeTabs.CREATIVE_MODE_TABS.register(modEventBus);
         ModLootConditions.LOOT_CONDITION_TYPES.register(modEventBus);
+        // Pheromonal Disguise (M4b): the potion holds a MobEffectInstance of the effect,
+        // so the effect registry needs to be on the bus first.
+        ModMobEffects.MOB_EFFECTS.register(modEventBus);
+        ModPotions.POTIONS.register(modEventBus);
         // The dimension JSON names our generator and biome source by type id, so their
         // MapCodecs must be in the registries before any world loads.
         ModWorldgen.CHUNK_GENERATORS.register(modEventBus);

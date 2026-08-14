@@ -18,8 +18,10 @@ Run with: python assets-src\\blocks.py
 Requires: Pillow (PIL). Outputs 16x16 PNGs into
 src/main/resources/assets/formicary/textures/block/ (and textures/item/ for
 the item sprites), the two 64x32 Chitin Armor overlays into
-textures/models/armor/, plus labelled contact sheets at
-assets-src/previews/blocks_sheet.png and previews/armor_layers_sheet.png for QA.
+textures/models/armor/, the 18x18 mob-effect icons (M4b) into
+textures/mob_effect/, plus labelled contact sheets at
+assets-src/previews/blocks_sheet.png, previews/armor_layers_sheet.png and
+previews/effect_icons_sheet.png for QA.
 """
 
 import random
@@ -32,7 +34,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BLOCK_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/block"
 ITEM_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/item"
 ARMOR_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/models/armor"
+EFFECT_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/mob_effect"
 PREVIEW_DIR = Path(__file__).resolve().parent / "previews"
+
+# Vanilla's own status-effect icons (checked by extracting
+# assets/minecraft/textures/mob_effect/night_vision.png from the client resources jar)
+# are 18x18, not 16x16 -- a different constant from the block/item SIZE above.
+EFFECT_ICON_SIZE = 18
 
 
 def rng(name):
@@ -561,6 +569,45 @@ def chitin_item():
     return img
 
 
+def scent_gland_item():
+    """Scent Gland (M4b): a small pale-amber sac, plucked from a worker or soldier --
+    a solid core (same lerp technique as resin_item's glob) ringed by a lower-alpha
+    band so the outer edge reads as slightly translucent, plus a tiny dark duct nub at
+    the top where it was torn free."""
+    img = blank()
+    px = img.load()
+    cx, cy = 8.0, 9.0
+    core = (250, 224, 176, 255)
+    mid = (224, 168, 88, 255)
+    rim = (188, 118, 40, 255)
+
+    def sdf(x, y):
+        dx, dy = x + 0.5 - cx, (y + 0.5 - cy) * 0.82
+        return dx * dx + dy * dy
+
+    for y in range(SIZE):
+        for x in range(SIZE):
+            d = sdf(x, y)
+            if d < 24:
+                px[x, y] = lerp_color(core, mid, min(1.0, d / 24))
+    # translucent rim: a thin lower-alpha ring just outside the solid core
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if px[x, y][3] != 0:
+                continue
+            d = sdf(x, y)
+            if d < 34:
+                c = lerp_color(mid, rim, (d - 24) / 10)
+                px[x, y] = (c[0], c[1], c[2], 150)
+    # duct nub -- where it was torn off the ant
+    px[8, 3] = (128, 82, 34, 255)
+    px[8, 4] = (158, 104, 46, 255)
+    # specular highlight
+    px[6, 6] = (255, 246, 222, 255)
+    px[6, 7] = AMBER_SPARK
+    return img
+
+
 def larva_item():
     """Curled grub item sprite: pale cream body curling into a C, faint amber
     segment lines, two tiny dark eye dots at the head end -- matching the
@@ -593,6 +640,53 @@ def larva_item():
     px[11, 3] = eye
     px[12, 4] = eye
     return img
+
+
+# ---------------------------------------------------------------------------
+# Mob effect icons (M4b) -- 18x18, vanilla's status-icon size (not SIZE=16)
+# ---------------------------------------------------------------------------
+
+def pheromonal_disguise_icon():
+    """Pheromonal Disguise status icon: an amber ant-mask glyph -- a rounded
+    chitin mask with dark eye slits and two curved antennae sweeping up and
+    outward -- readable at the small HUD/inventory scale vanilla uses for
+    every other effect icon."""
+    img = Image.new("RGBA", (EFFECT_ICON_SIZE, EFFECT_ICON_SIZE), (0, 0, 0, 0))
+    px = img.load()
+    cx, cy = 8.5, 10.5
+
+    def sdf(x, y):
+        dx, dy = x + 0.5 - cx, (y + 0.5 - cy) * 1.08
+        return (dx * dx + dy * dy) ** 0.5
+
+    for y in range(EFFECT_ICON_SIZE):
+        for x in range(EFFECT_ICON_SIZE):
+            d = sdf(x, y)
+            if d < 5.6:
+                px[x, y] = lerp_color(AMBER_PALE, AMBER_BASE, min(1.0, d / 5.6))
+    for y in range(EFFECT_ICON_SIZE):
+        for x in range(EFFECT_ICON_SIZE):
+            if px[x, y][3] != 0 and sdf(x, y) > 4.8:
+                px[x, y] = AMBER_DARK
+    # eye slits -- a dark almond mark either side of centre, reading as an insect mask
+    for (x, y) in [(6, 10), (7, 10), (10, 10), (11, 10)]:
+        px[x, y] = AMBER_DARK
+    # specular highlight
+    px[6, 8] = AMBER_SPARK
+    px[7, 7] = AMBER_LIGHT
+    # antennae curving up and outward from the top of the mask
+    for (x, y) in [(6, 6), (5, 5), (4, 4), (3, 3)]:
+        px[x, y] = AMBER_MID
+    for (x, y) in [(11, 6), (12, 5), (13, 4), (14, 3)]:
+        px[x, y] = AMBER_MID
+    px[3, 2] = AMBER_LIGHT
+    px[14, 2] = AMBER_LIGHT
+    return img
+
+
+EFFECT_ICONS = {
+    "pheromonal_disguise": pheromonal_disguise_icon,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -912,6 +1006,7 @@ ITEM_TEXTURES = {
     "resin": resin_item,
     "chitin": chitin_item,
     "larva": larva_item,
+    "scent_gland": scent_gland_item,
     "chitin_helmet": chitin_helmet_item,
     "chitin_chestplate": chitin_chestplate_item,
     "chitin_leggings": chitin_leggings_item,
@@ -977,6 +1072,7 @@ def main():
     BLOCK_TEX_DIR.mkdir(parents=True, exist_ok=True)
     ITEM_TEX_DIR.mkdir(parents=True, exist_ok=True)
     ARMOR_TEX_DIR.mkdir(parents=True, exist_ok=True)
+    EFFECT_TEX_DIR.mkdir(parents=True, exist_ok=True)
     PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 
     generated = []
@@ -1011,6 +1107,20 @@ def main():
     armor_sheet_path = PREVIEW_DIR / "armor_layers_sheet.png"
     armor_sheet.save(armor_sheet_path)
     print(f"wrote {armor_sheet_path.relative_to(REPO_ROOT)}")
+
+    effect_icons = []
+    for name, make in EFFECT_ICONS.items():
+        img = make()
+        out = EFFECT_TEX_DIR / f"{name}.png"
+        img.save(out)
+        effect_icons.append((name, img))
+        print(f"wrote {out.relative_to(REPO_ROOT)}")
+
+    if effect_icons:
+        effect_sheet = contact_sheet(effect_icons, cols=1)
+        effect_sheet_path = PREVIEW_DIR / "effect_icons_sheet.png"
+        effect_sheet.save(effect_sheet_path)
+        print(f"wrote {effect_sheet_path.relative_to(REPO_ROOT)}")
 
 
 if __name__ == "__main__":

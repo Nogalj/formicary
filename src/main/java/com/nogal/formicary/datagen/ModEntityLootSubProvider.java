@@ -23,7 +23,8 @@ import net.minecraft.world.level.storage.loot.providers.number.UniformGenerator;
  * Loot tables for the M2/M3a castes: worker and soldier drop chitin (looting-sensitive,
  * mirroring vanilla's {@code EnchantedCountIncreaseFunction.lootingMultiplier} convention
  * for entity drops -- see {@code VanillaEntityLoot}), the soldier has a chance at resin
- * too, and the larva drops nothing (it's meant to be captured, not killed).
+ * too, and the larva drops nothing (it's meant to be captured, not killed). M4b adds the
+ * Scent Gland (brewed into Pheromonal Disguise) to both castes.
  *
  * <p>{@link #getKnownEntityTypes()} is overridden to return only this mod's registered
  * entity types: the base implementation defaults to {@code BuiltInRegistries.ENTITY_TYPE}
@@ -32,14 +33,22 @@ import net.minecraft.world.level.storage.loot.providers.number.UniformGenerator;
  * {@link ModBlockLootSubProvider#getKnownBlocks()} works around for blocks.
  */
 public class ModEntityLootSubProvider extends EntityLootSubProvider {
+    /** Worker Scent Gland drop chance. Tunable -- soldiers get the better odds (0.75F). */
+    private static final float WORKER_SCENT_GLAND_CHANCE = 0.5F;
+
+    /** Soldier Scent Gland drop chance. Tunable. */
+    private static final float SOLDIER_SCENT_GLAND_CHANCE = 0.75F;
+
     public ModEntityLootSubProvider(HolderLookup.Provider registries) {
         super(FeatureFlags.REGISTRY.allFlags(), registries);
     }
 
     @Override
     public void generate() {
-        this.add(ModEntities.WORKER_ANT.get(), chitinTable(0.0F, 2.0F));
-        this.add(ModEntities.SOLDIER_ANT.get(), soldierTable());
+        this.add(ModEntities.WORKER_ANT.get(),
+                chitinTable(0.0F, 2.0F).withPool(scentGlandPool(WORKER_SCENT_GLAND_CHANCE)));
+        this.add(ModEntities.SOLDIER_ANT.get(),
+                soldierTable().withPool(scentGlandPool(SOLDIER_SCENT_GLAND_CHANCE)));
         this.add(ModEntities.LARVA.get(), LootTable.lootTable());
     }
 
@@ -62,6 +71,13 @@ public class ModEntityLootSubProvider extends EntityLootSubProvider {
                                 .setRolls(ConstantValue.exactly(1.0F))
                                 .add(LootItem.lootTableItem(ModItems.RESIN.get()))
                                 .when(LootItemRandomChanceCondition.randomChance(0.25F)));
+    }
+
+    private LootPool.Builder scentGlandPool(float chance) {
+        return LootPool.lootPool()
+                .setRolls(ConstantValue.exactly(1.0F))
+                .add(LootItem.lootTableItem(ModItems.SCENT_GLAND.get()))
+                .when(LootItemRandomChanceCondition.randomChance(chance));
     }
 
     @Override

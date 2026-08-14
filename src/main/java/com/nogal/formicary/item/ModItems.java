@@ -14,7 +14,8 @@ import net.neoforged.neoforge.registries.DeferredRegister;
  * {@link DeferredRegister.Items#registerSimpleBlockItem(net.minecraft.core.Holder)}.
  * M3a adds chitin (worker/soldier loot) and the larva item (the capture interaction's
  * export good -- placement lands in M6, so it's a plain item for now). M3b adds the
- * four-piece Chitin Armor set, which is what gates mining the dimension's fabric.
+ * four-piece Chitin Armor set, which is what gates mining the dimension's fabric. M4b
+ * adds the Scent Gland (worker/soldier loot, brewed into Pheromonal Disguise).
  */
 public class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(Formicary.MODID);
@@ -22,6 +23,7 @@ public class ModItems {
     public static final DeferredItem<Item> RESIN = ITEMS.registerSimpleItem("resin");
     public static final DeferredItem<Item> CHITIN = ITEMS.registerSimpleItem("chitin");
     public static final DeferredItem<Item> LARVA = ITEMS.registerSimpleItem("larva");
+    public static final DeferredItem<Item> SCENT_GLAND = ITEMS.registerSimpleItem("scent_gland");
 
     // --- Chitin Armor (spec section 5). No recipes until M8: creative-only for now. ---
 

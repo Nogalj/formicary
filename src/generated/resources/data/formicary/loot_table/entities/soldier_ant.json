@@ -46,6 +46,22 @@
         }
       ],
       "rolls": 1.0
+    },
+    {
+      "bonus_rolls": 0.0,
+      "conditions": [
+        {
+          "chance": 0.75,
+          "condition": "minecraft:random_chance"
+        }
+      ],
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "formicary:scent_gland"
+        }
+      ],
+      "rolls": 1.0
     }
   ],
   "random_sequence": "formicary:entities/soldier_ant"

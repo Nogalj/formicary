@@ -2,10 +2,13 @@ package com.nogal.formicary.colony;
 
 import javax.annotation.Nullable;
 
+import com.nogal.formicary.effect.ModMobEffects;
 import com.nogal.formicary.entity.LarvaEntity;
 import com.nogal.formicary.entity.SoldierAntEntity;
 import com.nogal.formicary.entity.WorkerAntEntity;
+import com.nogal.formicary.worldgen.ModBiomeTags;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
@@ -44,11 +47,10 @@ public final class ColonyAnger {
      * <p>Every "is this player a valid colony target / does this anger apply" check in
      * the mod routes through here, so M4 has exactly one place to plug the effect in.
      *
-     * @return always {@code false} for now -- nobody can be disguised yet.
+     * @return {@code true} while {@link ModMobEffects#PHEROMONAL_DISGUISE} is active.
      */
     public static boolean isDisguised(Player player) {
-        // M4: Pheromonal Disguise effect check lands here.
-        return false;
+        return player.hasEffect(ModMobEffects.PHEROMONAL_DISGUISE);
     }
 
     /** A player the colony is willing to turn on: alive, not a spectator, not disguised. */
@@ -96,6 +98,9 @@ public final class ColonyAnger {
 
         // M4: strip disguise here -- provoking the colony blows a disguised player's cover,
         // so the effect has to be removed before the radius sweep marks anyone hostile.
+        if (isDisguised(offender)) {
+            offender.removeEffect(ModMobEffects.PHEROMONAL_DISGUISE);
+        }
 
         AABB area = AABB.ofSize(origin, ANGER_RADIUS * 2.0, ANGER_RADIUS * 2.0, ANGER_RADIUS * 2.0);
         double radiusSqr = ANGER_RADIUS * ANGER_RADIUS;
@@ -109,6 +114,41 @@ public final class ColonyAnger {
                 ant -> ant.isAlive() && ant.distanceToSqr(origin) <= radiusSqr)) {
             worker.startFleeingFrom(offender);
         }
+    }
+
+    // -------------------------------------------------------- deep-tier hostility --
+
+    /**
+     * The on-sight gate for the Nurseries and Royal Depths (spec section 3): "the deep
+     * colony tolerates no strangers" -- a soldier standing in a
+     * {@code #formicary:deep_colony} biome doesn't wait to be provoked, it targets the
+     * nearest stranger the moment it sees one.
+     *
+     * <p>Split into {@link #isDeepColonyBiome} (world state) and
+     * {@link #isValidDeepTierTarget} (player state) because a GameTest can only ever
+     * exercise the player half directly: {@code GameTestServer} bakes
+     * {@code WorldPresets.FLAT} into a deliberately empty {@code LevelStem} registry and
+     * never loads this mod's dimension (see the banked {@code GameTestServer} rule in
+     * CLAUDE.md), so no GameTest arena is ever actually in a deep-colony biome. The real
+     * biome half is exercised by {@code runServer} instead.
+     */
+    public static boolean isDeepTierHostileAt(ServerLevel level, BlockPos pos, Player player) {
+        return isDeepColonyBiome(level, pos) && isValidDeepTierTarget(player);
+    }
+
+    /** Whether {@code pos} sits in a deep-tier biome ({@code #formicary:deep_colony}). */
+    public static boolean isDeepColonyBiome(ServerLevel level, BlockPos pos) {
+        return level.getBiome(pos).is(ModBiomeTags.DEEP_COLONY);
+    }
+
+    /**
+     * A player the deep tiers are willing to turn on: everything {@link #isValidTarget}
+     * requires, plus not creative. Unlike provoked colony anger, deep-tier hostility fires
+     * with zero provocation, so a creative-mode player just standing there (building,
+     * testing) is deliberately exempt -- provoked anger draws no such line.
+     */
+    public static boolean isValidDeepTierTarget(@Nullable Player player) {
+        return isValidTarget(player) && !player.isCreative();
     }
 
     private ColonyAnger() {

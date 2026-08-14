@@ -2,6 +2,7 @@ package com.nogal.formicary.datagen;
 
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.ModBlocks;
+import com.nogal.formicary.effect.ModMobEffects;
 import com.nogal.formicary.entity.ModEntities;
 import com.nogal.formicary.item.ModItems;
 
@@ -10,7 +11,8 @@ import net.neoforged.neoforge.common.data.LanguageProvider;
 
 /**
  * en_us display names for the M1 block set, the resin item, the M2 worker ant and its
- * spawn egg, and the Formicary creative tab.
+ * spawn egg, and the Formicary creative tab. M4b adds the Scent Gland item, the
+ * Pheromonal Disguise effect, and its potion's container-variant names.
  */
 public class ModLanguageProvider extends LanguageProvider {
     public ModLanguageProvider(PackOutput output) {
@@ -39,6 +41,7 @@ public class ModLanguageProvider extends LanguageProvider {
         addItem(ModItems.RESIN, "Resin");
         addItem(ModItems.CHITIN, "Chitin");
         addItem(ModItems.LARVA, "Larva");
+        addItem(ModItems.SCENT_GLAND, "Scent Gland");
 
         addItem(ModItems.CHITIN_HELMET, "Chitin Helmet");
         addItem(ModItems.CHITIN_CHESTPLATE, "Chitin Chestplate");
@@ -53,5 +56,16 @@ public class ModLanguageProvider extends LanguageProvider {
         addItem(ModEntities.LARVA_SPAWN_EGG, "Larva Spawn Egg");
 
         add("itemGroup.formicary.formicary", "Formicary");
+
+        addEffect(ModMobEffects.PHEROMONAL_DISGUISE, "Pheromonal Disguise");
+
+        // Potion.getName() builds the key as <item descriptionId> + ".effect." + <path>
+        // (verified against PotionItem.getName and the decompiled Potion.java) -- these
+        // four cover the potion itself plus the splash/lingering/tipped-arrow variants
+        // that vanilla's generic container-brewing mixes produce for free.
+        add("item.minecraft.potion.effect.pheromonal_disguise", "Potion of Pheromonal Disguise");
+        add("item.minecraft.splash_potion.effect.pheromonal_disguise", "Splash Potion of Pheromonal Disguise");
+        add("item.minecraft.lingering_potion.effect.pheromonal_disguise", "Lingering Potion of Pheromonal Disguise");
+        add("item.minecraft.tipped_arrow.effect.pheromonal_disguise", "Arrow of Pheromonal Disguise");
     }
 }

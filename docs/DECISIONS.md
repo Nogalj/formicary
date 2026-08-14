@@ -149,3 +149,39 @@ meaningfully change gameplay go to Logan instead of here.
 - **`getSeaLevel()` returns `MIN_Y`.** There is no water anywhere in the colony; returning
   the floor rather than a plausible-looking 63 avoids implying a water table that does not
   exist.
+
+## M4b Pheromonal Disguise
+
+- **`MobEffect`'s registration constructor is called through an anonymous subclass, not
+  directly.** `MobEffect(MobEffectCategory, int)` is `protected`, and its only direct
+  callers in the decompiled sources (`MobEffects.java`) live in the same package. A mod
+  registering into a different package therefore needs a subclass to get access at all;
+  since the effect needs no tick behaviour (it is a pure marker `ColonyAnger.isDisguised`
+  reads), an empty `new MobEffect(category, color) {}` body is that subclass, matching the
+  same shape `ModArmorMaterials` already uses for `ArmorMaterial`.
+- **The potion needs no splash/lingering/tipped-arrow registration of its own.** Vanilla's
+  `PotionBrewing.addVanillaMixes` registers the regular/splash/lingering container mixes
+  once, generically, for every `Potion` in the registry (`PotionContents.createItemStack`
+  just swaps the item, keeping the same effect payload) -- so `RegisterBrewingRecipesEvent`
+  only has to add the one Awkward + Scent Gland mix, and the four lang keys
+  (`item.minecraft.{potion,splash_potion,lingering_potion,tipped_arrow}.effect.
+  pheromonal_disguise`) are added for completeness even though only the base potion is
+  reachable without further vanilla brewing steps.
+- **Deep-tier gating split into `isDeepColonyBiome` (world state) and
+  `isValidDeepTierTarget` (player state), composed by `isDeepTierHostileAt`.** GameTest
+  arenas never sit in a `#formicary:deep_colony` biome -- `GameTestServer` bakes
+  `WorldPresets.FLAT` into an empty `LevelStem` registry and never loads this mod's
+  dimension (the same limitation M4a hit) -- so the split lets a GameTest exercise the
+  player-side half directly instead of only being able to write a test that's vacuously
+  true no matter what the biome check does.
+- **Deep-tier hostility excludes creative-mode players; provoked colony anger does not.**
+  The spec says "non-disguised, non-creative" for the on-sight deep-tier gate specifically.
+  Provoked anger (`ColonyAnger.isValidTarget`) was left untouched -- it already shipped in
+  M3b, has its own GameTest coverage, and vanilla hostile mobs target creative players by
+  default (only damage is blocked), so folding a creative exemption into it would be an
+  unrequested behaviour change to an existing system.
+- **Larva capture cannot strip the disguise.** `LarvaEntity#mobInteract` calls
+  `player.getInventory().placeItemBackInInventory(...)` and `this.discard()` directly; it
+  never calls `ColonyAnger.provoke` or anything that reaches the `// M4: strip disguise
+  here` seam, so the "capturing a larva does NOT break the disguise" requirement holds by
+  construction, not by an added check.

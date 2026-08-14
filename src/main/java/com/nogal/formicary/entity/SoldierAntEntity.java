@@ -77,6 +77,9 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
         // Colony anger: whoever provoked the colony anywhere inside the radius.
         this.targetSelector.addGoal(2, new ColonyAngerTargetGoal(this));
+        // Deep-tier hostility: no provocation needed in the Nurseries/Royal Depths (M4b).
+        // Lower priority than colony anger, so an already-angry soldier keeps its offender.
+        this.targetSelector.addGoal(3, new DeepTierHostilityGoal(this));
     }
 
     // --------------------------------------------------------------- anger --
