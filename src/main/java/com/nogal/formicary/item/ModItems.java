@@ -40,6 +40,18 @@ public class ModItems {
     public static final DeferredItem<TrailPheromoneItem> TRAIL_PHEROMONE =
             ITEMS.registerItem("trail_pheromone", TrailPheromoneItem::new);
 
+    /**
+     * M7: the queen's guaranteed drop. A plain item -- its only use is the Pheromone Horn
+     * recipe, and the fact that the sole source is her corpse is what makes the horn a
+     * post-boss tool rather than a consumable.
+     */
+    public static final DeferredItem<Item> ROYAL_PHEROMONE_GLAND =
+            ITEMS.registerSimpleItem("royal_pheromone_gland");
+
+    /** M7: reusable summon, two allied soldiers a blow, on a long cooldown. */
+    public static final DeferredItem<PheromoneHornItem> PHEROMONE_HORN =
+            ITEMS.registerItem("pheromone_horn", PheromoneHornItem::new);
+
     // --- Chitin Armor (spec section 5). No recipes until M8: creative-only for now. ---
 
     public static final DeferredItem<ArmorItem> CHITIN_HELMET = armorPiece("chitin_helmet", ArmorItem.Type.HELMET);

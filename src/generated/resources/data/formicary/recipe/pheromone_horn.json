@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "equipment",
+  "ingredients": [
+    {
+      "item": "formicary:royal_pheromone_gland"
+    },
+    {
+      "item": "formicary:resin"
+    },
+    {
+      "item": "formicary:chitin"
+    }
+  ],
+  "result": {
+    "count": 1,
+    "id": "formicary:pheromone_horn"
+  }
+}

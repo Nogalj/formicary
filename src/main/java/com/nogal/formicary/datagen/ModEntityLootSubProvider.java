@@ -3,6 +3,7 @@ package com.nogal.formicary.datagen;
 import java.util.List;
 import java.util.stream.Stream;
 
+import com.nogal.formicary.block.ModBlocks;
 import com.nogal.formicary.entity.ModEntities;
 import com.nogal.formicary.item.ModItems;
 
@@ -39,6 +40,10 @@ public class ModEntityLootSubProvider extends EntityLootSubProvider {
     /** Soldier Scent Gland drop chance. Tunable. */
     private static final float SOLDIER_SCENT_GLAND_CHANCE = 0.75F;
 
+    /** The queen's Royal Jelly haul, before Looting. Spec says "several". Tunable. */
+    private static final float QUEEN_JELLY_MIN = 3.0F;
+    private static final float QUEEN_JELLY_MAX = 5.0F;
+
     public ModEntityLootSubProvider(HolderLookup.Provider registries) {
         super(FeatureFlags.REGISTRY.allFlags(), registries);
     }
@@ -56,6 +61,39 @@ public class ModEntityLootSubProvider extends EntityLootSubProvider {
         // TamedWorkerAntEntity.dropCustomDeathLoot, which is inventory, not loot.
         this.add(ModEntities.TAMED_WORKER_ANT.get(), chitinTable(0.0F, 2.0F));
         this.add(ModEntities.TAMED_SOLDIER_ANT.get(), soldierTable());
+        this.add(ModEntities.QUEEN_ANT.get(), queenTable());
+    }
+
+    /**
+     * The queen's guaranteed drops (M7, spec section 3): "several Royal Jelly, one Queen's
+     * Crest trophy block, and a Royal Pheromone Gland".
+     *
+     * <p>A loot table rather than {@code dropCustomDeathLoot} so Looting applies for free
+     * and a datapack can retune the fight's payout. Each pool has constant rolls and no
+     * conditions, which is what "guaranteed" means here -- unlike the caste tables above,
+     * nothing is behind a {@code randomChance}. Looting is deliberately applied only to the
+     * jelly: the Crest is a trophy and the gland is the horn's one and only ingredient, so
+     * multiplying either would turn an enchantment into a balance decision.
+     */
+    private LootTable.Builder queenTable() {
+        return LootTable.lootTable()
+                .withPool(
+                        LootPool.lootPool()
+                                .setRolls(ConstantValue.exactly(1.0F))
+                                .add(
+                                        LootItem.lootTableItem(ModItems.ROYAL_JELLY.get())
+                                                .apply(SetItemCountFunction.setCount(
+                                                        UniformGenerator.between(QUEEN_JELLY_MIN, QUEEN_JELLY_MAX)))
+                                                .apply(EnchantedCountIncreaseFunction.lootingMultiplier(
+                                                        this.registries, UniformGenerator.between(0.0F, 1.0F)))))
+                .withPool(
+                        LootPool.lootPool()
+                                .setRolls(ConstantValue.exactly(1.0F))
+                                .add(LootItem.lootTableItem(ModBlocks.QUEENS_CREST.get())))
+                .withPool(
+                        LootPool.lootPool()
+                                .setRolls(ConstantValue.exactly(1.0F))
+                                .add(LootItem.lootTableItem(ModItems.ROYAL_PHEROMONE_GLAND.get())));
     }
 
     private LootTable.Builder chitinTable(float min, float max) {
@@ -93,6 +131,7 @@ public class ModEntityLootSubProvider extends EntityLootSubProvider {
                 ModEntities.SOLDIER_ANT.get(),
                 ModEntities.LARVA.get(),
                 ModEntities.TAMED_WORKER_ANT.get(),
-                ModEntities.TAMED_SOLDIER_ANT.get()).stream();
+                ModEntities.TAMED_SOLDIER_ANT.get(),
+                ModEntities.QUEEN_ANT.get()).stream();
     }
 }

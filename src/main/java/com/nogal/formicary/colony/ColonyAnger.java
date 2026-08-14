@@ -4,6 +4,7 @@ import javax.annotation.Nullable;
 
 import com.nogal.formicary.effect.ModMobEffects;
 import com.nogal.formicary.entity.LarvaEntity;
+import com.nogal.formicary.entity.QueenAntEntity;
 import com.nogal.formicary.entity.SoldierAntEntity;
 import com.nogal.formicary.entity.TamedAnt;
 import com.nogal.formicary.entity.WorkerAntEntity;
@@ -81,9 +82,16 @@ public final class ColonyAnger {
      * rather than a consequence: see {@code entity.TamedAntTargetGoal}.
      */
     public static boolean isColonyAnt(Entity entity) {
+        if (entity instanceof SoldierAntEntity soldier) {
+            // A soldier summoned by a Pheromone Horn (M7) is the player's, not the colony's.
+            // Excluding it here is what stops the summoner's own stray swing at their ally
+            // -- or a wild ant chewing on it -- from raising the alarm and stripping the
+            // summoner's disguise.
+            return !soldier.isAllied();
+        }
         return entity instanceof WorkerAntEntity
-                || entity instanceof SoldierAntEntity
-                || entity instanceof LarvaEntity;
+                || entity instanceof LarvaEntity
+                || entity instanceof QueenAntEntity;
     }
 
     /** Whether {@code entity} is one of the player's own ants rather than the colony's. */

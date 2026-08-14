@@ -102,6 +102,16 @@ public class WorkerAntEntity extends PathfinderMob implements CarriesItem {
         return this.isFleeing() && (this.fleeFrom == null || this.fleeFrom.equals(entity.getUUID()));
     }
 
+    /**
+     * Ends the panic window early. The only caller is the queen's death grace (M7): killing
+     * her buys the whole colony's forgiveness, and a worker still fleeing a player the
+     * soldiers have already forgiven would be the visible half of the grace not landing.
+     */
+    public void stopFleeing() {
+        this.fleeTicks = 0;
+        this.fleeFrom = null;
+    }
+
     @Override
     protected void customServerAiStep() {
         super.customServerAiStep();

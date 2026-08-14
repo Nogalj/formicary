@@ -37,10 +37,13 @@ import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.ModBlocks;
+import com.nogal.formicary.entity.ModEntities;
+import com.nogal.formicary.entity.QueenAntEntity;
 
 import net.minecraft.Util;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.SectionPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.WorldGenRegion;
 import net.minecraft.util.Mth;
@@ -480,6 +483,8 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(RandomSupport.generateUniqueSeed()));
         random.setDecorationSeed(level.getSeed(), chunkPos.getMinBlockX(), chunkPos.getMinBlockZ());
 
+        spawnQueenIfThisChunkHoldsAThrone(level, chunkPos);
+
         for (int tier = 0; tier < TIER_COUNT; tier++) {
             int bandMin = Math.max(tierMinY(tier), level.getMinBuildHeight() + 1);
             int bandMax = Math.min(tierMaxY(tier), level.getMaxBuildHeight() - 2);
@@ -489,6 +494,43 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             Holder<Biome> biome = level.getBiome(
                     new BlockPos(chunkPos.getMiddleBlockX(), (bandMin + bandMax) / 2, chunkPos.getMiddleBlockZ()));
             spawnTier(level, biome, chunkPos, random, bandMin, bandMax);
+        }
+    }
+
+    /**
+     * Seats the queen on her dais, exactly once per chamber.
+     *
+     * <p>{@code spawnOriginalMobs} is the honest hook for it: {@code ChunkStatus.SPAWN} runs
+     * it once in a chunk's whole life, so "the chunk containing this chamber's centre column
+     * spawns the queen" is a once-ever event without needing a marker block entity, a saved
+     * data flag, or a first-tick scan. It is also the same mechanism that already seeds the
+     * four tiers' ants, so there is one story about how this dimension populates itself.
+     *
+     * <p>{@code getBlockState} is deliberately not consulted: the dais is written by
+     * {@link #fill}, which runs several chunk statuses earlier, and its position is a pure
+     * function of the chamber -- so the Y is known rather than searched for.
+     */
+    private void spawnQueenIfThisChunkHoldsAThrone(WorldGenRegion level, ChunkPos chunkPos) {
+        ColonyNoise noise = noise(level.getLevel().getChunkSource().randomState());
+        for (ColonyNoise.Throne throne : noise.thronesNear(chunkPos.getMinBlockX(), chunkPos.getMinBlockZ())) {
+            int x = (int) Math.round(throne.centreX());
+            int z = (int) Math.round(throne.centreZ());
+            if (SectionPos.blockToSectionCoord(x) != chunkPos.x || SectionPos.blockToSectionCoord(z) != chunkPos.z) {
+                continue;
+            }
+            BlockPos seat = new BlockPos(x, throne.floorY() + THRONE_DAIS_HEIGHT + 1, z);
+            QueenAntEntity queen = ModEntities.QUEEN_ANT.get().create(level.getLevel());
+            if (queen == null) {
+                Formicary.LOGGER.warn("Formicary: could not create the queen for the chamber at {}", seat);
+                continue;
+            }
+            queen.moveTo(seat.getX() + 0.5, seat.getY(), seat.getZ() + 0.5, level.getRandom().nextFloat() * 360.0F,
+                    0.0F);
+            queen.finalizeSpawn(level, level.getCurrentDifficultyAt(seat), MobSpawnType.CHUNK_GENERATION, null);
+            queen.setThroneHome(seat);
+            queen.setPersistenceRequired();
+            level.addFreshEntityWithPassengers(queen);
+            Formicary.LOGGER.info("Formicary: seated a queen at {}", seat);
         }
     }
 

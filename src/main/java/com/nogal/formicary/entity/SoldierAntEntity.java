@@ -6,12 +6,14 @@ import javax.annotation.Nullable;
 
 import com.nogal.formicary.colony.ColonyAnger;
 
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
@@ -45,10 +47,20 @@ import net.minecraft.world.level.Level;
  * {@link #angerAt(Player)} -- so it is always a player.
  */
 public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
+    private static final String TAG_SUMMONER = "Summoner";
+    private static final String TAG_SUMMON_EXPIRY = "SummonExpiry";
+
     private int remainingAngerTime;
 
     @Nullable
     private UUID angerTarget;
+
+    /** Set only on a soldier summoned by a Pheromone Horn (M7). See {@link #isAllied()}. */
+    @Nullable
+    private UUID summoner;
+
+    /** Game time at which a summoned soldier disperses. Meaningless while wild. */
+    private long summonExpiry;
 
     public SoldierAntEntity(EntityType<? extends SoldierAntEntity> entityType, Level level) {
         super(entityType, level);
@@ -68,6 +80,7 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
+        this.goalSelector.addGoal(1, new AlliedFollowSummonerGoal(this, 1.15));
         this.goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.0, false));
         this.goalSelector.addGoal(5, new WaterAvoidingRandomStrollGoal(this, 0.9));
         this.goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 6.0F, 0.1F));
@@ -76,14 +89,88 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
         // Personal retaliation: anything that hits this soldier specifically.
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
         // Colony anger: whoever provoked the colony anywhere inside the radius.
-        this.targetSelector.addGoal(2, new ColonyAngerTargetGoal(this));
+        this.targetSelector.addGoal(2, new ColonyAngerTargetGoal(this) {
+            @Override
+            public boolean canUse() {
+                return !SoldierAntEntity.this.isAllied() && super.canUse();
+            }
+        });
         // Deep-tier hostility: no provocation needed in the Nurseries/Royal Depths (M4b).
         // Lower priority than colony anger, so an already-angry soldier keeps its offender.
-        this.targetSelector.addGoal(3, new DeepTierHostilityGoal(this));
+        this.targetSelector.addGoal(3, new DeepTierHostilityGoal(this) {
+            @Override
+            public boolean canUse() {
+                return !SoldierAntEntity.this.isAllied() && super.canUse();
+            }
+        });
         // Tamed ants of a player this soldier is already hostile to (M6). Lowest of the
         // four: given a choice between the trespasser and the trespasser's ant, take the
         // trespasser.
-        this.targetSelector.addGoal(4, new TamedAntTargetGoal(this));
+        this.targetSelector.addGoal(4, new TamedAntTargetGoal(this) {
+            @Override
+            public boolean canUse() {
+                return !SoldierAntEntity.this.isAllied() && super.canUse();
+            }
+        });
+        // A horn-summoned ally fights for its summoner instead of for the colony (M7).
+        this.targetSelector.addGoal(5, new AlliedSoldierTargetGoal(this));
+    }
+
+    // ------------------------------------------------------------- summoned --
+
+    /**
+     * Turns this soldier into {@code summoner}'s ally for {@code lifetimeTicks}.
+     *
+     * <p>Being allied is a mode, not a subclass, exactly as the spec asks ("allied soldiers
+     * reuse the soldier entity with an owner/summoned flag"). It gates four things:
+     * {@link ColonyAnger#isColonyAnt} stops answering for it, the three colony target goals
+     * above stand down, {@link AlliedSoldierTargetGoal} takes over, and
+     * {@link #customServerAiStep()} disperses it when the timer runs out.
+     */
+    public void summonFor(Player summoner, int lifetimeTicks) {
+        this.summoner = summoner.getUUID();
+        this.summonExpiry = this.level().getGameTime() + lifetimeTicks;
+    }
+
+    /** Whether this soldier is a Pheromone Horn summon rather than one of the colony's. */
+    public boolean isAllied() {
+        return this.summoner != null;
+    }
+
+    @Nullable
+    public UUID getSummonerUUID() {
+        return this.summoner;
+    }
+
+    /**
+     * UUID comparison rather than resolving the player: {@code level.getPlayerByUUID} is
+     * always null for a {@code GameTestHelper} mock player (it is never added to the level).
+     */
+    public boolean isSummonedBy(Player player) {
+        return player.getUUID().equals(this.summoner);
+    }
+
+    /** Game time at which this summon disperses. */
+    public long getSummonExpiry() {
+        return this.summonExpiry;
+    }
+
+    /** Disperses a summon: amber puff, then gone. Public so a test can drive it directly. */
+    public void disperse() {
+        if (this.level() instanceof ServerLevel level) {
+            level.sendParticles(ParticleTypes.FALLING_HONEY, this.getX(), this.getY() + 0.3, this.getZ(),
+                    18, 0.3, 0.2, 0.3, 0.01);
+        }
+        this.discard();
+    }
+
+    /** An ally never turns on the player who summoned it, whichever goal proposed it. */
+    @Override
+    public boolean canAttack(LivingEntity target) {
+        if (this.isAllied() && target instanceof Player player && this.isSummonedBy(player)) {
+            return false;
+        }
+        return super.canAttack(target);
     }
 
     /**
@@ -114,7 +201,14 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
     @Override
     protected void customServerAiStep() {
         super.customServerAiStep();
-        if (!this.level().isClientSide && this.remainingAngerTime > 0) {
+        if (this.level().isClientSide) {
+            return;
+        }
+        if (this.isAllied() && this.level().getGameTime() >= this.summonExpiry) {
+            this.disperse();
+            return;
+        }
+        if (this.remainingAngerTime > 0) {
             this.remainingAngerTime--;
             if (this.remainingAngerTime == 0) {
                 this.stopBeingAngry();
@@ -154,12 +248,20 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
     public void addAdditionalSaveData(CompoundTag compound) {
         super.addAdditionalSaveData(compound);
         this.addPersistentAngerSaveData(compound);
+        if (this.summoner != null) {
+            compound.putUUID(TAG_SUMMONER, this.summoner);
+            compound.putLong(TAG_SUMMON_EXPIRY, this.summonExpiry);
+        }
     }
 
     @Override
     public void readAdditionalSaveData(CompoundTag compound) {
         super.readAdditionalSaveData(compound);
         this.readPersistentAngerSaveData(this.level(), compound);
+        if (compound.hasUUID(TAG_SUMMONER)) {
+            this.summoner = compound.getUUID(TAG_SUMMONER);
+            this.summonExpiry = compound.getLong(TAG_SUMMON_EXPIRY);
+        }
     }
 
     /**

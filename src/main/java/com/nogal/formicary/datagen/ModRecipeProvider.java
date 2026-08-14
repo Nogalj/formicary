@@ -27,6 +27,9 @@ public class ModRecipeProvider extends RecipeProvider {
     /** How many Trail Pheromones one Scent Gland + Fungal Bloom makes. Tunable per spec. */
     public static final int TRAIL_PHEROMONE_PER_CRAFT = 2;
 
+    /** How many Pheromone Horns one Royal Pheromone Gland makes. Tunable. */
+    public static final int PHEROMONE_HORN_PER_CRAFT = 1;
+
     public ModRecipeProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> registries) {
         super(output, registries);
     }
@@ -40,6 +43,18 @@ public class ModRecipeProvider extends RecipeProvider {
                 .requires(ModItems.SCENT_GLAND.get())
                 .requires(ModItems.FUNGAL_BLOOM.get())
                 .unlockedBy(getHasName(ModItems.SCENT_GLAND.get()), has(ModItems.SCENT_GLAND.get()))
+                .save(recipeOutput);
+
+        // Spec section 3: "gland + resin + chitin, tunable". Shapeless for the same reason
+        // -- nothing about the arrangement should matter -- and unlocked by the gland, which
+        // only the queen drops, so the recipe book cannot advertise it before the fight.
+        ShapelessRecipeBuilder
+                .shapeless(RecipeCategory.TOOLS, ModItems.PHEROMONE_HORN.get(), PHEROMONE_HORN_PER_CRAFT)
+                .requires(ModItems.ROYAL_PHEROMONE_GLAND.get())
+                .requires(ModItems.RESIN.get())
+                .requires(ModItems.CHITIN.get())
+                .unlockedBy(getHasName(ModItems.ROYAL_PHEROMONE_GLAND.get()),
+                        has(ModItems.ROYAL_PHEROMONE_GLAND.get()))
                 .save(recipeOutput);
     }
 }

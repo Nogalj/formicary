@@ -47,6 +47,9 @@ public class ModLanguageProvider extends LanguageProvider {
         // Shown above the hotbar when a pheromone is used with nothing recorded to retrace.
         add("item.formicary.trail_pheromone.no_trail", "No trail to follow yet.");
 
+        addItem(ModItems.ROYAL_PHEROMONE_GLAND, "Royal Pheromone Gland");
+        addItem(ModItems.PHEROMONE_HORN, "Pheromone Horn");
+
         addItem(ModItems.CHITIN_HELMET, "Chitin Helmet");
         addItem(ModItems.CHITIN_CHESTPLATE, "Chitin Chestplate");
         addItem(ModItems.CHITIN_LEGGINGS, "Chitin Leggings");
@@ -62,6 +65,11 @@ public class ModLanguageProvider extends LanguageProvider {
         // M6: no spawn eggs for these two -- an egg-spawned tamed ant would have no owner.
         addEntityType(ModEntities.TAMED_WORKER_ANT, "Tamed Worker Ant");
         addEntityType(ModEntities.TAMED_SOLDIER_ANT, "Tamed Soldier Ant");
+
+        // M7: no spawn egg either -- the only queen in a world is the one her chamber
+        // generated. This name is also what the boss bar reads (ServerBossEvent takes
+        // getDisplayName()).
+        addEntityType(ModEntities.QUEEN_ANT, "The Queen");
 
         add("itemGroup.formicary.formicary", "Formicary");
 

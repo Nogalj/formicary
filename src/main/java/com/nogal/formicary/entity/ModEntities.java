@@ -68,6 +68,23 @@ public class ModEntities {
                             .sized(1.1F, 0.8F)
                             .build("tamed_soldier_ant"));
 
+    /**
+     * The boss (M7). Placed by {@code ColonyChunkGenerator} in a throne chamber and nowhere
+     * else: no spawn placement, no spawn list entry, and deliberately no spawn egg, so the
+     * only queen in a world is the one the chamber generated.
+     *
+     * <p>2.4 x 1.8 is a size, not a fit: her model's mandibles and abdomen tip overhang it
+     * (she is about 3 blocks nose to tail), which is normal for a long mob and keeps the
+     * collision box something that can path a 3-wide corridor.
+     */
+    public static final DeferredHolder<EntityType<?>, EntityType<QueenAntEntity>> QUEEN_ANT =
+            ENTITY_TYPES.register("queen_ant",
+                    () -> EntityType.Builder.of(QueenAntEntity::new, MobCategory.MONSTER)
+                            .sized(2.4F, 1.8F)
+                            .fireImmune()
+                            .clientTrackingRange(16)
+                            .build("queen_ant"));
+
     /** Chitin red-brown shell, amber highlight -- the same pair the texture uses. */
     public static final DeferredItem<DeferredSpawnEggItem> WORKER_ANT_SPAWN_EGG =
             ModItems.ITEMS.registerItem("worker_ant_spawn_egg",
@@ -92,6 +109,7 @@ public class ModEntities {
             event.put(LARVA.get(), LarvaEntity.createAttributes().build());
             event.put(TAMED_WORKER_ANT.get(), TamedWorkerAntEntity.createAttributes().build());
             event.put(TAMED_SOLDIER_ANT.get(), TamedSoldierAntEntity.createAttributes().build());
+            event.put(QUEEN_ANT.get(), QueenAntEntity.createAttributes().build());
         }
 
         /**

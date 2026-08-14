@@ -45,6 +45,7 @@ from PIL import Image, ImageDraw
 TEX = 64
 SOLDIER_TEX_W, SOLDIER_TEX_H = 64, 32
 LARVA_TEX_W, LARVA_TEX_H = 32, 16
+QUEEN_TEX_W, QUEEN_TEX_H = 128, 64
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENTITY_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/entity"
 PREVIEW_DIR = Path(__file__).resolve().parent / "previews"
@@ -195,6 +196,78 @@ LARVA = {
 }
 
 
+# Queen (M7): the boss. Everything about her reads "the colony's engine" -- the
+# gaster is the visual mass (an egg-laying abdomen, 18x14x18 against the
+# soldier's 6x5x7), the thorax and head carry the soldier's armour language at
+# roughly double scale, and the legs are long enough to carry all of it.
+#
+# Atlas is 128x64. Box-UV packing, checked to fit:
+#   gaster   (0,  0)  72x32     thorax  (0, 32)  56x24
+#   head     (72, 0)  46x20     petiole (72,20)  22x11
+#   crest    (94,20)  22x7      mandible(94,27)  26x12
+#   leg      (56,32)   8x15     antenna (64,32)   8x9
+#
+# Ground is y=24; her back sits at y=0, i.e. 24px = 1.5 blocks tall, under the
+# 1.8-block hitbox. Feet land at 12 + 13*cos(0.6109) = 22.7, so the splay and
+# the leg length are tied together -- change one and the feet leave the floor.
+QUEEN_REST_LEG_Z = 0.6109       # 35 degrees off vertical
+QUEEN_REST_LEG_Y_FRONT = -0.4363
+QUEEN_REST_LEG_Y_HIND = 0.4363
+
+QUEEN_ANT = {
+    "name": "queen_ant",
+    "parts": [
+        # --- thorax: the root; legs hang off it --------------------------------
+        {"name": "body", "pose": (0, 6, 0), "cubes": [
+            {"off": (0, 32), "box": (-7, -5, -7, 14, 10, 14)},
+        ]},
+        # --- head: broad armoured skull + a tall royal crest --------------------
+        {"name": "head", "pose": (0, 6.5, -7), "cubes": [
+            {"off": (72, 0), "box": (-6, -4.5, -11, 12, 9, 11)},        # skull
+            {"off": (94, 20), "box": (-3, -6.5, -8, 6, 2, 5)},          # crest
+        ]},
+        {"name": "mandible_r", "pose": (-3, 12, -18), "cubes": [
+            {"off": (94, 27), "box": (-5, -2, -8, 5, 4, 8)},
+        ]},
+        {"name": "mandible_l", "pose": (3, 12, -18), "cubes": [
+            {"off": (94, 27), "box": (0, -2, -8, 5, 4, 8)},
+        ]},
+        {"name": "antenna_r", "pose": (-3, 4, -16),
+         "rot": (REST_ANT_X, 0, -REST_ANT_Z), "cubes": [
+            {"off": (64, 32), "box": (-1, -7, -1, 2, 7, 2)},
+        ]},
+        {"name": "antenna_l", "pose": (3, 4, -16),
+         "rot": (REST_ANT_X, 0, REST_ANT_Z), "cubes": [
+            {"off": (64, 32), "box": (-1, -7, -1, 2, 7, 2)},
+        ]},
+        # --- gaster: the mass. Petiole waist, then the egg-swollen abdomen ------
+        {"name": "gaster", "pose": (0, 4, 0), "cubes": [
+            {"off": (72, 20), "box": (-3, 3, 5, 6, 6, 5)},              # petiole
+            {"off": (0, 0), "box": (-9, -4, 9, 18, 14, 18)},            # gaster
+        ]},
+        # --- six long legs ------------------------------------------------------
+        {"name": "leg_r1", "pose": (-7, 12, -5),
+         "rot": (0, QUEEN_REST_LEG_Y_FRONT, QUEEN_REST_LEG_Z),
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
+        {"name": "leg_r2", "pose": (-7, 12, 0),
+         "rot": (0, 0, QUEEN_REST_LEG_Z),
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
+        {"name": "leg_r3", "pose": (-7, 12, 5),
+         "rot": (0, QUEEN_REST_LEG_Y_HIND, QUEEN_REST_LEG_Z),
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
+        {"name": "leg_l1", "pose": (7, 12, -5),
+         "rot": (0, -QUEEN_REST_LEG_Y_FRONT, -QUEEN_REST_LEG_Z),
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
+        {"name": "leg_l2", "pose": (7, 12, 0),
+         "rot": (0, 0, -QUEEN_REST_LEG_Z),
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
+        {"name": "leg_l3", "pose": (7, 12, 5),
+         "rot": (0, -QUEEN_REST_LEG_Y_HIND, -QUEEN_REST_LEG_Z),
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
+    ],
+}
+
+
 # ------------------------------------------------------------------- faces --
 
 def face_rects(u, v, w, h, d):
@@ -298,6 +371,40 @@ L_EYE = (60, 40, 24, 255)
 L_BODY_PAL = [L_SHADE, L_BASE, L_LIGHT, L_LIGHT, L_PALE]
 L_TOP_PAL = [L_DARK, L_SHADE, L_BASE, L_LIGHT, L_PALE]
 L_BOTTOM_PAL = [L_DARK, L_DARK, L_SHADE, L_SHADE, L_BASE]
+
+
+# ------------------------------------------------------------ queen palette --
+# Regal rather than merely bigger: a near-black plum carapace for the head and
+# thorax with gold banding, over a gaster that is pale and warm -- the eggs
+# showing through the shell. That contrast (dark armour / lit belly) is what
+# makes the abdomen read as the mass of her rather than just a large box.
+
+Q_PLUM_DARKEST = (22, 10, 18, 255)
+Q_PLUM_DARK = (44, 18, 34, 255)
+Q_PLUM_BASE = (70, 28, 48, 255)
+Q_PLUM_MID = (96, 40, 62, 255)
+Q_PLUM_LIGHT = (124, 56, 78, 255)
+
+Q_GOLD_DEEP = (146, 96, 26, 255)
+Q_GOLD = (206, 152, 48, 255)
+Q_GOLD_BRIGHT = (244, 202, 104, 255)
+
+# Gaster: pale, egg-swollen. Its own ramp, warmer and much lighter than the plum.
+Q_SAC_DARK = (170, 124, 84, 255)
+Q_SAC_BASE = (214, 172, 118, 255)
+Q_SAC_MID = (234, 198, 146, 255)
+Q_SAC_LIGHT = (246, 220, 176, 255)
+Q_SAC_PALE = (253, 240, 210, 255)
+
+Q_EYE = (255, 226, 150, 255)
+Q_EYE_DARK = (30, 12, 22, 255)
+
+Q_SHELL_PAL = [Q_PLUM_DARK, Q_PLUM_BASE, Q_PLUM_MID, Q_PLUM_LIGHT, Q_GOLD_DEEP]
+Q_SHELL_BACK_PAL = [Q_PLUM_DARKEST, Q_PLUM_DARK, Q_PLUM_BASE, Q_PLUM_MID, Q_PLUM_LIGHT]
+Q_SAC_PAL = [Q_SAC_DARK, Q_SAC_BASE, Q_SAC_MID, Q_SAC_LIGHT, Q_SAC_PALE]
+Q_SAC_TOP_PAL = [Q_SAC_DARK, Q_SAC_DARK, Q_SAC_BASE, Q_SAC_MID, Q_SAC_LIGHT]
+Q_SAC_BELLY_PAL = [Q_SAC_MID, Q_SAC_LIGHT, Q_SAC_PALE, Q_SAC_PALE, Q_SAC_PALE]
+Q_LIMB_PAL = [Q_PLUM_DARKEST, Q_PLUM_DARK, Q_PLUM_DARK, Q_PLUM_BASE, Q_PLUM_MID]
 
 
 # ----------------------------------------------------------------- painting --
@@ -615,6 +722,137 @@ def paint_larva():
     return img
 
 
+def paint_queen_ant():
+    img = Image.new("RGBA", (QUEEN_TEX_W, QUEEN_TEX_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    parts = {p["name"]: p for p in QUEEN_ANT["parts"]}
+    NS = "queen_ant"
+
+    def rects(cube):
+        u, v = cube["off"]
+        _, _, _, w, h, dd = cube["box"]
+        return face_rects(u, v, w, h, dd)
+
+    # ---- thorax: plum plate armour with a gold seam front and back ----------
+    r = rects(parts["body"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "thorax:" + f, Q_SHELL_PAL, namespace=NS, cell=3)
+    noise_rect(d, r["top"], "thorax:top", Q_SHELL_BACK_PAL, namespace=NS, cell=3)
+    noise_rect(d, r["bottom"], "thorax:bottom", Q_LIMB_PAL, namespace=NS, cell=3)
+    hband(d, r["top"], 0, Q_GOLD_DEEP)           # seam against the gaster (back)
+    hband(d, r["top"], 13, Q_GOLD_DEEP)          # seam against the head (front)
+    for f in ("west", "east"):
+        vband(d, r[f], 0, Q_GOLD_DEEP)
+        vband(d, r[f], 13, Q_PLUM_DARKEST)
+        hband(d, r[f], 0, Q_PLUM_DARKEST)        # dark upper rim
+        px(d, r[f], 4, 3, Q_GOLD)                # a lit stud on each flank
+        px(d, r[f], 9, 3, Q_GOLD)
+    for gx in (3, 10):
+        vband(d, r["top"], gx, Q_PLUM_DARKEST)   # two ridges running the length
+    px(d, r["top"], 6, 6, Q_GOLD_BRIGHT)
+    px(d, r["top"], 7, 7, Q_GOLD_BRIGHT)
+
+    # ---- gaster: petiole waist, then the pale egg-swollen mass --------------
+    petiole, gaster = parts["gaster"]["cubes"]
+    r = rects(petiole)
+    for f in ("west", "north", "east", "south", "top"):
+        fill(d, r[f], Q_PLUM_DARK)
+    fill(d, r["bottom"], Q_PLUM_DARKEST)
+    for f in ("west", "east"):
+        hband(d, r[f], 0, Q_GOLD_DEEP)           # lit upper edge of the waist
+
+    r = rects(gaster)
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "gaster:" + f, Q_SAC_PAL, namespace=NS, cell=3, jitter=0.18)
+    noise_rect(d, r["top"], "gaster:top", Q_SAC_TOP_PAL, namespace=NS, cell=3, jitter=0.18)
+    noise_rect(d, r["bottom"], "gaster:bottom", Q_SAC_BELLY_PAL, namespace=NS, cell=3, jitter=0.18)
+    # Segment banding. On the side faces rect-x runs front -> back; the bands are
+    # plum, so the abdomen reads as pale skin stretched between dark chitin rings.
+    for f in ("west", "east"):
+        vband(d, r[f], 0, Q_PLUM_DARK)           # seam against the petiole
+        for bx in (4, 9, 14):
+            vband(d, r[f], bx, Q_PLUM_BASE)
+        hband(d, r[f], 0, Q_SAC_DARK)
+        px(d, r[f], 2, 4, Q_SAC_PALE)            # sheen high on the flank
+        px(d, r[f], 6, 3, Q_SAC_PALE)
+    for by in (0, 5, 10, 15):                    # world-top rect-y runs back -> front
+        hband(d, r["top"], by, Q_PLUM_BASE)
+    px(d, r["top"], 8, 7, Q_SAC_PALE)
+    px(d, r["top"], 9, 8, Q_SAC_PALE)
+    hband(d, r["north"], 0, Q_PLUM_DARK)         # shaded where it meets the waist
+    fill(d, (r["south"][0], r["south"][1], r["south"][2], r["south"][1] + 1), Q_PLUM_DARK)
+    px(d, r["south"], 8, 10, Q_GOLD_DEEP)        # ovipositor tip
+    px(d, r["south"], 9, 10, Q_GOLD_DEEP)
+
+    # ---- head: near-black plates, gold brow, big amber eyes ----------------
+    skull, crest = parts["head"]["cubes"][0], parts["head"]["cubes"][1]
+    r = rects(skull)
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "skull:" + f, Q_SHELL_BACK_PAL, namespace=NS, cell=3)
+    noise_rect(d, r["top"], "skull:top", Q_SHELL_BACK_PAL, namespace=NS, cell=3)
+    noise_rect(d, r["bottom"], "skull:bottom", Q_LIMB_PAL, namespace=NS, cell=3)
+    n = r["north"]                               # 12 wide x 9 tall front face
+    hband(d, n, 0, Q_PLUM_DARKEST)
+    hband(d, n, 1, Q_GOLD_DEEP)                  # gold brow band
+    for ex in (1, 2, 9, 10):                     # two 2px amber eyes
+        px(d, n, ex, 3, Q_EYE)
+        px(d, n, ex, 4, Q_EYE_DARK)
+    px(d, n, 1, 3, Q_GOLD_BRIGHT)
+    px(d, n, 10, 3, Q_GOLD_BRIGHT)
+    d.rectangle([n[0] + 3, n[1] + 7, n[0] + 8, n[1] + 7], fill=Q_PLUM_DARKEST)  # mouth line
+    for f in ("west", "east"):
+        px(d, r[f], 0, 3, Q_EYE)                 # the eyes wrap onto the sides
+        px(d, r[f], 0, 4, Q_EYE_DARK)
+        hband(d, r[f], 1, Q_GOLD_DEEP)
+    hband(d, r["top"], 10, Q_PLUM_DARKEST)       # shadow where the crest sits
+
+    # ---- crest: the one piece that is gold rather than trimmed with it ------
+    r = rects(crest)
+    for f in ("west", "north", "east", "south", "top"):
+        fill(d, r[f], Q_GOLD_DEEP)
+    fill(d, r["bottom"], Q_PLUM_DARKEST)
+    fill(d, r["top"], Q_GOLD)
+    for f in ("west", "east"):
+        hband(d, r[f], 0, Q_GOLD_BRIGHT)         # lit ridge along the top
+    px(d, r["north"], 2, 0, Q_GOLD_BRIGHT)
+    px(d, r["north"], 3, 0, Q_GOLD_BRIGHT)
+
+    # ---- mandibles: plum base, gold biting tip -----------------------------
+    r = rects(parts["mandible_r"]["cubes"][0])
+    for f in ("west", "north", "east", "south", "top"):
+        fill(d, r[f], Q_PLUM_BASE)
+    fill(d, r["bottom"], Q_PLUM_DARKEST)
+    fill(d, r["north"], Q_GOLD)                  # the -Z face is the biting tip
+    for f in ("west", "east"):
+        vband(d, r[f], 0, Q_GOLD)
+        vband(d, r[f], 1, Q_GOLD_DEEP)
+        vband(d, r[f], 7, Q_PLUM_DARKEST)
+    px(d, r["top"], 1, 1, Q_GOLD_BRIGHT)
+    px(d, r["top"], 3, 2, Q_GOLD_BRIGHT)
+
+    # ---- antennae: dark shaft, gold tip (min-Y end is the tip) -------------
+    r = rects(parts["antenna_r"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "antenna:" + f, Q_LIMB_PAL, cell=1, namespace=NS)
+        hband(d, r[f], 0, Q_GOLD)
+        hband(d, r[f], 1, Q_GOLD_DEEP)
+        hband(d, r[f], 6, Q_PLUM_DARKEST)        # base joint
+    fill(d, r["top"], Q_GOLD_BRIGHT)
+    fill(d, r["bottom"], Q_PLUM_DARKEST)
+
+    # ---- legs: dark chitin, two gold joint bands, near-black foot ---------
+    r = rects(parts["leg_r1"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "leg:" + f, Q_LIMB_PAL, cell=1, namespace=NS)
+        hband(d, r[f], 4, Q_GOLD_DEEP)           # femur/tibia joint
+        hband(d, r[f], 9, Q_GOLD_DEEP)           # tibia/tarsus joint
+        hband(d, r[f], 12, Q_PLUM_DARKEST)       # foot
+    fill(d, r["top"], Q_PLUM_DARK)
+    fill(d, r["bottom"], Q_PLUM_DARKEST)
+
+    return img
+
+
 # ----------------------------------------------------------------- preview --
 
 def rotate_zyx(p, rot):
@@ -663,20 +901,27 @@ def face_centre(part, cube, face):
     return tuple((pu[i] + pv[i]) / 2.0 for i in range(3))
 
 
-VIEW_SCALE = 12
-VIEW_UNITS = 24
-VIEW_PX = VIEW_SCALE * VIEW_UNITS
-VX0, VY0, VZ0 = -12.0, 8.0, -12.0   # world coord at screen origin, per axis
-
-VIEWS = {
-    # name: (project(worldpoint) -> (screen_x, screen_y), depth axis index, )
-    "front": (lambda p: ((p[0] - VX0) * VIEW_SCALE, (p[1] - VY0) * VIEW_SCALE), 2),
-    "side":  (lambda p: ((p[2] - VZ0) * VIEW_SCALE, (p[1] - VY0) * VIEW_SCALE), 0),
-    "top":   (lambda p: ((p[0] - VX0) * VIEW_SCALE, (p[2] - VZ0) * VIEW_SCALE), 1),
-}
+# The orthographic window each model is rendered into: `units` world units across,
+# `scale` screen pixels per unit, with (x0, y0, z0) the world coord at the screen
+# origin. A model that pokes outside the window is silently CLIPPED, not scaled to
+# fit, so a new model whose reach differs much from the worker's needs its own box --
+# the queen is 60 units nose to abdomen tip against the worker's 16.
+DEFAULT_VIEW = {"scale": 12, "units": 24, "x0": -12.0, "y0": 8.0, "z0": -12.0}
+QUEEN_VIEW = {"scale": 7, "units": 60, "x0": -30.0, "y0": -6.0, "z0": -30.0}
+QUEEN_ANT["view"] = QUEEN_VIEW
 
 
-def paste_face(canvas, tex, rect, p0, pu, pv):
+def make_views(box):
+    """{name: (project(worldpoint) -> (screen_x, screen_y), depth axis index)}."""
+    scale, x0, y0, z0 = box["scale"], box["x0"], box["y0"], box["z0"]
+    return {
+        "front": (lambda p: ((p[0] - x0) * scale, (p[1] - y0) * scale), 2),
+        "side":  (lambda p: ((p[2] - z0) * scale, (p[1] - y0) * scale), 0),
+        "top":   (lambda p: ((p[0] - x0) * scale, (p[2] - z0) * scale), 1),
+    }
+
+
+def paste_face(canvas, tex, rect, p0, pu, pv, view_px):
     """Paste the atlas rect onto the canvas as the parallelogram p0/pu/pv
     (orthographic projection of a rotated quad is always affine)."""
     x0, y0, x1, y1 = rect
@@ -693,14 +938,16 @@ def paste_face(canvas, tex, rect, p0, pu, pv):
     coeffs = (ia, ib, -(ia * p0[0] + ib * p0[1]),
               ic, id_, -(ic * p0[0] + id_ * p0[1]))
     face = tex.crop(rect)
-    warped = face.transform((VIEW_PX, VIEW_PX), Image.AFFINE, coeffs,
+    warped = face.transform((view_px, view_px), Image.AFFINE, coeffs,
                             resample=Image.NEAREST)
     canvas.alpha_composite(warped)
 
 
 def render_view(model, tex, view):
-    project, depth_axis = VIEWS[view]
-    canvas = Image.new("RGBA", (VIEW_PX, VIEW_PX), (0, 0, 0, 0))
+    box = model.get("view", DEFAULT_VIEW)
+    view_px = box["scale"] * box["units"]
+    project, depth_axis = make_views(box)[view]
+    canvas = Image.new("RGBA", (view_px, view_px), (0, 0, 0, 0))
     faces = []
     for part in model["parts"]:
         for cube in part["cubes"]:
@@ -715,7 +962,7 @@ def render_view(model, tex, view):
     # so larger coordinate = further away = drawn first.
     faces.sort(key=lambda f: -f[0])
     for _, rect, (p0, pu, pv) in faces:
-        paste_face(canvas, tex, rect, project(p0), project(pu), project(pv))
+        paste_face(canvas, tex, rect, project(p0), project(pu), project(pv), view_px)
     return canvas
 
 
@@ -762,6 +1009,7 @@ MODELS = [
     (WORKER_ANT, paint_worker_ant),
     (SOLDIER_ANT, paint_soldier_ant),
     (LARVA, paint_larva),
+    (QUEEN_ANT, paint_queen_ant),
 ]
 
 

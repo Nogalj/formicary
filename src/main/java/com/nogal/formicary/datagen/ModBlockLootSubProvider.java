@@ -32,8 +32,9 @@ import net.neoforged.neoforge.registries.DeferredHolder;
  *   <li>The four {@code #formicary:colony_fabric} soils (M3b) -- self-drop only for a
  *       player in the full Chitin Armor set.</li>
  * </ul>
- * Royal Comb and Fungal Bloom deliberately self-drop as M1 placeholders (Royal Jelly
- * lands in M7, spores in M8 -- see {@code docs/DECISIONS.md}).
+ * Fungal Bloom deliberately self-drops as an M1 placeholder (spores land in M8 -- see
+ * {@code docs/DECISIONS.md}). Royal Comb's placeholder is gone: M7 makes it drop Royal
+ * Jelly, or itself with Silk Touch.
  *
  * <p>{@link #getKnownBlocks()} is overridden to return only this mod's registered
  * blocks: the base implementation defaults to {@code BuiltInRegistries.BLOCK} (every
@@ -41,6 +42,9 @@ import net.neoforged.neoforge.registries.DeferredHolder;
  * block too and throw "Missing loottable" for all of them.
  */
 public class ModBlockLootSubProvider extends BlockLootSubProvider {
+    /** Royal Jelly per Royal Comb broken without Silk Touch. Tunable per spec ("1"). */
+    private static final float ROYAL_COMB_JELLY = 1.0F;
+
     public ModBlockLootSubProvider(HolderLookup.Provider registries) {
         super(Set.of(), FeatureFlags.REGISTRY.allFlags(), registries);
     }
@@ -58,7 +62,6 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
         dropSelf(ModBlocks.FUNGAL_BLOOM.get());
         dropSelf(ModBlocks.FUNGAL_CARPET.get());
         dropSelf(ModBlocks.BROOD_COMB.get());
-        dropSelf(ModBlocks.ROYAL_COMB.get());
         dropSelf(ModBlocks.EGG_CLUSTER.get());
         dropSelf(ModBlocks.DAYLIGHT_MEMBRANE.get());
         dropSelf(ModBlocks.ANTHILL_SOIL.get());
@@ -68,6 +71,16 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
         dropWhenSilkTouch(ModBlocks.AMBER_GLASS.get());
 
         add(ModBlocks.RESIN_WEEP.get(), resinWeepTable());
+
+        // M7 replaces the M1 placeholder self-drop: breaking Royal Comb yields the jelly it
+        // is full of (spec section 5). Silk Touch still lifts the block whole -- the comb is
+        // a decorative build material as well as a jelly source, and gating that behind an
+        // enchantment matches how every other "take the container, not the contents" block
+        // in vanilla behaves. Royal Comb is hive-tagged, so taking it angers the colony
+        // either way; that wiring is M3b's and is untouched here.
+        add(ModBlocks.ROYAL_COMB.get(),
+                createSingleItemTableWithSilkTouch(ModBlocks.ROYAL_COMB.get(), ModItems.ROYAL_JELLY.get(),
+                        ConstantValue.exactly(ROYAL_COMB_JELLY)));
     }
 
     /**

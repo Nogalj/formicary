@@ -31,6 +31,8 @@ public class ModCreativeModeTabs {
                         output.accept(ModItems.ROYAL_JELLY.get());
                         output.accept(ModItems.SCENT_GLAND.get());
                         output.accept(ModItems.TRAIL_PHEROMONE.get());
+                        output.accept(ModItems.ROYAL_PHEROMONE_GLAND.get());
+                        output.accept(ModItems.PHEROMONE_HORN.get());
                         output.accept(ModItems.CHITIN_HELMET.get());
                         output.accept(ModItems.CHITIN_CHESTPLATE.get());
                         output.accept(ModItems.CHITIN_LEGGINGS.get());

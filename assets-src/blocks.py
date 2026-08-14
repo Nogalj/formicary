@@ -765,6 +765,96 @@ def trail_pheromone_item():
     return img
 
 
+# --- M7: the queen's drop and what it makes --------------------------------
+# Both share one gold-and-amber ramp that nothing else in the mod uses, so the
+# two royal items read as a set and neither is mistaken for the Scent Gland (a
+# plain pale sac) at inventory scale.
+
+ROYAL_LEGEND = {
+    ".": None,
+    "o": (104, 58, 12, 255),         # dark rim
+    "d": (186, 120, 40, 255),        # deep amber, shaded edge
+    "a": (222, 166, 84, 255),        # amber body
+    "A": (246, 212, 148, 255),       # amber, lit
+    "s": (255, 250, 232, 255),       # specular
+    "v": (255, 234, 172, 255),       # the glowing core, seen through the shell
+    "c": (146, 102, 22, 255),        # gold collar, shaded
+    "C": (232, 184, 66, 255),        # gold collar, lit
+}
+
+# A fat royal gland: visibly bigger than the Scent Gland's sac, lit from within,
+# and wearing a small gold collar where it was cut free of the queen.
+ROYAL_GLAND_MASK = [
+    "................",
+    ".......cc.......",
+    "......cCCc......",
+    "......cCCc......",
+    ".....odaado.....",
+    "....odAAsado....",
+    "...odAsvAaddo...",
+    "..odAAvvAaaddo..",
+    "..oaAAvvAaaddo..",
+    "..oaaAAvAaaddo..",
+    "..odaaAAaaaddo..",
+    "...odaaaaaddo...",
+    "....oddaaddo....",
+    ".....oddddo.....",
+    "......oooo......",
+    "................",
+]
+
+
+def royal_pheromone_gland_item():
+    """Royal Pheromone Gland (M7): the queen's guaranteed drop, and the only
+    source of the Pheromone Horn."""
+    return paint_mask(ROYAL_GLAND_MASK, ROYAL_LEGEND)
+
+
+HORN_LEGEND = {
+    ".": None,
+    "o": (86, 46, 12, 255),          # dark rim
+    "b": (152, 92, 30, 255),         # horn, shaded
+    "H": (226, 168, 82, 255),        # horn body
+    "A": (252, 226, 168, 255),       # the lit inside of the bell
+    "G": (214, 164, 62, 255),        # gold band
+    "g": (166, 120, 36, 255),        # gold band, shaded
+}
+
+# A curved horn: flared bell low-left, tapering up-right to the mouthpiece, with
+# a gold band around the bell. Diagonal on purpose -- every other item in this
+# mod is a vertical blob or a vial, so the silhouette alone identifies it.
+HORN_MASK = [
+    "...........ooo..",
+    "..........obHHo.",
+    ".........obHHbo.",
+    "........obHHbo..",
+    ".......obHHbo...",
+    "......obHHbo....",
+    ".....obHHbo.....",
+    "....obHHbo......",
+    "...obHHbo.......",
+    "..obHAHbo.......",
+    "..obHAAHbo......",
+    ".obGHAAHbo......",
+    ".obGGHAHbo......",
+    ".obgGGHHbo......",
+    "..obgggbo.......",
+    "...ooooo........",
+]
+
+
+def pheromone_horn_item():
+    """Pheromone Horn (M7): reusable summon, crafted from the queen's gland."""
+    img = paint_mask(HORN_MASK, HORN_LEGEND)
+    px = img.load()
+    # a specular run along the horn's upper edge, so the curve catches light
+    for (x, y) in [(11, 1), (10, 2), (9, 3), (8, 4), (7, 5)]:
+        if px[x, y][3] != 0:
+            px[x, y] = (250, 220, 158, 255)
+    px[4, 11] = (255, 246, 214, 255)
+    return img
+
+
 # ---------------------------------------------------------------------------
 # Mob effect icons (M4b) -- 18x18, vanilla's status-icon size (not SIZE=16)
 # ---------------------------------------------------------------------------
@@ -1137,6 +1227,8 @@ ITEM_TEXTURES = {
     "royal_jelly": royal_jelly_item,
     "scent_gland": scent_gland_item,
     "trail_pheromone": trail_pheromone_item,
+    "royal_pheromone_gland": royal_pheromone_gland_item,
+    "pheromone_horn": pheromone_horn_item,
     "chitin_helmet": chitin_helmet_item,
     "chitin_chestplate": chitin_chestplate_item,
     "chitin_leggings": chitin_leggings_item,
