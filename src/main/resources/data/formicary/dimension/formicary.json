@@ -1,0 +1,13 @@
+{
+  "type": "formicary:formicary",
+  "generator": {
+    "type": "formicary:colony",
+    "biome_source": {
+      "type": "formicary:tier",
+      "royal_depths": "formicary:royal_depths",
+      "nurseries": "formicary:nurseries",
+      "fungal_gardens": "formicary:fungal_gardens",
+      "upper_galleries": "formicary:upper_galleries"
+    }
+  }
+}

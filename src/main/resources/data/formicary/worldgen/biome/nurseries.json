@@ -1,0 +1,44 @@
+{
+  "has_precipitation": false,
+  "temperature": 0.8,
+  "downfall": 0.0,
+  "effects": {
+    "fog_color": 5453850,
+    "sky_color": 2365446,
+    "water_color": 7032354,
+    "water_fog_color": 3811344
+  },
+  "carvers": {},
+  "features": [],
+  "creature_spawn_probability": 0.2,
+  "spawners": {
+    "monster": [],
+    "creature": [
+      {
+        "type": "formicary:worker_ant",
+        "weight": 8,
+        "minCount": 2,
+        "maxCount": 3
+      },
+      {
+        "type": "formicary:soldier_ant",
+        "weight": 12,
+        "minCount": 2,
+        "maxCount": 3
+      },
+      {
+        "type": "formicary:larva",
+        "weight": 6,
+        "minCount": 1,
+        "maxCount": 3
+      }
+    ],
+    "ambient": [],
+    "axolotls": [],
+    "underground_water_creature": [],
+    "water_creature": [],
+    "water_ambient": [],
+    "misc": []
+  },
+  "spawn_costs": {}
+}
