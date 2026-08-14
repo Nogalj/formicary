@@ -159,6 +159,11 @@ TEMPLATES = {
     # AnthillPortal.findFloorInBand's "pick the HIGHEST legal Y" rule needs to be
     # tested against. The standard 3-tall arena cannot hold two.
     "tall_platform": (5, 8, 5),
+    # M6's crop-harvester arena. Wide enough to stand a chest and a crop several
+    # blocks apart so the tamed worker has to actually path between them (a 5x5
+    # platform puts everything within one step and proves nothing about the walk),
+    # and 5 tall so a 0.6-high ant has clear headroom over the farmland layer.
+    "farm_platform": (9, 5, 9),
 }
 
 
