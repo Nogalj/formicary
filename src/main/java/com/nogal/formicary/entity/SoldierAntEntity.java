@@ -80,6 +80,23 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
         // Deep-tier hostility: no provocation needed in the Nurseries/Royal Depths (M4b).
         // Lower priority than colony anger, so an already-angry soldier keeps its offender.
         this.targetSelector.addGoal(3, new DeepTierHostilityGoal(this));
+        // Tamed ants of a player this soldier is already hostile to (M6). Lowest of the
+        // four: given a choice between the trespasser and the trespasser's ant, take the
+        // trespasser.
+        this.targetSelector.addGoal(4, new TamedAntTargetGoal(this));
+    }
+
+    /**
+     * Whether provoked colony anger is currently pointed at {@code player} specifically.
+     *
+     * <p>Deliberately not {@code NeutralMob#isAngryAt}: that one also answers true for
+     * <em>every</em> player once the {@code universalAnger} game rule is on and no offender
+     * is recorded, which would make one player's trespass turn soldiers on a bystander's
+     * tamed ants. The colony's anger always has a named offender (see the class javadoc),
+     * so the honest question is whether this player is that offender.
+     */
+    public boolean isAngryAtPlayer(Player player) {
+        return this.isAngry() && player.getUUID().equals(this.angerTarget);
     }
 
     // --------------------------------------------------------------- anger --

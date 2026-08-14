@@ -45,6 +45,7 @@ public class ModItemModelProvider extends ItemModelProvider {
         basicItem(ModItems.RESIN.get());
         basicItem(ModItems.CHITIN.get());
         basicItem(ModItems.LARVA.get());
+        basicItem(ModItems.ROYAL_JELLY.get());
         basicItem(ModItems.SCENT_GLAND.get());
         basicItem(ModItems.TRAIL_PHEROMONE.get());
 

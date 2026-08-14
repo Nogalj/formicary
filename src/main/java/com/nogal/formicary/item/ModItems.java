@@ -13,18 +13,28 @@ import net.neoforged.neoforge.registries.DeferredRegister;
  * M1 items: the resin resource item, plus a {@code BlockItem} for every M1 block via
  * {@link DeferredRegister.Items#registerSimpleBlockItem(net.minecraft.core.Holder)}.
  * M3a adds chitin (worker/soldier loot) and the larva item (the capture interaction's
- * export good -- placement lands in M6, so it's a plain item for now). M3b adds the
- * four-piece Chitin Armor set, which is what gates mining the dimension's fabric. M4b
- * adds the Scent Gland (worker/soldier loot, brewed into Pheromonal Disguise). M5 adds the
- * Trail Pheromone, the breadcrumb consumable, which is the mod's first crafted item.
+ * export good). M3b adds the four-piece Chitin Armor set, which is what gates mining the
+ * dimension's fabric. M4b adds the Scent Gland (worker/soldier loot, brewed into
+ * Pheromonal Disguise). M5 adds the Trail Pheromone, the breadcrumb consumable, which is
+ * the mod's first crafted item. M6 turns the larva into a placeable {@link LarvaItem} and
+ * adds Royal Jelly, the food that raises a placed larva as a worker.
  */
 public class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(Formicary.MODID);
 
     public static final DeferredItem<Item> RESIN = ITEMS.registerSimpleItem("resin");
     public static final DeferredItem<Item> CHITIN = ITEMS.registerSimpleItem("chitin");
-    public static final DeferredItem<Item> LARVA = ITEMS.registerSimpleItem("larva");
     public static final DeferredItem<Item> SCENT_GLAND = ITEMS.registerSimpleItem("scent_gland");
+
+    /** M6: the captured grub. Right-click a block face to set it down (see {@link LarvaItem}). */
+    public static final DeferredItem<LarvaItem> LARVA = ITEMS.registerItem("larva", LarvaItem::new);
+
+    /**
+     * M6: what a placed larva is fed to raise it as a worker. A plain item -- the spec
+     * gives it no use of its own, and it is creative-only until M7 adds its survival
+     * sources (the queen's chamber).
+     */
+    public static final DeferredItem<Item> ROYAL_JELLY = ITEMS.registerSimpleItem("royal_jelly");
 
     /** M5: lights up the player's own recorded route back out of the colony. */
     public static final DeferredItem<TrailPheromoneItem> TRAIL_PHEROMONE =

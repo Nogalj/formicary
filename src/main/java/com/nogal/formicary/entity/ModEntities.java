@@ -46,6 +46,28 @@ public class ModEntities {
                             .sized(0.45F, 0.35F)
                             .build("larva"));
 
+    /**
+     * The taming loop's output (M6). Separate entity types rather than a flag on the wild
+     * ones: the tamed castes carry vanilla's whole {@code TamableAnimal} machinery, which
+     * the wild colony has no business inheriting, and being outside the wild hierarchy is
+     * exactly what makes {@code ColonyAnger.isColonyAnt} false for them.
+     *
+     * <p>No spawn eggs for either: an egg-spawned tamed ant would have no owner, which is
+     * a broken object that half the goals here silently no-op on. The only way to get one
+     * is to raise a larva.
+     */
+    public static final DeferredHolder<EntityType<?>, EntityType<TamedWorkerAntEntity>> TAMED_WORKER_ANT =
+            ENTITY_TYPES.register("tamed_worker_ant",
+                    () -> EntityType.Builder.of(TamedWorkerAntEntity::new, MobCategory.CREATURE)
+                            .sized(0.9F, 0.6F)
+                            .build("tamed_worker_ant"));
+
+    public static final DeferredHolder<EntityType<?>, EntityType<TamedSoldierAntEntity>> TAMED_SOLDIER_ANT =
+            ENTITY_TYPES.register("tamed_soldier_ant",
+                    () -> EntityType.Builder.of(TamedSoldierAntEntity::new, MobCategory.CREATURE)
+                            .sized(1.1F, 0.8F)
+                            .build("tamed_soldier_ant"));
+
     /** Chitin red-brown shell, amber highlight -- the same pair the texture uses. */
     public static final DeferredItem<DeferredSpawnEggItem> WORKER_ANT_SPAWN_EGG =
             ModItems.ITEMS.registerItem("worker_ant_spawn_egg",
@@ -68,6 +90,8 @@ public class ModEntities {
             event.put(WORKER_ANT.get(), WorkerAntEntity.createAttributes().build());
             event.put(SOLDIER_ANT.get(), SoldierAntEntity.createAttributes().build());
             event.put(LARVA.get(), LarvaEntity.createAttributes().build());
+            event.put(TAMED_WORKER_ANT.get(), TamedWorkerAntEntity.createAttributes().build());
+            event.put(TAMED_SOLDIER_ANT.get(), TamedSoldierAntEntity.createAttributes().build());
         }
 
         /**

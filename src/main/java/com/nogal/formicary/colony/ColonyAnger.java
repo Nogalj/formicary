@@ -5,6 +5,7 @@ import javax.annotation.Nullable;
 import com.nogal.formicary.effect.ModMobEffects;
 import com.nogal.formicary.entity.LarvaEntity;
 import com.nogal.formicary.entity.SoldierAntEntity;
+import com.nogal.formicary.entity.TamedAnt;
 import com.nogal.formicary.entity.WorkerAntEntity;
 import com.nogal.formicary.worldgen.ModBiomeTags;
 
@@ -60,11 +61,34 @@ public final class ColonyAnger {
 
     // -------------------------------------------------------------- triggers --
 
-    /** Worker, soldier or larva -- the mobs whose injury the colony answers for. */
+    /**
+     * Worker, soldier or larva -- the <em>wild</em> mobs whose injury the colony answers
+     * for.
+     *
+     * <p>Tamed ants (M6) are outside this hierarchy entirely, which is what delivers the
+     * spec's "tamed ants' fights never anger the colony or strip your disguise", by
+     * construction rather than by a special case:
+     * <ul>
+     *   <li>A tamed ant taking damage -- including from its own owner -- is not a colony
+     *       ant, so {@code ColonyAngerEvents.onColonyAntHurt} returns before
+     *       {@link #provoke} is ever reached.</li>
+     *   <li>A tamed ant <em>dealing</em> damage to a wild ant does reach that handler, but
+     *       {@link #offenderOf} resolves only a {@code Player} and the attacker here is a
+     *       mob, so there is no offender to raise the alarm against -- and with no
+     *       {@code provoke} call there is no disguise strip either.</li>
+     * </ul>
+     * What wild soldiers do about tamed ants is the one part that is a deliberate rule
+     * rather than a consequence: see {@code entity.TamedAntTargetGoal}.
+     */
     public static boolean isColonyAnt(Entity entity) {
         return entity instanceof WorkerAntEntity
                 || entity instanceof SoldierAntEntity
                 || entity instanceof LarvaEntity;
+    }
+
+    /** Whether {@code entity} is one of the player's own ants rather than the colony's. */
+    public static boolean isTamedAnt(Entity entity) {
+        return entity instanceof TamedAnt;
     }
 
     /**

@@ -31,6 +31,28 @@ public final class ModBlockTags {
      */
     public static final TagKey<Block> COLONY_FABRIC = create("colony_fabric");
 
+    /**
+     * What a tamed worker in work mode will harvest and replant (spec section 4, M6). The
+     * tag decides <em>candidacy</em> only -- whether a candidate is ripe is worked out in
+     * code by {@code entity.CropHarvest#isMature}, which understands vanilla's
+     * {@code CropBlock} plus any block carrying an integer {@code age} property (which is
+     * how Nether Wart joins without a special case).
+     *
+     * <p>A modded crop opts in by adding itself to this tag: as long as it has an
+     * {@code age} property whose maximum means "ripe", drops a {@code BlockItem} of itself
+     * as the seed, and can be re-placed at its default state, the harvester needs no code
+     * change at all.
+     */
+    public static final TagKey<Block> HARVESTABLE_CROPS = create("harvestable_crops");
+
+    /**
+     * What a tamed worker can be bound to and deposit into (spec section 4, M6). Chest,
+     * Trapped Chest and Barrel by default; a modded storage block opts in by joining the
+     * tag, provided {@code HopperBlockEntity.getContainerAt} can see a {@code Container}
+     * there (which is the same test a hopper makes).
+     */
+    public static final TagKey<Block> WORKER_DEPOSITS = create("worker_deposits");
+
     private static TagKey<Block> create(String path) {
         return BlockTags.create(ResourceLocation.fromNamespaceAndPath(Formicary.MODID, path));
     }

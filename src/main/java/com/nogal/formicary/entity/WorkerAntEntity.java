@@ -40,7 +40,7 @@ import net.minecraft.world.phys.Vec3;
  * main-hand slot is given a guaranteed drop chance so {@code Mob.dropCustomDeathLoot}
  * spits the stack back out if the ant is killed mid-carry.
  */
-public class WorkerAntEntity extends PathfinderMob {
+public class WorkerAntEntity extends PathfinderMob implements CarriesItem {
     private static final String TAG_FLEE_TIME = "FleeTime";
     private static final String TAG_FLEEING_FROM = "FleeingFrom";
 
@@ -132,6 +132,7 @@ public class WorkerAntEntity extends PathfinderMob {
     // ------------------------------------------------------------ carrying --
 
     /** The stack this worker is currently ferrying, or empty. */
+    @Override
     public ItemStack getCarriedItem() {
         return this.getItemBySlot(EquipmentSlot.MAINHAND);
     }

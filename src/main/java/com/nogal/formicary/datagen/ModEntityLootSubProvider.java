@@ -50,6 +50,12 @@ public class ModEntityLootSubProvider extends EntityLootSubProvider {
         this.add(ModEntities.SOLDIER_ANT.get(),
                 soldierTable().withPool(scentGlandPool(SOLDIER_SCENT_GLAND_CHANCE)));
         this.add(ModEntities.LARVA.get(), LootTable.lootTable());
+        // M6: a tamed ant drops the same chitin its wild counterpart does -- no Scent Gland
+        // though, since that is the colony's pheromone signature and a tamed ant has been
+        // out of the nest since it hatched. Its pack is returned separately by
+        // TamedWorkerAntEntity.dropCustomDeathLoot, which is inventory, not loot.
+        this.add(ModEntities.TAMED_WORKER_ANT.get(), chitinTable(0.0F, 2.0F));
+        this.add(ModEntities.TAMED_SOLDIER_ANT.get(), soldierTable());
     }
 
     private LootTable.Builder chitinTable(float min, float max) {
@@ -85,6 +91,8 @@ public class ModEntityLootSubProvider extends EntityLootSubProvider {
         return List.<EntityType<?>>of(
                 ModEntities.WORKER_ANT.get(),
                 ModEntities.SOLDIER_ANT.get(),
-                ModEntities.LARVA.get()).stream();
+                ModEntities.LARVA.get(),
+                ModEntities.TAMED_WORKER_ANT.get(),
+                ModEntities.TAMED_SOLDIER_ANT.get()).stream();
     }
 }

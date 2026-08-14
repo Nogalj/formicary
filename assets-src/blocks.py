@@ -608,6 +608,80 @@ def scent_gland_item():
     return img
 
 
+def outline(img, colour):
+    """Paints a 1px border of `colour` in the transparent pixels touching the
+    shape. Applied after a sprite is filled, so the silhouette reads at
+    inventory scale the way vanilla's outlined items do."""
+    px = img.load()
+    edge = []
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if px[x, y][3] != 0:
+                continue
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < SIZE and 0 <= ny < SIZE and px[nx, ny][3] != 0:
+                    edge.append((x, y))
+                    break
+    for (x, y) in edge:
+        px[x, y] = colour
+    return img
+
+
+# Royal Jelly's own ramp: paler and greener-gold than the resin/scent-gland amber,
+# so the two goo items are not the same sprite at a glance in the hotbar.
+JELLY_CORE = (253, 243, 202, 255)
+JELLY_MID = (243, 216, 124, 255)
+JELLY_DEEP = (206, 164, 56, 255)
+JELLY_RIM = (140, 100, 24, 255)
+
+
+def royal_jelly_item():
+    """Royal Jelly (M6): a fat, glossy pale-gold droplet -- round bulb with a
+    drawn-out point on top, lit from the upper left, shaded along the lower
+    right, and outlined so the silhouette holds at 16px."""
+    img = blank()
+    px = img.load()
+    cx, cy = 8.0, 10.5
+
+    def sdf(x, y):
+        dx, dy = x + 0.5 - cx, y + 0.5 - cy
+        return dx * dx + dy * dy
+
+    # the bulb
+    for y in range(SIZE):
+        for x in range(SIZE):
+            d = sdf(x, y)
+            if d < 20:
+                px[x, y] = lerp_color(JELLY_CORE, JELLY_MID, min(1.0, d / 20))
+
+    # the point: a spine widening from one pixel as it drops into the bulb
+    for y in range(2, 11):
+        half = (y - 2) // 3
+        for x in range(8 - half, 9 + half):
+            if px[x, y][3] == 0:
+                px[x, y] = lerp_color(JELLY_MID, JELLY_CORE, (y - 2) / 9.0)
+
+    # shade the LOWER-RIGHT skin only -- shading the whole perimeter would ring the
+    # droplet in gold and read as a coin rather than as a lit blob.
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if px[x, y][3] == 0:
+                continue
+            on_edge = (x + 1 >= SIZE or px[x + 1, y][3] == 0) or (y + 1 >= SIZE or px[x, y + 1][3] == 0)
+            if on_edge and (x + 0.5 - cx) + (y + 0.5 - cy) > -1.0:
+                px[x, y] = JELLY_DEEP
+
+    outline(img, JELLY_RIM)
+
+    # specular: a bright comma on the upper-left shoulder of the bulb
+    for (x, y) in [(5, 9), (6, 8), (5, 10)]:
+        if px[x, y][3] != 0:
+            px[x, y] = JELLY_CORE
+    px[6, 9] = (255, 253, 240, 255)
+    return img
+
+
 def larva_item():
     """Curled grub item sprite: pale cream body curling into a C, faint amber
     segment lines, two tiny dark eye dots at the head end -- matching the
@@ -1060,6 +1134,7 @@ ITEM_TEXTURES = {
     "resin": resin_item,
     "chitin": chitin_item,
     "larva": larva_item,
+    "royal_jelly": royal_jelly_item,
     "scent_gland": scent_gland_item,
     "trail_pheromone": trail_pheromone_item,
     "chitin_helmet": chitin_helmet_item,

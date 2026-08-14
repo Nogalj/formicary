@@ -6,6 +6,8 @@ import com.nogal.formicary.client.model.SoldierAntModel;
 import com.nogal.formicary.client.model.WorkerAntModel;
 import com.nogal.formicary.client.renderer.LarvaRenderer;
 import com.nogal.formicary.client.renderer.SoldierAntRenderer;
+import com.nogal.formicary.client.renderer.TamedSoldierAntRenderer;
+import com.nogal.formicary.client.renderer.TamedWorkerAntRenderer;
 import com.nogal.formicary.client.renderer.WorkerAntRenderer;
 import com.nogal.formicary.entity.ModEntities;
 
@@ -32,6 +34,8 @@ public class ModClientEvents {
         event.registerEntityRenderer(ModEntities.WORKER_ANT.get(), WorkerAntRenderer::new);
         event.registerEntityRenderer(ModEntities.SOLDIER_ANT.get(), SoldierAntRenderer::new);
         event.registerEntityRenderer(ModEntities.LARVA.get(), LarvaRenderer::new);
+        event.registerEntityRenderer(ModEntities.TAMED_WORKER_ANT.get(), TamedWorkerAntRenderer::new);
+        event.registerEntityRenderer(ModEntities.TAMED_SOLDIER_ANT.get(), TamedSoldierAntRenderer::new);
     }
 
     private ModClientEvents() {

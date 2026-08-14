@@ -41,6 +41,7 @@ public class ModLanguageProvider extends LanguageProvider {
         addItem(ModItems.RESIN, "Resin");
         addItem(ModItems.CHITIN, "Chitin");
         addItem(ModItems.LARVA, "Larva");
+        addItem(ModItems.ROYAL_JELLY, "Royal Jelly");
         addItem(ModItems.SCENT_GLAND, "Scent Gland");
         addItem(ModItems.TRAIL_PHEROMONE, "Trail Pheromone");
         // Shown above the hotbar when a pheromone is used with nothing recorded to retrace.
@@ -57,6 +58,10 @@ public class ModLanguageProvider extends LanguageProvider {
         addItem(ModEntities.SOLDIER_ANT_SPAWN_EGG, "Soldier Ant Spawn Egg");
         addEntityType(ModEntities.LARVA, "Larva");
         addItem(ModEntities.LARVA_SPAWN_EGG, "Larva Spawn Egg");
+
+        // M6: no spawn eggs for these two -- an egg-spawned tamed ant would have no owner.
+        addEntityType(ModEntities.TAMED_WORKER_ANT, "Tamed Worker Ant");
+        addEntityType(ModEntities.TAMED_SOLDIER_ANT, "Tamed Soldier Ant");
 
         add("itemGroup.formicary.formicary", "Formicary");
 

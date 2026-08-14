@@ -3,12 +3,13 @@ package com.nogal.formicary.client.renderer;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.nogal.formicary.client.model.WorkerAntModel;
-import com.nogal.formicary.entity.WorkerAntEntity;
+import com.nogal.formicary.entity.CarriesItem;
 
 import net.minecraft.client.renderer.ItemInHandRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.RenderLayerParent;
 import net.minecraft.client.renderer.entity.layers.RenderLayer;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 
@@ -20,18 +21,22 @@ import net.minecraft.world.item.ItemStack;
  * mirrors {@code FoxHeldItemLayer}: park the PoseStack on the head pivot, follow the
  * head's current rotation, then nudge forward to the jaws.
  *
+ * <p>Generic over {@link CarriesItem} so the wild worker (one stack in its main hand) and
+ * the tamed worker (a nine-slot pack) share the layer without either one's storage choice
+ * reaching the renderer.
+ *
  * <p>Offsets are in model space (+Y is DOWN, -Z is forward), so the translate below
  * moves the item down toward the mouth and out in front of the mandibles. The head
  * pivot is at model (0, 20, -2) -- {@code body} at y=20.5 plus {@code head} at -0.5/-2,
  * per {@code assets-src/models.py}.
  */
-public class WorkerAntCarriedItemLayer extends RenderLayer<WorkerAntEntity, WorkerAntModel<WorkerAntEntity>> {
+public class WorkerAntCarriedItemLayer<T extends Mob & CarriesItem> extends RenderLayer<T, WorkerAntModel<T>> {
     private static final float HEAD_PIVOT_Y = 20.0F / 16.0F;
     private static final float HEAD_PIVOT_Z = -2.0F / 16.0F;
 
     private final ItemInHandRenderer itemInHandRenderer;
 
-    public WorkerAntCarriedItemLayer(RenderLayerParent<WorkerAntEntity, WorkerAntModel<WorkerAntEntity>> renderer,
+    public WorkerAntCarriedItemLayer(RenderLayerParent<T, WorkerAntModel<T>> renderer,
             ItemInHandRenderer itemInHandRenderer) {
         super(renderer);
         this.itemInHandRenderer = itemInHandRenderer;
@@ -39,7 +44,7 @@ public class WorkerAntCarriedItemLayer extends RenderLayer<WorkerAntEntity, Work
 
     @Override
     public void render(PoseStack poseStack, MultiBufferSource bufferSource, int packedLight,
-            WorkerAntEntity entity, float limbSwing, float limbSwingAmount, float partialTick,
+            T entity, float limbSwing, float limbSwingAmount, float partialTick,
             float ageInTicks, float netHeadYaw, float headPitch) {
         ItemStack carried = entity.getCarriedItem();
         if (carried.isEmpty()) {

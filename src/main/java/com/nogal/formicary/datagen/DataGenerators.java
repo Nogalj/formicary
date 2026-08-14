@@ -32,7 +32,13 @@ public class DataGenerators {
 
         generator.addProvider(event.includeClient(), new ModBlockStateProvider(output, existingFileHelper));
         generator.addProvider(event.includeClient(), new ModItemModelProvider(output, existingFileHelper));
-        generator.addProvider(event.includeServer(), new ModBlockTagsProvider(output, lookupProvider, existingFileHelper));
+        ModBlockTagsProvider blockTags =
+                new ModBlockTagsProvider(output, lookupProvider, existingFileHelper);
+        generator.addProvider(event.includeServer(), blockTags);
+        // Item tags depend on the block tag provider's contents future (ItemTagsProvider can
+        // mirror a block tag), so the block provider has to be constructed first.
+        generator.addProvider(event.includeServer(), new ModItemTagsProvider(output, lookupProvider,
+                blockTags.contentsGetter(), existingFileHelper));
         generator.addProvider(event.includeServer(), new ModLootTableProvider(output, lookupProvider));
         generator.addProvider(event.includeServer(), new ModRecipeProvider(output, lookupProvider));
         generator.addProvider(event.includeClient(), new ModLanguageProvider(output));

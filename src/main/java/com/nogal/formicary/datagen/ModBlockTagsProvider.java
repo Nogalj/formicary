@@ -8,6 +8,7 @@ import com.nogal.formicary.block.ModBlocks;
 
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
+import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.common.data.BlockTagsProvider;
 import net.neoforged.neoforge.common.data.ExistingFileHelper;
 
@@ -40,5 +41,20 @@ public class ModBlockTagsProvider extends BlockTagsProvider {
                 ModBlocks.AMBER_EARTH.get(),
                 ModBlocks.DEEP_LOAM.get(),
                 ModBlocks.HARDENED_SOIL.get());
+
+        // M6: the vanilla crop set a tamed worker farms. Fungal Bloom deliberately stays
+        // out -- growing it as a crop is M8's job, and adding it here early would have
+        // workers stripping the colony's own gardens.
+        tag(ModBlockTags.HARVESTABLE_CROPS).add(
+                Blocks.WHEAT,
+                Blocks.CARROTS,
+                Blocks.POTATOES,
+                Blocks.BEETROOTS,
+                Blocks.NETHER_WART);
+
+        tag(ModBlockTags.WORKER_DEPOSITS).add(
+                Blocks.CHEST,
+                Blocks.TRAPPED_CHEST,
+                Blocks.BARREL);
     }
 }
