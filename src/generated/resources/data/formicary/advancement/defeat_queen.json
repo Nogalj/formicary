@@ -1,0 +1,38 @@
+{
+  "parent": "formicary:root",
+  "criteria": {
+    "killed_queen": {
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "type": "formicary:queen_ant"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:player_killed_entity"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.formicary.defeat_queen.description"
+    },
+    "frame": "challenge",
+    "icon": {
+      "count": 1,
+      "id": "formicary:queens_crest"
+    },
+    "title": {
+      "translate": "advancements.formicary.defeat_queen.title"
+    }
+  },
+  "requirements": [
+    [
+      "killed_queen"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

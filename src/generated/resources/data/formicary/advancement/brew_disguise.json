@@ -1,0 +1,29 @@
+{
+  "parent": "formicary:root",
+  "criteria": {
+    "brewed_disguise": {
+      "conditions": {
+        "potion": "formicary:pheromonal_disguise"
+      },
+      "trigger": "minecraft:brewed_potion"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.formicary.brew_disguise.description"
+    },
+    "icon": {
+      "count": 1,
+      "id": "formicary:scent_gland"
+    },
+    "title": {
+      "translate": "advancements.formicary.brew_disguise.title"
+    }
+  },
+  "requirements": [
+    [
+      "brewed_disguise"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

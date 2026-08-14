@@ -2,6 +2,8 @@ package com.nogal.formicary.entity;
 
 import javax.annotation.Nullable;
 
+import com.nogal.formicary.advancement.CasteGrownTrigger;
+import com.nogal.formicary.advancement.ModCriteriaTriggers;
 import com.nogal.formicary.item.ModItemTags;
 import com.nogal.formicary.item.ModItems;
 
@@ -11,6 +13,7 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -146,6 +149,16 @@ public class LarvaEntity extends PathfinderMob {
         level.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.BEEHIVE_EXIT,
                 SoundSource.NEUTRAL, 0.8F, 1.1F);
         this.discard();
+
+        // M8: "raise both castes" advancement -- one trigger, fired with which caste this
+        // was. owner is whatever the caller passed (mobInteract's real player, or a
+        // GameTest mock player, which is never a ServerPlayer -- see CasteGrownTrigger).
+        if (owner instanceof ServerPlayer serverPlayer) {
+            CasteGrownTrigger.Caste caste = type == ModEntities.TAMED_WORKER_ANT.get()
+                    ? CasteGrownTrigger.Caste.WORKER
+                    : CasteGrownTrigger.Caste.SOLDIER;
+            ModCriteriaTriggers.CASTE_GROWN.get().trigger(serverPlayer, caste);
+        }
         return grown;
     }
 

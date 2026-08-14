@@ -3,6 +3,7 @@ package com.nogal.formicary;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
+import com.nogal.formicary.advancement.ModCriteriaTriggers;
 import com.nogal.formicary.block.ModBlocks;
 import com.nogal.formicary.effect.ModMobEffects;
 import com.nogal.formicary.effect.ModPotions;
@@ -50,6 +51,8 @@ public class Formicary {
         // ring buffer. Attachment types are a real NeoForge registry, so they go on the bus
         // like everything else -- an unregistered type throws on first getData.
         ModAttachments.ATTACHMENT_TYPES.register(modEventBus);
+        // M8: the two custom advancement criterion triggers (first harvest, caste grown).
+        ModCriteriaTriggers.TRIGGER_TYPES.register(modEventBus);
 
         modEventBus.addListener(this::addCreative);
 

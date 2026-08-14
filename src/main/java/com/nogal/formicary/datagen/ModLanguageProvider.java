@@ -50,6 +50,8 @@ public class ModLanguageProvider extends LanguageProvider {
         addItem(ModItems.ROYAL_PHEROMONE_GLAND, "Royal Pheromone Gland");
         addItem(ModItems.PHEROMONE_HORN, "Pheromone Horn");
 
+        addItem(ModItems.FUNGAL_SPORES, "Fungal Spores");
+
         addItem(ModItems.CHITIN_HELMET, "Chitin Helmet");
         addItem(ModItems.CHITIN_CHESTPLATE, "Chitin Chestplate");
         addItem(ModItems.CHITIN_LEGGINGS, "Chitin Leggings");
@@ -83,5 +85,21 @@ public class ModLanguageProvider extends LanguageProvider {
         add("item.minecraft.splash_potion.effect.pheromonal_disguise", "Splash Potion of Pheromonal Disguise");
         add("item.minecraft.lingering_potion.effect.pheromonal_disguise", "Lingering Potion of Pheromonal Disguise");
         add("item.minecraft.tipped_arrow.effect.pheromonal_disguise", "Arrow of Pheromonal Disguise");
+
+        // M8: the formicary advancement tab -- root plus six beats.
+        add("advancements.formicary.root.title", "Formicary");
+        add("advancements.formicary.root.description", "Delve into the ant colony");
+        add("advancements.formicary.enter_dimension.title", "Into the Colony");
+        add("advancements.formicary.enter_dimension.description", "Enter the Formicary dimension");
+        add("advancements.formicary.brew_disguise.title", "Wearing Their Scent");
+        add("advancements.formicary.brew_disguise.description", "Brew a Potion of Pheromonal Disguise");
+        add("advancements.formicary.capture_larva.title", "Grub Snatcher");
+        add("advancements.formicary.capture_larva.description", "Capture a larva");
+        add("advancements.formicary.defeat_queen.title", "Regicide");
+        add("advancements.formicary.defeat_queen.description", "Defeat the Queen");
+        add("advancements.formicary.first_harvest.title", "Ant Farm");
+        add("advancements.formicary.first_harvest.description", "Have a tamed worker deliver its first harvest");
+        add("advancements.formicary.raise_both_castes.title", "Two Castes, One Colony");
+        add("advancements.formicary.raise_both_castes.description", "Raise both a worker and a soldier from larvae");
     }
 }

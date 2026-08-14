@@ -2,9 +2,13 @@ package com.nogal.formicary.entity;
 
 import java.util.EnumSet;
 
+import com.nogal.formicary.advancement.ModCriteriaTriggers;
+
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 
 /**
@@ -96,6 +100,14 @@ public class DepositToChestGoal extends Goal {
             Container container = this.ant.getBoundContainer(this.ant.level());
             if (container != null && this.ant.depositInto(container)) {
                 this.ant.playSound(SoundEvents.ITEM_PICKUP, 0.4F, 1.2F);
+                // M8: "first tamed harvest" advancement. getOwner() resolves through
+                // level().getPlayerByUUID -- null for a GameTest mock player (see
+                // FirstHarvestTrigger's javadoc), but a real ServerPlayer in play, exactly
+                // the check TamableAnimal itself makes before sending its death message.
+                LivingEntity owner = this.ant.getOwner();
+                if (owner instanceof ServerPlayer serverPlayer) {
+                    ModCriteriaTriggers.FIRST_HARVEST.get().trigger(serverPlayer);
+                }
             }
             // Whatever is left over (full chest, chest gone) stays in the pack: back off
             // and try again later rather than dumping it on the floor.

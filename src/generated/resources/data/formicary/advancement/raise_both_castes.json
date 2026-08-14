@@ -1,0 +1,39 @@
+{
+  "parent": "formicary:root",
+  "criteria": {
+    "soldier_grown": {
+      "conditions": {
+        "caste": "soldier"
+      },
+      "trigger": "formicary:caste_grown"
+    },
+    "worker_grown": {
+      "conditions": {
+        "caste": "worker"
+      },
+      "trigger": "formicary:caste_grown"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.formicary.raise_both_castes.description"
+    },
+    "frame": "goal",
+    "icon": {
+      "count": 1,
+      "id": "formicary:royal_jelly"
+    },
+    "title": {
+      "translate": "advancements.formicary.raise_both_castes.title"
+    }
+  },
+  "requirements": [
+    [
+      "worker_grown"
+    ],
+    [
+      "soldier_grown"
+    ]
+  ],
+  "sends_telemetry_event": true
+}
