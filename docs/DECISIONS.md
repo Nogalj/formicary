@@ -370,3 +370,136 @@ meaningfully change gameplay go to Logan instead of here.
   crop are within one step of each other, which proves nothing about the walk between them;
   9x9 puts them four blocks apart and leaves a 0.6-high ant clear headroom over the farmland
   layer.
+
+## M7 The queen
+
+- **The throne chamber is carved by the generator, not placed as a structure.** The brief
+  asked for this to be checked rather than assumed, so: `ColonyChunkGenerator` does **not**
+  stub `createStructures`/`createReferences` -- it inherits `ChunkGenerator`'s working
+  implementations, and a `minecraft:jigsaw` structure with a `start_height` would in fact
+  generate here (M5's anthill already proves the pipeline runs against a custom generator).
+  In-generator was chosen anyway, for three reasons that a template cannot answer:
+  1. A `.nbt` template is one fixed room. Every other feature of this dimension is a pure
+     function of position with per-seed variation, and a hand-authored 28x15x28 box would be
+     the one piece of the colony that is byte-identical in every world.
+  2. The room has to *interact* with the carve rather than be stamped onto it. Its shell
+     must force fabric solid where the noise would have opened a cathedral, and must yield
+     where the connectivity ramp passes through. `StructureTemplate.placeInWorld` only writes
+     the positions it lists, so a template can add blocks but cannot express "this stays
+     solid unless the spine says otherwise".
+  3. Reachability had to be a construction, not a hope -- see the next entry -- and that
+     construction needs the ramp's floor height at a bearing, which is generator arithmetic.
+
+- **The chamber hangs off a connectivity ramp, and its floor Y is *solved for*.** The naive
+  placement (jitter an XZ inside the cell, carve a dome) makes "can the player get in?" a
+  property of the surrounding noise, which M4a already established cannot be assumed. So the
+  chamber's centre is the nearest ramp axis plus `THRONE_APPROACH_DISTANCE` (34) at a
+  seed-chosen bearing, and its floor is set to the exact height that ramp's walkway reaches
+  at that bearing (`base + n * RAMP_PERIOD`, first turn at or above y=8). A flat 3-wide
+  corridor carved back along the same bearing therefore lands *on* the spine, at walkway
+  height, by arithmetic. 34 is the smallest offset that also keeps the helicoid's carve
+  (max reach 11.6) clear of the room's interior, so the ramp never spirals through the arena.
+
+- **The chamber sits BELOW the spine in `isAir`'s precedence, and that is load-bearing.** It
+  may carve through the noise and force its own shell solid, but a ramp floor or walkway wins
+  over both. The whole M4a walkability guarantee is that the spine cannot be swallowed;
+  letting a boss room override it would have reintroduced the soft-lock the helicoid exists
+  to prevent. The visible consequence is the doorway: where the corridor crosses the annulus,
+  the ramp's own floor shows through as the threshold.
+
+- **Rarity: one chamber per 224-block cell.** Measured rather than guessed --
+  `NoiseProbe -PprobeWhat=throne` prints the nine chambers around the origin for a seed. At
+  224 the nearest to spawn sat 130-176 blocks out across five seeds, which is "findable by
+  committed exploration" without being under every entry point. One per cell rather than a
+  probability roll: a boss that some worlds simply do not contain is a bug, not rarity.
+
+- **The probe caught a two-block dais that nothing could climb.** The first version had the
+  plinth 2 blocks tall, and the walkability BFS reported the room reachable but the dais not.
+  In play that would have been the queen stepping off her throne during the fight and then
+  spending it pathing at a wall she could not climb, with her home-restriction goal fighting
+  her. Fixed with a one-block step ring (`THRONE_DAIS_STEP_RADIUS`), which is also what the
+  plinth wanted visually. This is the same class of finding the M4a ramp BFS produced, from
+  the same kind of check.
+
+- **The queen extends `PathfinderMob`, not `Monster`.** `Monster.shouldDespawnInPeaceful()`
+  returns true, and a boss that generates exactly once per chamber must not evaporate because
+  someone changed difficulty; `Monster` also brings light-level `noActionTime` accounting that
+  means nothing in a dimension with no sky. She keeps `MobCategory.MONSTER` for the sound
+  source and category, but the class is the same one the wild castes use.
+
+- **She is seated in `spawnOriginalMobs`.** `ChunkStatus.SPAWN` runs it once in a chunk's
+  whole life, so "the chunk containing this chamber's centre spawns the queen" is exactly-once
+  with no marker block entity, no saved-data flag and no first-tick scan -- and it is the same
+  hook that already seeds the four tiers' ants, so the dimension has one story about how it
+  populates itself. Verified on a dedicated server: a fresh world logged one `seated a queen`,
+  and a second boot of the same world found her still there (health, position and restored
+  throne home) with no second spawn.
+
+- **`Mob` does not persist its restriction**, so the throne home is saved to NBT and
+  `restrictTo` is re-applied in `readAdditionalSaveData`. Without that a relog would set the
+  boss free to wander the Royal Depths.
+
+- **Phase thresholds are a persisted bitmask, not a health comparison.** 75/50/25% each fire
+  once and never again, so healing her back over a threshold cannot replay a wave -- which
+  matters because `customServerAiStep` polls health every tick and a naive comparison would
+  summon a wave per tick while she sat under the line.
+
+- **The burst's reinforcements are *wild* soldiers, not allied ones.** They are the colony
+  answering its queen, so they keep every colony rule: a disguised player is still invisible
+  to them, and killing one still angers the nest. They are pre-angered at her current target
+  rather than left to find one, because a wave that spawns and then wanders is not a wave.
+
+- **The burst and the death grace both take an explicit player list.** `makeMockPlayer`
+  returns a `Player` that is never added to the level, so `getEntitiesOfClass(Player.class,
+  ...)` can never see one -- the same limitation `TamedWorkerAntEntity.bindNearestFollower`
+  works around. Rather than test only the effect half, both paths gather from the level *and*
+  from the player they already hold a handle on (the queen's target; her killer), filtered by
+  the same radius. In play the union is identical to the level lookup; in a GameTest it is the
+  difference between driving the real trigger and asserting on a one-line helper.
+
+- **`ANGER_RADIUS` and `GRACE_RADIUS` are both 24, and that makes one test impossible.** The
+  killing blow fires `LivingIncomingDamageEvent` before the damage lands, so
+  `ColonyAnger.provoke` re-points *every* soldier the grace can reach at the killer before
+  `die` runs. There is therefore no end-to-end arrangement in which a soldier inside the grace
+  is angry at somebody else, and the scoping test goes through the `grantDeathGrace` seam
+  instead. A first draft asserted the opposite and failed, which is how this was found.
+
+- **Allied soldiers are a mode on `SoldierAntEntity`, not a subclass**, exactly as the spec
+  asks. One nullable summoner UUID plus an expiry gates everything: the three colony target
+  goals stand down, `AlliedSoldierTargetGoal` takes over, the expiry branch disperses it, and
+  -- the part that actually needed changing -- `ColonyAnger.isColonyAnt` stops answering for
+  it. That last one is the half M7 had to fix: an ally *dealing* damage was already harmless
+  (`offenderOf` only resolves a `Player`, and the attacker is a mob), but an ally being *hurt*
+  was a colony ant being hurt, so the summoner's own stray swing would have raised the alarm
+  against them and stripped their disguise.
+
+- **`OwnerHurtByTargetGoal`/`OwnerHurtTargetGoal`/`FollowOwnerGoal` could not be reused.** All
+  three are typed against `TamableAnimal` (the same wall M6 hit from the other side), and
+  making a wild soldier tamable for the sake of a 60-second summon would drag in taming,
+  sitting, breeding and an owner NBT round-trip for a mob that is discarded before any of it
+  matters. `AlliedSoldierTargetGoal` and `AlliedFollowSummonerGoal` are the two rules written
+  once instead. No teleport-to-owner: a summon that blinks through a wall is a worse surprise
+  than one left behind.
+
+- **The horn charges its cooldown only when the summon landed.** A blast in a space too tight
+  to fit an ant costs nothing, rather than eating two minutes for no allies.
+
+- **Royal Comb: Silk Touch still lifts the block.** The spec only requires the jelly drop, but
+  the comb is a build material as well as a jelly source, and "Silk Touch takes the container,
+  everything else takes the contents" is the vanilla convention (`createSingleItemTableWith
+  SilkTouch` is literally the helper for it). Taking it still angers the colony either way --
+  it is hive-tagged, and that wiring is M3b's and untouched.
+
+- **The queen has no spawn egg.** The only queen in a world is the one her chamber generated;
+  an egg would turn a once-per-chamber boss into a farmable drop table, and `/summon` covers
+  the creative case.
+
+- **`arena_platform` (25x7x25) added to the GameTest arenas.** The burst places its wave on a
+  ring 9 blocks out, which every existing arena drops off the edge of the world -- the test
+  could then only assert on entities that were already falling.
+
+- **The model's atlas is 128x64 and its box-UV packing is written into the spec's header.**
+  Eight boxes at this size do not fit by accident; the comment lists the rect each one owns so
+  a later edit can check the arithmetic rather than discover an overlap as a corrupted face.
+  `models.py`'s preview renderer also grew a per-model view box: it *clips* rather than scales,
+  and the queen is 60 model units nose to abdomen tip against the worker's 16.
