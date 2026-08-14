@@ -11,6 +11,7 @@ import com.nogal.formicary.item.ModArmorMaterials;
 import com.nogal.formicary.item.ModCreativeModeTabs;
 import com.nogal.formicary.item.ModItems;
 import com.nogal.formicary.loot.ModLootConditions;
+import com.nogal.formicary.portal.ModAttachments;
 import com.nogal.formicary.worldgen.ModWorldgen;
 
 import net.minecraft.world.item.CreativeModeTabs;
@@ -45,6 +46,10 @@ public class Formicary {
         // MapCodecs must be in the registries before any world loads.
         ModWorldgen.CHUNK_GENERATORS.register(modEventBus);
         ModWorldgen.BIOME_SOURCES.register(modEventBus);
+        // M5 portal state: the entry anthill a player came in through, and their breadcrumb
+        // ring buffer. Attachment types are a real NeoForge registry, so they go on the bus
+        // like everything else -- an unregistered type throws on first getData.
+        ModAttachments.ATTACHMENT_TYPES.register(modEventBus);
 
         modEventBus.addListener(this::addCreative);
 

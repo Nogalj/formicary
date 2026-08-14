@@ -241,8 +241,12 @@ public final class ColonyGeneratorTunables {
     /** Lowest Y the arrival search will accept -- still well inside the Upper Galleries. */
     public static final int ENTRY_SCAN_BOTTOM = MIN_Y + 3 * TIER_HEIGHT + 4;
 
-    /** Where a pocket gets carved when the scan finds no natural floor at the anthill's XZ. */
-    public static final int ENTRY_CARVE_FLOOR_Y = 168;
+    /**
+     * The Y the arrival pocket prefers to be carved at when the scan finds no natural floor
+     * at the anthill's XZ. A preference, not a rule: the carve searches down (then up) from
+     * here for a level that already has solid ground beneath it.
+     */
+    public static final int ENTRY_CARVE_PREFERRED_Y = 168;
 
     /** Half-width of the carved pocket in X/Z; 2 gives a 5x5 footprint. */
     public static final int ENTRY_CARVE_RADIUS = 2;

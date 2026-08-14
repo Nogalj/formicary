@@ -1,0 +1,321 @@
+package com.nogal.formicary.portal;
+
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_CARVE_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_CARVE_PREFERRED_Y;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_CARVE_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_SCAN_BOTTOM;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_SCAN_TOP;
+
+import java.util.Set;
+
+import javax.annotation.Nullable;
+
+import com.nogal.formicary.Formicary;
+import com.nogal.formicary.block.ModBlocks;
+import com.nogal.formicary.worldgen.ModWorldgen;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.Heightmap;
+
+/**
+ * Both directions of the ender-pearl portal (spec section 2).
+ *
+ * <p>In: a pearl that lands on an anthill sends the thrower to the same XZ inside the
+ * colony -- coordinate scale 1, so distant anthills open onto distant parts of one
+ * infinite colony. Out: a pearl that lands on a Daylight Membrane sends them back to the
+ * anthill they came in through.
+ *
+ * <p>Split deliberately into small pure-ish helpers ({@link #findCoreNear},
+ * {@link #isMembrane}, {@link #findFloorInBand}) and the two teleport routines that use
+ * them, because {@code GameTestServer} never loads this mod's dimension (it bakes
+ * {@code WorldPresets.FLAT} into an empty {@code LevelStem} registry -- the same
+ * limitation M4a and M4b hit). The helpers are therefore the part a headless test can
+ * actually exercise, and they are where all the arithmetic lives; the teleports
+ * themselves are verified on {@code runServer}.
+ */
+public final class AnthillPortal {
+
+    // -------------------------------------------------------------- tunables --
+
+    /**
+     * How far from an Anthill Core a pearl may land and still count as hitting the anthill,
+     * as a Chebyshev radius (i.e. a cube). Spec: "the impact block is the core or any block
+     * within 2 blocks of a core".
+     *
+     * <p>The anthill template is built around this number: with the core at its centre, a
+     * radius-2 cube covers every block of the raised mound, so there is no part of the
+     * visible structure that silently swallows a pearl. See {@code assets-src/structures.py}.
+     */
+    public static final int CORE_SEARCH_RADIUS = 2;
+
+    /** Ring radii tried, in order, when looking for clear ground beside the exit anthill. */
+    private static final int[] EXIT_RING_RADII = {4, 5, 6};
+
+    /** Offsets around a ring, as (dx, dz) pairs scaled by the radius: 8 compass points. */
+    private static final int[][] EXIT_RING_DIRECTIONS = {
+        {1, 0}, {0, 1}, {-1, 0}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1},
+    };
+
+    /** Returned by {@link #findFloorInBand} when the band holds nowhere to stand. */
+    public static final int NO_FLOOR = Integer.MIN_VALUE;
+
+    // -------------------------------------------------------- impact detection --
+
+    /**
+     * The Anthill Core within {@link #CORE_SEARCH_RADIUS} (Chebyshev) of {@code impact}, or
+     * {@code null} if the pearl did not land on an anthill.
+     *
+     * <p>Returns the <i>nearest</i> core rather than the first found, so that two anthills
+     * generated close together each send the player to their own XZ.
+     */
+    @Nullable
+    public static BlockPos findCoreNear(BlockGetter level, BlockPos impact) {
+        BlockPos best = null;
+        int bestDistance = Integer.MAX_VALUE;
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int dx = -CORE_SEARCH_RADIUS; dx <= CORE_SEARCH_RADIUS; dx++) {
+            for (int dy = -CORE_SEARCH_RADIUS; dy <= CORE_SEARCH_RADIUS; dy++) {
+                for (int dz = -CORE_SEARCH_RADIUS; dz <= CORE_SEARCH_RADIUS; dz++) {
+                    cursor.set(impact.getX() + dx, impact.getY() + dy, impact.getZ() + dz);
+                    if (!level.getBlockState(cursor).is(ModBlocks.ANTHILL_CORE.get())) {
+                        continue;
+                    }
+                    int distance = dx * dx + dy * dy + dz * dz;
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        best = cursor.immutable();
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    /** Whether {@code pos} holds a Daylight Membrane -- the exit block. */
+    public static boolean isMembrane(BlockGetter level, BlockPos pos) {
+        return level.getBlockState(pos).is(ModBlocks.DAYLIGHT_MEMBRANE.get());
+    }
+
+    // ------------------------------------------------------------ safe footing --
+
+    /**
+     * The highest Y in {@code [bandBottom, bandTop)} where a player can stand: air at
+     * {@code y} and {@code y + 1}, with something that blocks motion at {@code y - 1}.
+     *
+     * <p>This is the whole "never suffocate, never void-drop" guarantee in one function --
+     * the two-block air requirement is what stops a player being sealed into soil, and the
+     * solid block below is what stops them arriving over a shaft.
+     *
+     * @return the Y to stand on, or {@link #NO_FLOOR}
+     */
+    public static int findFloorInBand(BlockGetter level, int x, int z, int bandBottom, int bandTop) {
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int y = bandTop - 1; y >= bandBottom; y--) {
+            if (!level.getBlockState(cursor.set(x, y, z)).isAir()) {
+                continue;
+            }
+            if (!level.getBlockState(cursor.set(x, y + 1, z)).isAir()) {
+                continue;
+            }
+            if (level.getBlockState(cursor.set(x, y - 1, z)).blocksMotion()) {
+                return y;
+            }
+        }
+        return NO_FLOOR;
+    }
+
+    /**
+     * Finds -- or, failing that, digs -- somewhere safe to put an arriving player at
+     * {@code (x, z)} in the colony.
+     *
+     * <p>The carve only ever <b>removes</b> solid blocks, and only from a Y where there was
+     * already something solid to stand on. That is deliberate: the dimension's walkable
+     * spine is a helicoid ramp whose floor is forced solid precisely so a chamber cannot
+     * swallow it (see {@code ColonyNoise#shaftState}), and dropping a 5x5 slab of soil into
+     * an arbitrary Y would be the one thing in the mod that can put blocks back into that
+     * carve. The single exception is patching holes in the pocket's own floor, which can
+     * at worst raise a ramp walkway by one block -- still passable, since the ramp is
+     * carved three blocks tall.
+     *
+     * <p>The caller must already have loaded the chunk.
+     */
+    public static BlockPos findOrCarveEntryPocket(ServerLevel colony, int x, int z) {
+        int natural = findFloorInBand(colony, x, z, ENTRY_SCAN_BOTTOM, ENTRY_SCAN_TOP + 1);
+        if (natural != NO_FLOOR) {
+            return new BlockPos(x, natural, z);
+        }
+        return carveEntryPocket(colony, x, z);
+    }
+
+    private static BlockPos carveEntryPocket(ServerLevel colony, int x, int z) {
+        int floorY = chooseCarveFloor(colony, x, z);
+        BlockState air = Blocks.AIR.defaultBlockState();
+        BlockState soil = ModBlocks.PACKED_SOIL.get().defaultBlockState();
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+
+        for (int dx = -ENTRY_CARVE_RADIUS; dx <= ENTRY_CARVE_RADIUS; dx++) {
+            for (int dz = -ENTRY_CARVE_RADIUS; dz <= ENTRY_CARVE_RADIUS; dz++) {
+                if (!colony.getBlockState(cursor.set(x + dx, floorY - 1, z + dz)).blocksMotion()) {
+                    colony.setBlock(cursor.immutable(), soil, Block.UPDATE_ALL);
+                }
+                for (int dy = 0; dy < ENTRY_CARVE_HEIGHT; dy++) {
+                    cursor.set(x + dx, floorY + dy, z + dz);
+                    if (!colony.getBlockState(cursor).isAir()) {
+                        colony.setBlock(cursor.immutable(), air, Block.UPDATE_ALL);
+                    }
+                }
+            }
+        }
+        Formicary.LOGGER.info("Formicary: carved an arrival pocket at {} {} {}", x, floorY, z);
+        return new BlockPos(x, floorY, z);
+    }
+
+    /**
+     * The Y to hollow the pocket out at: the first level at or below
+     * {@code ENTRY_CARVE_PREFERRED_Y} with solid ground beneath it, then failing that the
+     * first one above. Keeping the whole pocket inside
+     * {@code [ENTRY_SCAN_BOTTOM, ENTRY_SCAN_TOP]} is what stops it punching through the
+     * ceiling cap or dropping below the Upper Galleries.
+     */
+    private static int chooseCarveFloor(ServerLevel colony, int x, int z) {
+        int highest = ENTRY_SCAN_TOP - ENTRY_CARVE_HEIGHT + 1;
+        int start = Math.min(ENTRY_CARVE_PREFERRED_Y, highest);
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int y = start; y >= ENTRY_SCAN_BOTTOM; y--) {
+            if (colony.getBlockState(cursor.set(x, y - 1, z)).blocksMotion()) {
+                return y;
+            }
+        }
+        for (int y = start + 1; y <= highest; y++) {
+            if (colony.getBlockState(cursor.set(x, y - 1, z)).blocksMotion()) {
+                return y;
+            }
+        }
+        // A column with nothing solid anywhere in the band. carveEntryPocket lays its own
+        // floor, so this is still safe -- it just has to lay all 25 blocks of it.
+        return start;
+    }
+
+    /**
+     * Somewhere safe to stand near {@code anchor} in an ordinary (heightmap-having) level:
+     * a ring of clear ground beside the anthill first, then the anthill's own summit.
+     *
+     * <p>Ring before centre because the mound's summit is one block wide -- landing on it
+     * is a slide off a cone, whereas the ring radii start just outside the structure's 7x7
+     * footprint, on the savanna itself.
+     */
+    public static BlockPos findSafeStandNear(ServerLevel level, BlockPos anchor) {
+        for (int radius : EXIT_RING_RADII) {
+            for (int[] direction : EXIT_RING_DIRECTIONS) {
+                BlockPos candidate = surfaceStand(level, anchor.getX() + direction[0] * radius,
+                        anchor.getZ() + direction[1] * radius);
+                if (candidate != null) {
+                    return candidate;
+                }
+            }
+        }
+        BlockPos summit = surfaceStand(level, anchor.getX(), anchor.getZ());
+        if (summit != null) {
+            return summit;
+        }
+        // Nothing anywhere around passed the two-air check (a cave roof, a structure, deep
+        // water). The heightmap position is still above every motion-blocking block in the
+        // column, so it is the safest thing left.
+        return level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, anchor);
+    }
+
+    @Nullable
+    private static BlockPos surfaceStand(ServerLevel level, int x, int z) {
+        level.getChunk(x >> 4, z >> 4);
+        int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        if (!level.getBlockState(cursor.set(x, y, z)).isAir()
+                || !level.getBlockState(cursor.set(x, y + 1, z)).isAir()
+                || !level.getBlockState(cursor.set(x, y - 1, z)).blocksMotion()) {
+            return null;
+        }
+        return new BlockPos(x, y, z);
+    }
+
+    // ---------------------------------------------------------------- travel --
+
+    /**
+     * Sends {@code player} into the colony at the anthill's own XZ and records the anthill
+     * as their way back.
+     *
+     * @return whether the teleport happened
+     */
+    public static boolean enterColony(ServerPlayer player, BlockPos core) {
+        MinecraftServer server = player.server;
+        ServerLevel colony = server.getLevel(ModWorldgen.FORMICARY_LEVEL);
+        if (colony == null) {
+            Formicary.LOGGER.warn("Formicary: an anthill was struck but {} is not loaded on this server",
+                    ModWorldgen.FORMICARY_LEVEL.location());
+            return false;
+        }
+
+        // Generate the destination chunk before asking for its blocks: the pocket search
+        // reads ~40 blocks of column, and an ungenerated chunk reads as air all the way
+        // down, which would look like a void drop.
+        colony.getChunk(core.getX() >> 4, core.getZ() >> 4);
+        BlockPos arrival = findOrCarveEntryPocket(colony, core.getX(), core.getZ());
+
+        player.setData(ModAttachments.ENTRY_ANTHILL, core);
+        player.getData(ModAttachments.TRAIL_PATH).clear();
+        return teleport(player, colony, arrival);
+    }
+
+    /**
+     * Sends {@code player} back to the anthill they came in through, or to the overworld
+     * spawn if they have never used one (a membrane they carried out and placed themselves,
+     * or a world where they arrived by command).
+     *
+     * @return whether the teleport happened
+     */
+    public static boolean exitColony(ServerPlayer player) {
+        MinecraftServer server = player.server;
+        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+        if (overworld == null) {
+            return false;
+        }
+        BlockPos anchor = player.getExistingData(ModAttachments.ENTRY_ANTHILL)
+                .orElseGet(overworld::getSharedSpawnPos);
+
+        overworld.getChunk(anchor.getX() >> 4, anchor.getZ() >> 4);
+        BlockPos arrival = findSafeStandNear(overworld, anchor);
+
+        player.getData(ModAttachments.TRAIL_PATH).clear();
+        return teleport(player, overworld, arrival);
+    }
+
+    /**
+     * The actual move, through the same path {@code /teleport} takes:
+     * {@code ServerPlayer#teleportTo(ServerLevel, x, y, z, Set<RelativeMovement>, yaw,
+     * pitch)}, which adds the {@code POST_TELEPORT} chunk ticket and then hands a
+     * cross-dimension move to {@code changeDimension}. Verified in the decompiled sources
+     * against {@code TeleportCommand}; the plainer {@code teleportTo(double, double,
+     * double)} cannot cross dimensions at all.
+     */
+    private static boolean teleport(ServerPlayer player, ServerLevel destination, BlockPos pos) {
+        boolean moved = player.teleportTo(destination, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5,
+                Set.of(), player.getYRot(), player.getXRot());
+        if (moved) {
+            player.resetFallDistance();
+            destination.playSound(null, pos, SoundEvents.PLAYER_TELEPORT, SoundSource.PLAYERS, 1.0F, 1.0F);
+        }
+        return moved;
+    }
+
+    private AnthillPortal() {
+    }
+}
