@@ -6,10 +6,13 @@ import com.nogal.formicary.item.ModItems;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.SpawnPlacementTypes;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.common.DeferredSpawnEggItem;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
+import net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -18,9 +21,8 @@ import net.neoforged.neoforge.registries.DeferredRegister;
  * Entity types for the colony's castes. M2 registered the worker; M3a adds the soldier
  * and larva. The queen arrives in M7.
  *
- * <p>No spawn placement is registered: the ant dimension does not exist yet, so the
- * spawn egg is the only way to get an ant into the world. M4 wires natural spawning
- * data-driven via biome modifiers (nursery-only for the larva).
+ * <p>M4 adds spawn placements and the four tier biomes' spawn lists, so the castes now
+ * populate the colony as its chunks generate.
  */
 public class ModEntities {
     public static final DeferredRegister<EntityType<?>> ENTITY_TYPES =
@@ -66,6 +68,33 @@ public class ModEntities {
             event.put(WORKER_ANT.get(), WorkerAntEntity.createAttributes().build());
             event.put(SOLDIER_ANT.get(), SoldierAntEntity.createAttributes().build());
             event.put(LARVA.get(), LarvaEntity.createAttributes().build());
+        }
+
+        /**
+         * Without a registered placement an entity type falls back to
+         * {@code SpawnPlacementTypes.NO_RESTRICTIONS}, which is literally "yes" to every
+         * position -- ants would happily spawn inside solid soil. {@code ON_GROUND} is the
+         * rule that actually wants a sturdy block underneath and two free blocks above.
+         *
+         * <p>The predicate itself is unconditional on purpose: the colony has no sky and
+         * only 0.3 ambient light, so any light or surface test vanilla animals use would
+         * reject every position in the dimension. Where ants may appear is decided entirely
+         * by the four tier biomes' spawn lists.
+         */
+        @SubscribeEvent
+        public static void registerSpawnPlacements(RegisterSpawnPlacementsEvent event) {
+            event.register(WORKER_ANT.get(), SpawnPlacementTypes.ON_GROUND,
+                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    (type, level, spawnType, pos, random) -> true,
+                    RegisterSpawnPlacementsEvent.Operation.REPLACE);
+            event.register(SOLDIER_ANT.get(), SpawnPlacementTypes.ON_GROUND,
+                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    (type, level, spawnType, pos, random) -> true,
+                    RegisterSpawnPlacementsEvent.Operation.REPLACE);
+            event.register(LARVA.get(), SpawnPlacementTypes.ON_GROUND,
+                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    (type, level, spawnType, pos, random) -> true,
+                    RegisterSpawnPlacementsEvent.Operation.REPLACE);
         }
     }
 
