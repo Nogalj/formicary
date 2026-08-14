@@ -3,6 +3,8 @@ package com.nogal.formicary.entity;
 import javax.annotation.Nullable;
 
 import net.minecraft.core.BlockPos;
+import com.nogal.formicary.ModSoundEvents;
+import com.nogal.formicary.item.ModItems;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
@@ -143,6 +145,14 @@ public class TamedSoldierAntEntity extends TamableAnimal implements TamedAnt {
 
     @Override
     public InteractionResult mobInteract(Player player, InteractionHand hand) {
+        ItemStack held = player.getItemInHand(hand);
+        if (this.isOwnedByUuid(player) && held.is(ModItems.FUNGAL_BLOOM.get())
+                && this.getHealth() < this.getMaxHealth()) {
+            this.heal(4.0F);
+            held.shrink(1);
+            this.playSound(SoundEvents.BEEHIVE_WORK, 0.6F, 1.3F);
+            return InteractionResult.sidedSuccess(this.level().isClientSide);
+        }
         if (!player.isShiftKeyDown() || !this.isOwnedByUuid(player)) {
             return super.mobInteract(player, hand);
         }
@@ -204,7 +214,7 @@ public class TamedSoldierAntEntity extends TamableAnimal implements TamedAnt {
 
     @Override
     protected SoundEvent getAmbientSound() {
-        return SoundEvents.SPIDER_AMBIENT;
+        return ModSoundEvents.SOLDIER_AMBIENT_CLICK.get();
     }
 
     @Override

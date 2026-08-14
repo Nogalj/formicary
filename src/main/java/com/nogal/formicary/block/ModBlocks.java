@@ -12,12 +12,13 @@ import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 /**
- * M1 block set -- see spec section 5 and {@code docs/DECISIONS.md}.
+ * M1 block set -- see spec section 5 and docs/DECISIONS.md.
  *
- * <p>Everything is registered through {@link DeferredRegister.Blocks} per the project's
- * hard rule (see {@code CLAUDE.md}: "Register all content with DeferredRegister").
+ * Everything is registered through DeferredRegister.Blocks per the project's
+ * hard rule: "Register all content with DeferredRegister".
  * Colony-anger / chitin-gate / hive-tag behavior is explicitly out of scope for M1
- * (that's M3) -- every block here uses plain vanilla mining properties.
+ * (that is M3) -- every block here uses plain vanilla mining properties.
+ * M8 adds FungalSporeBlock.
  */
 public class ModBlocks {
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(Formicary.MODID);
@@ -78,6 +79,17 @@ public class ModBlocks {
                     .noOcclusion());
 
     // --- Flora / light ---
+
+    // M8: Fungal Spore crop block (4-stage, dim-tolerant, plantable on dirt).
+    public static final DeferredBlock<FungalSporeBlock> FUNGAL_SPORE = BLOCKS.registerBlock(
+            "fungal_spore",
+            FungalSporeBlock::new,
+            BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.PLANT)
+                    .sound(SoundType.CROP)
+                    .noCollission()
+                    .randomTicks()
+                    .strength(0.0F));
 
     public static final DeferredBlock<FungalBloomBlock> FUNGAL_BLOOM = BLOCKS.registerBlock(
             "fungal_bloom",

@@ -37,6 +37,7 @@ public class ModLanguageProvider extends LanguageProvider {
         addBlock(ModBlocks.ANTHILL_SOIL, "Anthill Soil");
         addBlock(ModBlocks.ANTHILL_CORE, "Anthill Core");
         addBlock(ModBlocks.QUEENS_CREST, "Queen's Crest");
+        addBlock(ModBlocks.FUNGAL_SPORE, "Fungal Spore");
 
         addItem(ModItems.RESIN, "Resin");
         addItem(ModItems.CHITIN, "Chitin");
@@ -53,6 +54,7 @@ public class ModLanguageProvider extends LanguageProvider {
         addItem(ModItems.CHITIN_HELMET, "Chitin Helmet");
         addItem(ModItems.CHITIN_CHESTPLATE, "Chitin Chestplate");
         addItem(ModItems.CHITIN_LEGGINGS, "Chitin Leggings");
+        addItem(ModItems.FUNGAL_SPORE, "Fungal Spore");
         addItem(ModItems.CHITIN_BOOTS, "Chitin Boots");
 
         addEntityType(ModEntities.WORKER_ANT, "Worker Ant");

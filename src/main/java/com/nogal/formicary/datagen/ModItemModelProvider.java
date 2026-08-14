@@ -54,6 +54,7 @@ public class ModItemModelProvider extends ItemModelProvider {
         basicItem(ModItems.CHITIN_HELMET.get());
         basicItem(ModItems.CHITIN_CHESTPLATE.get());
         basicItem(ModItems.CHITIN_LEGGINGS.get());
+        basicItem(ModItems.FUNGAL_SPORE.get());
         basicItem(ModItems.CHITIN_BOOTS.get());
 
         // Spawn eggs reuse the vanilla two-layer template; the shell/spot colours come

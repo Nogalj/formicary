@@ -6,6 +6,7 @@ import java.util.List;
 import javax.annotation.Nullable;
 
 import com.nogal.formicary.colony.ColonyAnger;
+import com.nogal.formicary.ModSoundEvents;
 import com.nogal.formicary.effect.ModMobEffects;
 
 import net.minecraft.core.BlockPos;
@@ -389,7 +390,7 @@ public class QueenAntEntity extends PathfinderMob {
 
     @Override
     protected SoundEvent getAmbientSound() {
-        return SoundEvents.BEE_LOOP_AGGRESSIVE;
+        return ModSoundEvents.QUEEN_AMBIENT_DEEP.get();
     }
 
     @Override

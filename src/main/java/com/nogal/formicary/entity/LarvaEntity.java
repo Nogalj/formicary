@@ -2,6 +2,7 @@ package com.nogal.formicary.entity;
 
 import javax.annotation.Nullable;
 
+import com.nogal.formicary.ModSoundEvents;
 import com.nogal.formicary.item.ModItemTags;
 import com.nogal.formicary.item.ModItems;
 
@@ -29,28 +30,14 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 
-/**
- * Nursery-tier brood (spec section 3): a tiny, harmless grub that wriggles in place
- * near brood comb. Sneak-right-clicking it with an empty hand captures it as a larva
- * item -- the colony's export good, and the M6 taming loop's starting point.
- *
- * <p>M6 gives the larva a second life as a <em>placed</em> larva: put the item down in the
- * overworld ({@code item.LarvaItem}) and it comes back as this same entity carrying the
- * {@link #isPlaced()} flag. A placed larva stops wandering (the wriggle is animation, not
- * AI, so it keeps that), and becomes feedable -- and what you feed it decides which caste
- * it grows into:
- * <ul>
- *   <li>Royal Jelly -&gt; {@link TamedWorkerAntEntity}</li>
- *   <li>anything in {@code #formicary:raw_ant_food} -&gt; {@link TamedSoldierAntEntity}</li>
- * </ul>
- * Either way the feeding player becomes the owner, and growth is instant.
- *
- * <p>Feeding is gated on the placed flag on purpose: a larva still in the colony's nursery
- * is the colony's brood, not yours. You capture it first, then it is yours to raise.
- * Capture, though, works on both -- a placed larva picked back up is just an item again,
- * which is the symmetric (and un-lose-able) reading of "place it down".
- */
 public class LarvaEntity extends PathfinderMob {
+
+    public static AttributeSupplier.Builder createAttributes() {
+        return PathfinderMob.createMobAttributes()
+                .add(Attributes.MAX_HEALTH, 8.0)
+                .add(Attributes.MOVEMENT_SPEED, 0.12);
+    }
+
     private static final String TAG_PLACED = "Placed";
 
     private static final EntityDataAccessor<Boolean> DATA_PLACED =
@@ -58,12 +45,6 @@ public class LarvaEntity extends PathfinderMob {
 
     public LarvaEntity(EntityType<? extends LarvaEntity> entityType, Level level) {
         super(entityType, level);
-    }
-
-    public static AttributeSupplier.Builder createAttributes() {
-        return PathfinderMob.createMobAttributes()
-                .add(Attributes.MAX_HEALTH, 8.0)
-                .add(Attributes.MOVEMENT_SPEED, 0.12);
     }
 
     @Override
@@ -75,8 +56,6 @@ public class LarvaEntity extends PathfinderMob {
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        // A placed larva sits where it was put. Gating the stroll goal rather than setting
-        // NoAI keeps gravity, water escape and the client-side wriggle all working.
         WaterAvoidingRandomStrollGoal stroll = new WaterAvoidingRandomStrollGoal(this, 0.4) {
             @Override
             public boolean canUse() {
@@ -91,12 +70,8 @@ public class LarvaEntity extends PathfinderMob {
         stroll.setInterval(400);
         this.goalSelector.addGoal(5, stroll);
         this.goalSelector.addGoal(6, new RandomLookAroundGoal(this));
-        // Passive: no target selectors registered, a larva never fights back or flees.
     }
 
-    // -------------------------------------------------------------- placed --
-
-    /** Whether this larva was set down by a player rather than born in the nursery. */
     public boolean isPlaced() {
         return this.entityData.get(DATA_PLACED);
     }
@@ -105,15 +80,6 @@ public class LarvaEntity extends PathfinderMob {
         this.entityData.set(DATA_PLACED, placed);
     }
 
-    // ------------------------------------------------------------ the fork --
-
-    /**
-     * Which caste {@code food} raises a placed larva into, or {@code null} if it is not
-     * larva food at all.
-     *
-     * <p>Static and public because this <em>is</em> the diet rule the spec cares about;
-     * a test asserting it should read the rule, not an entity's side effects.
-     */
     @Nullable
     public static EntityType<? extends TamableAnimal> casteFor(ItemStack food) {
         if (food.is(ModItems.ROYAL_JELLY.get())) {
@@ -125,11 +91,6 @@ public class LarvaEntity extends PathfinderMob {
         return null;
     }
 
-    /**
-     * Replaces this larva with a freshly owned ant of {@code type} at the same spot.
-     *
-     * @return the grown ant, or {@code null} if the entity type refused to build one
-     */
     @Nullable
     public TamableAnimal growInto(ServerLevel level, EntityType<? extends TamableAnimal> type, Player owner) {
         TamableAnimal grown = type.create(level);
@@ -177,8 +138,6 @@ public class LarvaEntity extends PathfinderMob {
         return super.mobInteract(player, hand);
     }
 
-    // ---------------------------------------------------------- persistence --
-
     @Override
     public void addAdditionalSaveData(CompoundTag compound) {
         super.addAdditionalSaveData(compound);
@@ -191,18 +150,15 @@ public class LarvaEntity extends PathfinderMob {
         this.setPlaced(compound.getBoolean(TAG_PLACED));
     }
 
-    /**
-     * Colony inhabitants stay put, the way every vanilla {@code Animal} does -- see
-     * {@link WorkerAntEntity#removeWhenFarAway} for the full reasoning.
-     */
     @Override
     public boolean removeWhenFarAway(double distanceToClosestPlayer) {
         return false;
     }
 
-    // -------------------------------------------------------------- sounds --
-    // No ambient sound: a passive grub wriggling in place should read as silent, not
-    // chattering like the worker/soldier.
+    @Override
+    protected SoundEvent getAmbientSound() {
+        return ModSoundEvents.LARVA_AMBIENT_SQUISH.get();
+    }
 
     @Override
     protected SoundEvent getHurtSound(DamageSource damageSource) {

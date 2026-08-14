@@ -7,6 +7,8 @@ import java.util.UUID;
 import javax.annotation.Nullable;
 
 import com.nogal.formicary.block.ModBlockTags;
+import com.nogal.formicary.ModSoundEvents;
+import com.nogal.formicary.item.ModItems;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -333,6 +335,14 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
 
     @Override
     public InteractionResult mobInteract(Player player, InteractionHand hand) {
+        ItemStack held = player.getItemInHand(hand);
+        if (this.isOwnedByUuid(player) && held.is(ModItems.FUNGAL_BLOOM.get())
+                && this.getHealth() < this.getMaxHealth()) {
+            this.heal(4.0F);
+            held.shrink(1);
+            this.playSound(SoundEvents.BEEHIVE_WORK, 0.6F, 1.3F);
+            return InteractionResult.sidedSuccess(this.level().isClientSide);
+        }
         if (!player.isShiftKeyDown() || !this.isOwnedByUuid(player)) {
             return super.mobInteract(player, hand);
         }
@@ -423,7 +433,7 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
 
     @Override
     protected SoundEvent getAmbientSound() {
-        return SoundEvents.SPIDER_STEP;
+        return ModSoundEvents.WORKER_AMBIENT_CLICK.get();
     }
 
     @Override
