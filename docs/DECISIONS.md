@@ -56,3 +56,96 @@ meaningfully change gameplay go to Logan instead of here.
   ModTest's `platform.nbt` back rather than trusting the format from memory. A second
   48x3x5 `long_platform` exists purely so the radius boundary can be tested at a real
   distance instead of shrinking the radius to fit the standard arena.
+
+## M4a The Formicary dimension
+
+- **Vertical layout: `min_y = 0`, `height = 192`, four 48-block tiers** (bottom-up:
+  Royal Depths `y 0-47`, Nurseries `48-95`, Fungal Gardens `96-143`, Upper Galleries
+  `144-191`). Both numbers have to be multiples of 16 (the `DimensionType` codec throws
+  otherwise), and 192 is the smallest multiple of 16 that divides into four bands deep
+  enough for a 10-20 block cathedral room plus rock around it. A 5-block Hardened Soil cap
+  at the bottom and a 6-block Packed Soil cap at the top are never carved, so there is no
+  exposed void at either extreme. The ceiling cap is left plain for M5's exit membranes.
+
+- **Every constant lives in `ColonyGeneratorTunables`.** The visual pass needs a running
+  client and therefore happens after this milestone lands, so nothing in the generator or
+  the noise hardcodes a number -- retuning the look is editing one file.
+
+- **`NoiseProbe` is a real deliverable, not scaffolding.** The carve thresholds are only
+  meaningful relative to the raw amplitude of single-octave Perlin noise, and a bad guess
+  silently yields a solid or hollow world that nobody can see without a client. The probe
+  runs `ColonyNoise` headlessly and prints per-tier air fractions, the distribution of each
+  noise field, ASCII cross-sections, and a walkability BFS. It earned its keep immediately:
+  the first threshold set made the Upper Galleries 7% air and merged the chambers into
+  40-block mega-caverns, and the walkability BFS caught two separate connectivity failures
+  (below). Run it with
+  `.\gradlew --init-script docs\noise-probe.init.gradle formicaryProbe` -- an init script
+  rather than a `build.gradle` task, so the repo's build file stays the stock ModDevGradle
+  one and the probe stays unambiguously a dev tool.
+
+- **Two chamber noise fields, not one field rescaled per tier.** Tiers need different
+  chamber *sizes*, and changing the sampling scale per tier would shift the field at every
+  tier boundary and leave a visible seam. A fixed-scale small field (~14-block cells) and a
+  fixed-scale large field (~29-block cells) with per-tier thresholds gives the same control
+  and stays continuous across a boundary.
+
+- **The connectivity ramp is a closed-form helicoid, not a tube swept along a helix.**
+  Bidirectional traversal is load-bearing: mining the fabric is gated behind full Chitin
+  Armor, so a one-way drop is a soft-lock. The first design carved a disc around a helix
+  path and let the floor emerge from where the carve started; the probe's BFS (which only
+  connects neighbouring columns whose standable heights differ by at most one, so every
+  path it finds is reversible) showed that ramp failing on two seeds out of four. The
+  replacement derives the floor height directly from the bearing around the axis, so the
+  step between neighbouring columns is bounded by
+  `(1 / RAMP_RADIANS_PER_BLOCK) / innerRadius` = 0.85 no matter what the noise does. All
+  six seeds tested now walk from the Upper Galleries to `y = 5`.
+
+- **The ramp outranks the noise in both directions.** It carves through solid fabric *and*
+  forces its own floor solid. Without the second half a cathedral chamber crossing the
+  shaft swallows the walkway -- which is exactly how the first version failed, dying at
+  `y = 45`. The visible result is a spiral ledge running through the big rooms.
+
+- **Decoration is placed in the generator, not as biome features.** A placed feature is
+  aimed at one heightmap Y per column; in a dimension that is solid rock with a hollow
+  inside, that Y is always the top of the ceiling cap. Every carved floor and wall needs
+  dressing at every depth, and the generator already knows where the carve is. The biome
+  JSONs therefore ship `"features": []`, and the whole look of a tier stays adjustable from
+  the tunables file.
+
+- **Decoration reads a one-block skirt around the chunk from the noise, not from the
+  neighbouring chunk.** Wall dressing has to look sideways, and `ProtoChunk#getBlockState`
+  masks X/Z with `& 15`, so reading `x - 1` at the chunk edge silently returns the wrong
+  column. `ColonyNoise` is a pure function of world position, so the skirt is recomputed
+  from it and agrees with whatever that chunk will contain.
+
+- **Custom per-tier chunk-generation spawning instead of
+  `NaturalSpawner.spawnMobsForChunkGeneration`.** Two things about vanilla's helper are
+  wrong for a tiered dimension, both read out of the 1.21 sources rather than assumed:
+  `NoiseBasedChunkGenerator` hands it the biome at `maxBuildHeight - 1` (always the top
+  tier), and its `getTopNonCollidingPos` takes the `hasCeiling` branch, which walks down to
+  the *first* air pocket under the ceiling. Calling it once per tier would have populated
+  the Upper Galleries four times over and left the Royal Depths empty. The replacement
+  finds a floor inside each band and applies the same placement, collision and
+  `EventHooks.checkSpawnPosition` checks vanilla does.
+
+- **`SpawnPlacementTypes.ON_GROUND` registered for all three castes.** An unregistered type
+  falls back to `NO_RESTRICTIONS`, which approves every position including the inside of
+  solid soil. The predicate itself is unconditional: with no sky and 0.3 ambient light,
+  every light-based vanilla rule would reject the whole dimension. Which ants appear where
+  is decided by the four biomes' spawn lists alone.
+
+- **Biome, dimension and dimension_type JSONs are hand-written under `src/main/resources`,
+  not datagen.** They are static, contain nothing computed, and cross-reference nothing;
+  a `RegistrySetBuilder` + `DatapackBuiltinEntriesProvider` would be a page of bootstrap
+  code to emit the same bytes. Consistent with the GameTest structure NBT, which also lives
+  in `src/main/resources/data/formicary/`.
+
+- **`bed_works: false`, `respawn_anchor_works: false`.** Thematically the colony is hostile
+  ground you are trespassing on, not somewhere to set up house; mechanically it keeps the
+  dimension a raid rather than a base, which is what the tiered descent is built around.
+  `effects: minecraft:the_nether` gives the sky-less fog renderer, and `has_ceiling: true`
+  gives the dense fog and the spinning compass that sell "underground".
+
+- **`getSeaLevel()` returns `MIN_Y`.** There is no water anywhere in the colony; returning
+  the floor rather than a plausible-looking 63 avoids implying a water table that does not
+  exist.

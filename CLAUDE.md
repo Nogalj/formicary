@@ -178,6 +178,48 @@ is a known-correct 1.21 entity model reference.
   `EntityType`s. `EntityType#getDefaultLootTable()` derives the table id as
   `entities/<namespace>/<path>` automatically, so `add(EntityType, builder)` (no explicit
   key) is enough. (`verified: 2026-08-13`)
+- **Custom worldgen: the registries hold `MapCodec`s, not instances.** A data-driven
+  `dimension` JSON names a generator via its `"type"` field, which
+  `ChunkGenerator.CODEC` / `BiomeSource.CODEC` dispatch through
+  `BuiltInRegistries.CHUNK_GENERATOR` / `BIOME_SOURCE`. So the DeferredRegisters are
+  `DeferredRegister<MapCodec<? extends ChunkGenerator>>` against `Registries.CHUNK_GENERATOR`
+  (path `worldgen/chunk_generator`) and `Registries.BIOME_SOURCE` (`worldgen/biome_source`),
+  and what you register is the class's `CODEC` field. Miss the bridge and the server dies at
+  JSON parse, not at runtime. Datapack directories: `data/<ns>/dimension_type/` for
+  `Registries.DIMENSION_TYPE`, and **`data/<ns>/dimension/`** for `Registries.LEVEL_STEM`
+  -- the registry named `minecraft:dimension` holds `LevelStem`, while `Registries.DIMENSION`
+  is the separate runtime `Level` registry sharing that id. (`verified: 2026-08-13`)
+- **`BiomeSource#getNoiseBiome` takes QUART coordinates, not blocks** (one sample per
+  4x4x4). Convert with `QuartPos.toBlock(y)` before comparing against block-space Y bands,
+  or every boundary lands at a quarter of its intended height. Verified against
+  `BiomeSource#getBiomesWithin` and `TheEndBiomeSource`. (`verified: 2026-08-13`)
+- **A custom `ChunkGenerator` never receives the world seed.** `fillFromNoise` /
+  `buildSurface` only get a `RandomState`; take seeded randomness from
+  `randomState.getOrCreateRandomFactory(ResourceLocation)`, which forks the level seed and
+  is cached per name. (For a non-`NoiseBasedChunkGenerator`, `ChunkMap` builds that
+  `RandomState` from `NoiseGeneratorSettings.dummy()` and the real level seed.)
+  `PerlinNoise.create(random, List.of(0))` is the predictable primitive: with a single
+  octave 0 both of its internal scale factors come out as exactly 1.0, so `getValue` is raw
+  `ImprovedNoise` at the coordinates you pass and your thresholds mean something stable.
+  Measured span over ~1M samples: min -0.90, max 0.91, mean |v| 0.215. (`verified: 2026-08-13`)
+- **`NaturalSpawner.spawnMobsForChunkGeneration` only ever populates the topmost cave in a
+  `has_ceiling` dimension.** Its `getTopNonCollidingPos` takes the ceiling branch and walks
+  down to the *first* air pocket below the roof, and `NoiseBasedChunkGenerator` feeds it the
+  biome at `maxBuildHeight - 1`. In a vertically banded dimension, calling it once per band
+  fills the top band N times and leaves the rest empty -- write a per-band spawner instead.
+  Also: an `EntityType` with no registered `SpawnPlacements` falls back to
+  `NO_RESTRICTIONS`, which approves spawning inside solid blocks; register
+  `SpawnPlacementTypes.ON_GROUND` via `RegisterSpawnPlacementsEvent` (mod bus).
+  (`verified: 2026-08-13`)
+- **`GameTestServer` cannot see datapack dimensions.** It bakes the `WorldPresets.FLAT`
+  preset into a deliberately empty `LevelStem` registry, so a custom dimension is absent
+  from the test server no matter what the datapack says. Verify dimension loading with
+  `runServer` (the save grows `world/dimensions/<ns>/<path>/`), not with a GameTest.
+  (`verified: 2026-08-13`)
+- **`ProtoChunk#getBlockState` masks X/Z with `& 15`.** Reading a neighbour one block
+  outside the chunk silently wraps to the opposite edge of the *same* chunk instead of
+  failing. Anything in worldgen that looks sideways must either stay inside the chunk or
+  recompute from a position-pure function. (`verified: 2026-08-13`)
 
 ## Workflow
 
