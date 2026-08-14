@@ -1,0 +1,13 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "formicary:resin_block"
+    }
+  ],
+  "result": {
+    "count": 9,
+    "id": "formicary:resin"
+  }
+}

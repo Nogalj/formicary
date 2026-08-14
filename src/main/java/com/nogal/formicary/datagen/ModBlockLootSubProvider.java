@@ -3,10 +3,12 @@ package com.nogal.formicary.datagen;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.nogal.formicary.block.FungalSporeCropBlock;
 import com.nogal.formicary.block.ModBlocks;
 import com.nogal.formicary.item.ModItems;
 import com.nogal.formicary.loot.WearingFullChitinCondition;
 
+import net.minecraft.advancements.critereon.StatePropertiesPredicate;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.loot.BlockLootSubProvider;
@@ -19,6 +21,9 @@ import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.level.storage.loot.entries.LootItem;
 import net.minecraft.world.level.storage.loot.functions.ApplyBonusCount;
 import net.minecraft.world.level.storage.loot.functions.SetItemCountFunction;
+import net.minecraft.world.level.storage.loot.predicates.LootItemBlockStatePropertyCondition;
+import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
+import net.minecraft.world.level.storage.loot.predicates.LootItemRandomChanceCondition;
 import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
 import net.minecraft.world.level.storage.loot.providers.number.UniformGenerator;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -59,7 +64,18 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
         dropSelfWearingFullChitin(ModBlocks.HARDENED_SOIL.get());
 
         dropSelf(ModBlocks.RESIN_BLOCK.get());
-        dropSelf(ModBlocks.FUNGAL_BLOOM.get());
+        // M8: wheat-style harvest (spec section 5) -- the wild bush always drops itself
+        // (foraging it doesn't cost the plant) plus a chance at the seed that lets a
+        // player start the farmable crop. No age property to condition on here -- that's
+        // fungalSporeCropTable()'s job, for the crop this seed grows into.
+        add(ModBlocks.FUNGAL_BLOOM.get(), LootTable.lootTable()
+                .withPool(LootPool.lootPool()
+                        .setRolls(ConstantValue.exactly(1.0F))
+                        .add(LootItem.lootTableItem(ModBlocks.FUNGAL_BLOOM.get())))
+                .withPool(LootPool.lootPool()
+                        .setRolls(ConstantValue.exactly(1.0F))
+                        .add(LootItem.lootTableItem(ModItems.FUNGAL_SPORES.get()))
+                        .when(LootItemRandomChanceCondition.randomChance(0.5F))));
         dropSelf(ModBlocks.FUNGAL_CARPET.get());
         dropSelf(ModBlocks.BROOD_COMB.get());
         dropSelf(ModBlocks.EGG_CLUSTER.get());
@@ -71,6 +87,7 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
         dropWhenSilkTouch(ModBlocks.AMBER_GLASS.get());
 
         add(ModBlocks.RESIN_WEEP.get(), resinWeepTable());
+        add(ModBlocks.FUNGAL_SPORE_CROP.get(), fungalSporeCropTable());
 
         // M7 replaces the M1 placeholder self-drop: breaking Royal Comb yields the jelly it
         // is full of (spec section 5). Silk Touch still lifts the block whole -- the comb is
@@ -106,6 +123,38 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
                                         .add(LootItem.lootTableItem(ModItems.RESIN.get()))
                                         .apply(SetItemCountFunction.setCount(UniformGenerator.between(1.0F, 2.0F)))
                                         .apply(ApplyBonusCount.addUniformBonusCount(enchantments.getOrThrow(Enchantments.FORTUNE)))));
+    }
+
+    /**
+     * The Fungal Spore crop's own loot (spec section 5/8, M8): mature (age {@link
+     * FungalSporeCropBlock#MAX_AGE}) safely yields the bloom item plus 1-2 spores; an
+     * immature break -- the plant was cut down early -- yields a single spore only, wheat-
+     * style. Age-condition shape verified against vanilla's own {@code createCropDrops}
+     * (a {@code BlockLootSubProvider} method this class inherits): {@code
+     * LootItemBlockStatePropertyCondition.hasBlockStateProperties(block).setProperties(
+     * StatePropertiesPredicate.Builder.properties().hasProperty(AGE, max))}, chained with
+     * {@code .apply(...).when(...).otherwise(...)} in exactly that order -- see {@code
+     * createDoublePlantWithSeedDrops} for the same three-method chain on a single entry.
+     * A flat {@code UniformGenerator(1, 2)} is used instead of vanilla's Fortune-binomial
+     * second pool: the spec asks for "1-2", not a fortune-scaled count, and Resin Weep
+     * already sets the precedent in this file for a plain uniform range over Fortune math.
+     */
+    private LootTable.Builder fungalSporeCropTable() {
+        Block crop = ModBlocks.FUNGAL_SPORE_CROP.get();
+        LootItemCondition.Builder mature = LootItemBlockStatePropertyCondition.hasBlockStateProperties(crop)
+                .setProperties(StatePropertiesPredicate.Builder.properties()
+                        .hasProperty(FungalSporeCropBlock.AGE, FungalSporeCropBlock.MAX_AGE));
+        return LootTable.lootTable()
+                .withPool(LootPool.lootPool()
+                        .setRolls(ConstantValue.exactly(1.0F))
+                        .when(mature)
+                        .add(LootItem.lootTableItem(ModItems.FUNGAL_BLOOM.get())))
+                .withPool(LootPool.lootPool()
+                        .setRolls(ConstantValue.exactly(1.0F))
+                        .add(LootItem.lootTableItem(ModItems.FUNGAL_SPORES.get())
+                                .apply(SetItemCountFunction.setCount(UniformGenerator.between(1.0F, 2.0F)))
+                                .when(mature)
+                                .otherwise(LootItem.lootTableItem(ModItems.FUNGAL_SPORES.get()))));
     }
 
     @Override

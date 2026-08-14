@@ -1,0 +1,37 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "building",
+  "ingredients": [
+    {
+      "item": "formicary:resin"
+    },
+    {
+      "item": "formicary:resin"
+    },
+    {
+      "item": "formicary:resin"
+    },
+    {
+      "item": "formicary:resin"
+    },
+    {
+      "item": "formicary:resin"
+    },
+    {
+      "item": "formicary:resin"
+    },
+    {
+      "item": "formicary:resin"
+    },
+    {
+      "item": "formicary:resin"
+    },
+    {
+      "item": "formicary:resin"
+    }
+  ],
+  "result": {
+    "count": 1,
+    "id": "formicary:resin_block"
+  }
+}

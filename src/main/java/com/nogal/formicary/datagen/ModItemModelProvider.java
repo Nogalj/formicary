@@ -45,6 +45,9 @@ public class ModItemModelProvider extends ItemModelProvider {
         basicItem(ModItems.RESIN.get());
         basicItem(ModItems.CHITIN.get());
         basicItem(ModItems.LARVA.get());
+        // M8: a flat sprite, like every other seed item -- not a block-item parent, since
+        // fungal_spores places fungal_spore_crop, a different block from its own name.
+        basicItem(ModItems.FUNGAL_SPORES.get());
         basicItem(ModItems.ROYAL_JELLY.get());
         basicItem(ModItems.SCENT_GLAND.get());
         basicItem(ModItems.TRAIL_PHEROMONE.get());

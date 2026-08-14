@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "F": {
+      "item": "formicary:fungal_bloom"
+    }
+  },
+  "pattern": [
+    "FF"
+  ],
+  "result": {
+    "count": 3,
+    "id": "formicary:fungal_carpet"
+  }
+}

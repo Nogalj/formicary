@@ -1,12 +1,15 @@
 package com.nogal.formicary.datagen;
 
 import com.nogal.formicary.Formicary;
+import com.nogal.formicary.block.FungalSporeCropBlock;
 import com.nogal.formicary.block.ModBlocks;
 
 import net.minecraft.core.Direction;
 import net.minecraft.data.PackOutput;
 import net.minecraft.world.level.block.Block;
+import net.neoforged.neoforge.client.model.generators.BlockModelBuilder;
 import net.neoforged.neoforge.client.model.generators.BlockStateProvider;
+import net.neoforged.neoforge.client.model.generators.ConfiguredModel;
 import net.neoforged.neoforge.client.model.generators.ModelBuilder;
 import net.neoforged.neoforge.common.data.ExistingFileHelper;
 
@@ -59,6 +62,29 @@ public class ModBlockStateProvider extends BlockStateProvider {
         simpleBlock(
                 ModBlocks.FUNGAL_CARPET.get(),
                 models().carpet("fungal_carpet", blockTexture(ModBlocks.FUNGAL_CARPET.get())));
+
+        fungalSporeCropBlock();
+    }
+
+    /**
+     * M8: five age states (0-4) sharing three cross models -- the same fewer-models-
+     * than-ages economy vanilla's {@code nether_wart} uses (4 ages, 3 models, ages 1-2
+     * sharing the middle one). Age-to-model mapping verified by inspection of
+     * {@code nether_wart.json}'s blockstate in the client-extra jar.
+     */
+    private void fungalSporeCropBlock() {
+        Block crop = ModBlocks.FUNGAL_SPORE_CROP.get();
+        BlockModelBuilder stage0 = models().crop("fungal_spore_crop_stage0",
+                modLoc("block/fungal_spore_crop_stage0")).renderType("cutout");
+        BlockModelBuilder stage1 = models().crop("fungal_spore_crop_stage1",
+                modLoc("block/fungal_spore_crop_stage1")).renderType("cutout");
+        BlockModelBuilder stage2 = models().crop("fungal_spore_crop_stage2",
+                modLoc("block/fungal_spore_crop_stage2")).renderType("cutout");
+        BlockModelBuilder[] modelByAge = {stage0, stage0, stage1, stage1, stage2};
+
+        getVariantBuilder(crop).forAllStates(state -> new ConfiguredModel[] {
+                new ConfiguredModel(modelByAge[state.getValue(FungalSporeCropBlock.AGE)])
+        });
     }
 
     /**

@@ -143,6 +143,10 @@ public class TamedSoldierAntEntity extends TamableAnimal implements TamedAnt {
 
     @Override
     public InteractionResult mobInteract(Player player, InteractionHand hand) {
+        // M8: see TamedWorkerAntEntity.mobInteract for why this outranks the sneak toggle.
+        if (FungalBloomFeeding.tryFeed(this, player, hand)) {
+            return InteractionResult.sidedSuccess(this.level().isClientSide);
+        }
         if (!player.isShiftKeyDown() || !this.isOwnedByUuid(player)) {
             return super.mobInteract(player, hand);
         }

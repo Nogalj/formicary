@@ -358,6 +358,67 @@ def fungal_carpet():
     return img
 
 
+# --- M8: the Fungal Spore crop -- 5 ages (0-4) sharing 3 painted stages, the same
+# --- fewer-textures-than-ages economy vanilla's nether wart uses (4 ages, 3 textures).
+# --- See ModBlockStateProvider for the age->stage mapping.
+
+FUNGAL_CROP_STEM_L = (94, 168, 138, 255)
+FUNGAL_CROP_STEM_D = (40, 101, 80, 255)
+
+
+def fungal_spore_crop_stage0():
+    """Barely-there sprout: three thin bare stems poking out of the soil."""
+    img = blank()
+    px = img.load()
+    for y in range(11, 16):
+        px[7, y] = FUNGAL_CROP_STEM_L
+        px[8, y] = FUNGAL_CROP_STEM_D
+    for y in range(12, 16):
+        px[4, y] = FUNGAL_CROP_STEM_D
+    for y in range(13, 16):
+        px[11, y] = FUNGAL_CROP_STEM_D
+    px[7, 10] = (58, 128, 101, 255)
+    px[4, 11] = FUNGAL_CROP_STEM_D
+    px[11, 12] = FUNGAL_CROP_STEM_D
+    return img
+
+
+def fungal_spore_crop_stage1():
+    """Small spore cluster: three short stems, each topped with a tiny glowing cap."""
+    img = blank()
+    px = img.load()
+    for (x, bottom, top) in [(4, 15, 9), (8, 16, 6), (12, 15, 8)]:
+        for y in range(top + 2, bottom):
+            px[x, y] = FUNGAL_CROP_STEM_D
+        for (dx, dy) in [(-1, 0), (0, 0), (1, 0), (0, -1)]:
+            xx, yy = x + dx, top + dy
+            if 0 <= xx < SIZE and 0 <= yy < SIZE:
+                px[xx, yy] = (58, 128, 101, 255)
+        px[x, top] = FUNGAL_GLOW
+    return img
+
+
+def fungal_spore_crop_stage2():
+    """Mature-looking small bloom: a compact glowing cap on a stem -- a scaled-down
+    fungal_bloom, so the crop visibly telegraphs 'ready to harvest' before it maxes out."""
+    img = blank()
+    px = img.load()
+    for y in range(10, 16):
+        px[7, y] = FUNGAL_CROP_STEM_L
+        px[8, y] = FUNGAL_CROP_STEM_D
+    rows = {5: range(6, 10), 6: range(5, 11), 7: range(5, 11), 8: range(6, 10)}
+    for y, xs in rows.items():
+        for x in xs:
+            px[x, y] = (46, 121, 96, 255)
+    for (x, y) in [(6, 5), (7, 5), (5, 6), (6, 6)]:
+        px[x, y] = (86, 160, 126, 255)
+    for (x, y) in [(9, 7), (8, 8)]:
+        px[x, y] = (28, 77, 61, 255)
+    px[7, 6] = FUNGAL_GLOW
+    px[8, 6] = FUNGAL_BRIGHT
+    return img
+
+
 # ---------------------------------------------------------------------------
 # Hive family (beveled wax comb)
 # ---------------------------------------------------------------------------
@@ -606,6 +667,26 @@ def scent_gland_item():
     px[6, 6] = (255, 246, 222, 255)
     px[6, 7] = AMBER_SPARK
     return img
+
+
+def fungal_spores_item():
+    """Fungal Spores (M8): a small teal spore cluster -- three round motes fanned
+    around a stem nub, sharing fungal_bloom's palette so the seed reads as the same
+    family in the hotbar."""
+    img = blank()
+    px = img.load()
+    for y in range(10, 13):
+        px[7, y] = FUNGAL_CROP_STEM_D
+        px[8, y] = FUNGAL_CROP_STEM_D
+    for (mx, my, rad) in [(6, 7, 1), (9, 6, 1), (8, 9, 1)]:
+        for dy in range(-rad, rad + 1):
+            for dx in range(-rad, rad + 1):
+                if dx * dx + dy * dy <= rad * rad + 1:
+                    x, y = mx + dx, my + dy
+                    if 0 <= x < SIZE and 0 <= y < SIZE:
+                        px[x, y] = FUNGAL_GLOW if (dx <= 0 and dy <= 0) else (58, 128, 101, 255)
+    px[9, 5] = FUNGAL_BRIGHT
+    return outline(img, (18, 54, 44, 255))
 
 
 def outline(img, colour):
@@ -1212,6 +1293,9 @@ BLOCK_TEXTURES = {
     "amber_glass": amber_glass,
     "fungal_bloom": fungal_bloom,
     "fungal_carpet": fungal_carpet,
+    "fungal_spore_crop_stage0": fungal_spore_crop_stage0,
+    "fungal_spore_crop_stage1": fungal_spore_crop_stage1,
+    "fungal_spore_crop_stage2": fungal_spore_crop_stage2,
     "brood_comb": brood_comb,
     "royal_comb": royal_comb,
     "egg_cluster": egg_cluster,
@@ -1224,6 +1308,7 @@ ITEM_TEXTURES = {
     "resin": resin_item,
     "chitin": chitin_item,
     "larva": larva_item,
+    "fungal_spores": fungal_spores_item,
     "royal_jelly": royal_jelly_item,
     "scent_gland": scent_gland_item,
     "trail_pheromone": trail_pheromone_item,

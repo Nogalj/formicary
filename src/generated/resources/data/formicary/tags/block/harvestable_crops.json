@@ -4,6 +4,7 @@
     "minecraft:carrots",
     "minecraft:potatoes",
     "minecraft:beetroots",
-    "minecraft:nether_wart"
+    "minecraft:nether_wart",
+    "formicary:fungal_spore_crop"
   ]
 }

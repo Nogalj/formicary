@@ -333,6 +333,12 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
 
     @Override
     public InteractionResult mobInteract(Player player, InteractionHand hand) {
+        // M8: a Fungal Bloom in hand heals the ant regardless of sneak state, matching
+        // vanilla's own precedent of an item-based interaction outranking a sneak toggle
+        // (e.g. feeding a wolf before its sit order is even considered).
+        if (FungalBloomFeeding.tryFeed(this, player, hand)) {
+            return InteractionResult.sidedSuccess(this.level().isClientSide);
+        }
         if (!player.isShiftKeyDown() || !this.isOwnedByUuid(player)) {
             return super.mobInteract(player, hand);
         }

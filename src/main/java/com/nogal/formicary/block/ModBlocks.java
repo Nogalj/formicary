@@ -8,6 +8,7 @@ import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.TransparentBlock;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
+import net.minecraft.world.level.material.PushReaction;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -97,6 +98,23 @@ public class ModBlocks {
                     .sound(SoundType.MOSS_CARPET)
                     .instabreak()
                     .lightLevel(state -> 4));
+
+    /**
+     * M8: the overworld Fungal Spore crop -- see {@link FungalSporeCropBlock}. Properties
+     * mirror vanilla wheat's ({@code Blocks.WHEAT}) exactly except for the self-lit
+     * {@code lightLevel}, which scales with the block's own age property.
+     */
+    public static final DeferredBlock<FungalSporeCropBlock> FUNGAL_SPORE_CROP = BLOCKS.registerBlock(
+            "fungal_spore_crop",
+            FungalSporeCropBlock::new,
+            BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.PLANT)
+                    .noCollission()
+                    .randomTicks()
+                    .instabreak()
+                    .sound(SoundType.FUNGUS)
+                    .pushReaction(PushReaction.DESTROY)
+                    .lightLevel(FungalSporeCropBlock::lightForAge));
 
     // --- Hive ---
 

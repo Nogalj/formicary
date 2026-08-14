@@ -42,15 +42,17 @@ public class ModBlockTagsProvider extends BlockTagsProvider {
                 ModBlocks.DEEP_LOAM.get(),
                 ModBlocks.HARDENED_SOIL.get());
 
-        // M6: the vanilla crop set a tamed worker farms. Fungal Bloom deliberately stays
-        // out -- growing it as a crop is M8's job, and adding it here early would have
-        // workers stripping the colony's own gardens.
+        // M6: the vanilla crop set a tamed worker farms. M8 adds the mod's own crop --
+        // the wild fungal_bloom BUSH block deliberately stays out (it has no age property
+        // and is foraging, not farming; see ModBlockLootSubProvider), but the crop it
+        // grows into is exactly the kind of thing a bound worker should tend.
         tag(ModBlockTags.HARVESTABLE_CROPS).add(
                 Blocks.WHEAT,
                 Blocks.CARROTS,
                 Blocks.POTATOES,
                 Blocks.BEETROOTS,
-                Blocks.NETHER_WART);
+                Blocks.NETHER_WART,
+                ModBlocks.FUNGAL_SPORE_CROP.get());
 
         tag(ModBlockTags.WORKER_DEPOSITS).add(
                 Blocks.CHEST,

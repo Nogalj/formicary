@@ -3,9 +3,13 @@ package com.nogal.formicary.item;
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.ModBlocks;
 
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemNameBlockItem;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -21,6 +25,19 @@ import net.neoforged.neoforge.registries.DeferredRegister;
  */
 public class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(Formicary.MODID);
+
+    /**
+     * M8: eating a mature Fungal Bloom grants ~30s of Night Vision (spec section 5/8).
+     * {@code saturationModifier}, not raw saturation -- {@code FoodProperties.Builder}
+     * derives the stored {@code saturation} field from it ({@code
+     * FoodConstants.saturationByModifier}), the same way vanilla's own foods are built
+     * (e.g. the apple's nutrition 4 / modifier 0.3).
+     */
+    private static final FoodProperties FUNGAL_BLOOM_FOOD = new FoodProperties.Builder()
+            .nutrition(2)
+            .saturationModifier(0.3F)
+            .effect(() -> new MobEffectInstance(MobEffects.NIGHT_VISION, 600), 1.0F)
+            .build();
 
     public static final DeferredItem<Item> RESIN = ITEMS.registerSimpleItem("resin");
     public static final DeferredItem<Item> CHITIN = ITEMS.registerSimpleItem("chitin");
@@ -72,8 +89,18 @@ public class ModItems {
     public static final DeferredItem<BlockItem> RESIN_WEEP = ITEMS.registerSimpleBlockItem(ModBlocks.RESIN_WEEP);
     public static final DeferredItem<BlockItem> RESIN_BLOCK = ITEMS.registerSimpleBlockItem(ModBlocks.RESIN_BLOCK);
     public static final DeferredItem<BlockItem> AMBER_GLASS = ITEMS.registerSimpleBlockItem(ModBlocks.AMBER_GLASS);
-    public static final DeferredItem<BlockItem> FUNGAL_BLOOM = ITEMS.registerSimpleBlockItem(ModBlocks.FUNGAL_BLOOM);
+    // M8: edible -- see FUNGAL_BLOOM_FOOD above.
+    public static final DeferredItem<BlockItem> FUNGAL_BLOOM = ITEMS.registerSimpleBlockItem(
+            ModBlocks.FUNGAL_BLOOM, new Item.Properties().food(FUNGAL_BLOOM_FOOD));
     public static final DeferredItem<BlockItem> FUNGAL_CARPET = ITEMS.registerSimpleBlockItem(ModBlocks.FUNGAL_CARPET);
+    /**
+     * M8: the Fungal Spore crop's seed item. An {@code ItemNameBlockItem}, not
+     * {@code registerSimpleBlockItem}, because the item's name ("fungal_spores") differs
+     * from the block it places ("fungal_spore_crop") -- the same shape vanilla's own
+     * {@code wheat_seeds} uses for {@code Blocks.WHEAT}.
+     */
+    public static final DeferredItem<ItemNameBlockItem> FUNGAL_SPORES = ITEMS.registerItem("fungal_spores",
+            props -> new ItemNameBlockItem(ModBlocks.FUNGAL_SPORE_CROP.get(), props));
     public static final DeferredItem<BlockItem> BROOD_COMB = ITEMS.registerSimpleBlockItem(ModBlocks.BROOD_COMB);
     public static final DeferredItem<BlockItem> ROYAL_COMB = ITEMS.registerSimpleBlockItem(ModBlocks.ROYAL_COMB);
     public static final DeferredItem<BlockItem> EGG_CLUSTER = ITEMS.registerSimpleBlockItem(ModBlocks.EGG_CLUSTER);
