@@ -258,3 +258,115 @@ meaningfully change gameplay go to Logan instead of here.
 - **`tall_platform` (5x8x5) added to the GameTest arenas.** The 3-tall `platform` cannot stack
   two candidate landing spots in one column, which is what testing "the floor search takes
   the highest legal Y" requires.
+
+## M6 The taming loop
+
+- **The tamed castes extend vanilla's `TamableAnimal`, not the wild ant classes.** The brief
+  offered both; the deciding factor is that `OwnerHurtByTargetGoal` and `OwnerHurtTargetGoal`
+  -- the two goals that make "defends its owner, attacks what its owner attacks" work at all
+  -- are typed against `TamableAnimal` and cannot be handed anything else. Carrying an owner
+  UUID on `PathfinderMob` instead would have meant reimplementing those two goals,
+  `FollowOwnerGoal`, the teleport-to-owner rule and the owner NBT round-trip. Nothing is lost
+  by not inheriting from `WorkerAntEntity`: the renderers reuse the wild models because
+  `WorkerAntModel`/`SoldierAntModel` are generic over the entity type, so the same baked layer
+  definition and the same texture serve both without a class relationship. The breeding half
+  of `Animal` that comes along for the ride is switched off (`isFood` false,
+  `getBreedOffspring` null, no `BreedGoal`).
+- **...and being outside the wild hierarchy is what delivers colony neutrality**, rather than
+  a special case. `ColonyAnger.isColonyAnt` is false for a tamed ant, so hurting your own ant
+  (even by punching it yourself) never reaches `provoke`; and a tamed ant *dealing* damage does
+  reach the handler but `ColonyAnger.offenderOf` only ever resolves a `Player`, so there is no
+  offender, no anger sweep and therefore no disguise strip. Both directions are covered by
+  `tamed_combat_never_provokes_the_colony`.
+- **Wild soldiers do target tamed ants -- exactly when they would target the owner.** The brief
+  allowed the simpler "wild targeting ignores tamed ants entirely", but that reads the spec's
+  "safe while you're disguised, targets when you're not" out of existence. The rule is instead
+  one new low-priority goal on the wild soldier (`TamedAntTargetGoal`, below the three existing
+  target goals) that asks the two hostility questions the colony already answers about the
+  *owner*: `SoldierAntEntity.isAngryAtPlayer` and `ColonyAnger.isDeepTierHostileAt`. Both
+  already refuse a disguised player, so the disguise half is inherited rather than re-stated.
+  Nothing in the M3b/M4b goals was touched.
+- **`isAngryAtPlayer` rather than `NeutralMob#isAngryAt`.** Vanilla's version answers true for
+  *every* player once the `universalAnger` game rule is on and no offender is recorded, which
+  would turn soldiers on a bystander's tamed ants over someone else's trespass. The colony's
+  anger always has a named offender (M3b decision), so the honest question is whether this
+  player is that offender.
+- **Guard-post mode is its own flag, NOT vanilla's `orderedToSit`.** Read in the decompiled
+  sources: `OwnerHurtByTargetGoal` and `OwnerHurtTargetGoal` both begin
+  `if (this.tameAnimal.isTame() && !this.tameAnimal.isOrderedToSit())`. A guard implemented as
+  "sitting" would therefore be a guard that stops guarding, which is the opposite of what the
+  spec asks a guard post to do. `TamedSoldierAntEntity.stationed` + a recorded `guardPost`
+  instead, with `ReturnToGuardPostGoal` acting as a leash (it may step off to swing at
+  something, then walks back) and `GuardPostTargetGoal` engaging only mobs that have already
+  taken aim at the guard or its owner.
+- **Feeding is gated on the placed flag; capture is not.** A grub still in the colony's nursery
+  is the colony's brood -- a player walking a nursery with Royal Jelly in hand should not be
+  able to convert the lot. A *placed* larva, though, can still be sneak-picked back up into
+  item form: placement is reversible, which is the symmetric reading and means a misplaced
+  larva is never lost.
+- **The larva's `placed` flag gates goals rather than setting `NoAI`.** `setNoAi(true)` would
+  also switch off gravity and the water-escape float, and the wriggle the spec cares about is
+  in `LarvaModel.setupAnim` (client-side, driven by `ageInTicks`), so it survives either way.
+  Wrapping the stroll goal's `canUse`/`canContinueToUse` is the smaller change and leaves a
+  placed larva behaving like a physical object.
+- **Harvest computes drops with `Block.getDrops` and then removes the block with
+  `destroyBlock(pos, false)`**, rather than the brief's suggested "destroy with drops, then
+  vacuum the item entities". Loot never becomes a physical entity that can roll into a hole,
+  bounce off a hopper or be picked up mid-flight, so what the worker banks is exactly what the
+  loot table rolled -- and the whole operation is synchronous, which is what makes the GameTest
+  deterministic. The `false` keeps the break particles and sound without the drops.
+- **The replant seed is taken out of the harvest's own drops**, identified as a `BlockItem`
+  that places the very block just broken. `wheat_seeds`, `carrot`, `potato`, `beetroot_seeds`
+  and `nether_wart` are all `ItemNameBlockItem`s pointing at their own crop, so one rule covers
+  the vanilla five and any modded crop that drops itself the same way. It also means the
+  replant is *paid for*: a harvest that rolled no seed leaves the tile bare rather than
+  conjuring one.
+- **Candidacy is a tag, ripeness is code.** `#formicary:harvestable_crops` decides what may be
+  taken; `CropHarvest.isMature` decides whether it is ready, via `CropBlock#isMaxAge` (which
+  respects `BeetrootBlock`'s shorter age range -- hardcoding `AGE_7` would leave beetroot never
+  harvestable) falling back to "the block has an integer property named `age` and it is at its
+  maximum". Nether Wart qualifies through that fallback with no special case, and so does a
+  modded crop. Fungal Bloom is deliberately *not* in the tag: growing it is M8's job, and
+  adding it now would have workers stripping the colony's own gardens.
+- **Scan budget: 24 columns per `canUse` call, 3 blocks of vertical reach.** The patrol area is
+  33x33 = 1089 columns, so a call reads ~2% of it and a full sweep takes 46 calls. `Mob
+  .serverAiStep` only runs `goalSelector.tick()` (and hence `canUse`) on alternating ticks, so
+  a sweep lands in roughly 92 ticks for 120 block reads per call. The cursor deliberately does
+  *not* reset when a crop is found, so a worker in a big field works its way round the field
+  instead of re-reading the same corner. `CropScanner` is a separate class with no entity in it
+  precisely so the budget can be asserted directly.
+- **One counter covers all three deposit triggers.** The spec wants a trip when the inventory
+  is full, when there are no more ripe crops nearby, or on a periodic timer.
+  `idleHarvestTicks` (reset by every harvest, incremented every tick) collapses the last two:
+  an exhausted field never resets it, and a productive field resets it constantly so the timer
+  only fires during a lull.
+- **Nothing the worker touches is ever destroyed.** Pack overflow is popped on the ground
+  (`Block.popResource`), an undeliverable load is kept and retried after a cooldown rather than
+  dumped, a missing chest simply stops the deposit goal from starting, and the pack is emptied
+  onto the floor by `dropCustomDeathLoot` if the ant is killed.
+- **Binding is a side effect of a chest click, and the click is not cancelled.**
+  `PlayerInteractEvent.RightClickBlock` swallowing the interaction would mean you could no
+  longer open a chest a worker happened to be standing near -- a much worse failure than an
+  occasional extra binding. Only an *unbound* worker is eligible, so re-opening the chest does
+  nothing. The block test is `#formicary:worker_deposits` (chest, trapped chest, barrel) rather
+  than `instanceof ChestBlock`, so modded storage opts in from a datapack.
+- **`TamedWorkerAntEntity.bindNearestFollower` is a public static seam** rather than logic
+  living only in the event handler, because a `GameTestHelper` mock player is never added to
+  the level -- the exact kind of thing an entity search silently disagrees about. The same
+  reason splits `TamedAntTargetGoal.isHostileToOwner(soldier, player)` out of
+  `isOwnerHostileTo(soldier, ant)`: the UUID-resolving half can never see a mock player, so a
+  test routed through it could only ever observe `false`.
+- **No spawn eggs for the tamed castes.** An egg-spawned tamed ant would have no owner, which
+  is a half-built object that `FollowOwnerGoal`, both owner-hurt goals and the whole guard-post
+  rule silently no-op on. The only way to get one is to raise a larva.
+- **The milestone's loop test farms carrots, not wheat.** Read out of
+  `data/minecraft/loot_table/blocks/` in the client-extra jar rather than recalled: carrots and
+  potatoes have an *unconditional* first pool, so a break always yields at least one -- and
+  that item is both the crop's seed and its produce. Wheat's seed pool is the fortune-binomial
+  one only, which rolls zero seeds about 9% of the time, so a wheat test asserting "it
+  replanted" would fail one run in eleven for reasons that have nothing to do with this mod.
+  Wheat's seed path is still covered, by `the_replant_seed_is_taken_from_the_harvested_drops`.
+- **`farm_platform` (9x5x9) added to the GameTest arenas.** On a 5x5 platform the chest and the
+  crop are within one step of each other, which proves nothing about the walk between them;
+  9x9 puts them four blocks apart and leaves a 0.6-high ant clear headroom over the farmland
+  layer.

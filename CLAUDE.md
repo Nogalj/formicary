@@ -131,8 +131,14 @@ is a known-correct 1.21 entity model reference.
   `world/level/storage/loot/{parameters/LootContextParamSets,predicates/
   LootItemRandomChanceCondition,functions/EnchantedCountIncreaseFunction,
   functions/SetItemCountFunction,providers/number/UniformGenerator,
-  entries/LootItem,LootPool,LootTable}.java` and `sounds/SoundSource.java`.
-  (`verified: 2026-08-13`)
+  entries/LootItem,LootPool,LootTable}.java` and `sounds/SoundSource.java`. M6 had to add
+  `world/{Container,SimpleContainer,ContainerHelper,CompoundContainer,WorldlyContainer,
+  Containers,ContainerListener}.java`,
+  `world/level/block/entity/{ChestBlockEntity,BaseContainerBlockEntity,
+  RandomizableContainerBlockEntity}.java`,
+  `world/entity/{OwnableEntity}.java`, `world/entity/ai/goal/{GoalSelector,
+  target/TargetGoal}.java` and `network/syncher/{EntityDataSerializers,
+  SynchedEntityData}.java`. (`verified: 2026-08-13`)
 - **NeoForge event names for 1.21 that training memory gets wrong.** All three verified in
   the extracted 21.0.167 sources: damage is
   `net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent` (fires in
@@ -273,6 +279,34 @@ is a known-correct 1.21 entity model reference.
   double)` cannot change dimension at all. Generate the destination chunk yourself
   (`level.getChunk(cx, cz)`) before reading blocks there: an ungenerated chunk reads as air
   all the way down, which looks exactly like a safe landing spot. (`verified: 2026-08-13`)
+- **`TamableAnimal` traps.** (a) `mobInteract` is **public** by the time it reaches
+  `Animal`, so an override in any `TamableAnimal` subclass must be `public` too --
+  `protected` (what `PathfinderMob` subclasses in this repo use) is a compile error, not a
+  warning. (b) `OwnerHurtByTargetGoal` and `OwnerHurtTargetGoal` both open with
+  `if (isTame() && !isOrderedToSit())`, so vanilla's sit/stay cannot back a "stays put but
+  still fights" mode -- that needs its own flag. (c) `OwnableEntity#getOwner` resolves
+  through `level().getPlayerByUUID`, so it is always null for a `GameTestHelper` mock
+  player; assert on `getOwnerUUID()` instead. (`verified: 2026-08-13`)
+- **`Mob.serverAiStep` runs `goalSelector.tick()` -- and therefore every non-running goal's
+  `canUse()` -- only on alternating ticks** (`(tickCount + getId()) % 2`); the other tick
+  gets `tickRunningGoals(false)`. Anything budgeting work per `canUse` call is really
+  budgeting per *two* ticks. (`verified: 2026-08-13`)
+- **`@GameTest(skyAccess = ...)` defaults to FALSE, which roofs the arena in BARRIER
+  blocks** (`GameTestInfo.prepareTestStructure` -> `StructureUtils.encaseStructure(bounds,
+  level, !skyAccess)`; the side walls are placed either way). Any assertion that depends on
+  sky light -- `CropBlock#canSurvive` calls `hasSufficientLight`, so planting a crop is one
+  -- fails silently under the default. (`verified: 2026-08-13`)
+- **Vanilla crop loot is not uniformly self-seeding.** Read out of
+  `data/minecraft/loot_table/blocks/*.json` in the client-extra jar: `carrots` and `potatoes`
+  have an unconditional first pool (always >=1, and that item is the seed), while `wheat`'s
+  seed pool is the fortune-binomial one alone -- ~9% of breaks yield zero `wheat_seeds`. Pick
+  carrots/potatoes for any test that has to replant deterministically. (`verified: 2026-08-13`)
+- **Container transfer: `HopperBlockEntity.getContainerAt(Level, BlockPos)` and
+  `addItem(@Nullable Container source, Container dest, ItemStack, @Nullable Direction)` are
+  the public entry points** (the first handles double chests via `ChestBlock.getContainer`).
+  `tryMoveInItem` hands the destination the *same* `ItemStack` object when the target slot is
+  empty and returns `ItemStack.EMPTY`, so the caller MUST write the returned remainder back
+  into its own slot or the two containers alias one stack. (`verified: 2026-08-13`)
 - **`RecipeProvider`'s hook is `protected void buildRecipes(RecipeOutput)`** (the
   `(RecipeOutput, HolderLookup.Provider)` overload just delegates), and its constructor takes
   the `CompletableFuture<HolderLookup.Provider>` from `GatherDataEvent#getLookupProvider`,
