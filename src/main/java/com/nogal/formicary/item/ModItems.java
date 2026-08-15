@@ -27,16 +27,21 @@ public class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(Formicary.MODID);
 
     /**
-     * M8: eating a mature Fungal Bloom grants ~30s of Night Vision (spec section 5/8).
+     * Eating a mature Fungal Bloom grants Night Vision (spec section 5/8).
      * {@code saturationModifier}, not raw saturation -- {@code FoodProperties.Builder}
      * derives the stored {@code saturation} field from it ({@code
      * FoodConstants.saturationByModifier}), the same way vanilla's own foods are built
      * (e.g. the apple's nutrition 4 / modifier 0.3).
+     *
+     * <p>Play-test round 1: 600 ticks (~30s, M8's original spec reading) dropped to 200
+     * (10s) -- the owner's explicit ask, a quick peek rather than a standing buff. Tunable.
      */
+    private static final int FUNGAL_BLOOM_NIGHT_VISION_TICKS = 200;
+
     private static final FoodProperties FUNGAL_BLOOM_FOOD = new FoodProperties.Builder()
             .nutrition(2)
             .saturationModifier(0.3F)
-            .effect(() -> new MobEffectInstance(MobEffects.NIGHT_VISION, 600), 1.0F)
+            .effect(() -> new MobEffectInstance(MobEffects.NIGHT_VISION, FUNGAL_BLOOM_NIGHT_VISION_TICKS), 1.0F)
             .build();
 
     public static final DeferredItem<Item> RESIN = ITEMS.registerSimpleItem("resin");
