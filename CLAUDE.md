@@ -378,6 +378,32 @@ is a known-correct 1.21 entity model reference.
   `@Deprecated(forRemoval = true)` and adds a real player to the level via the player list.
   A trigger's own matching/predicate logic (a pure function on its `TriggerInstance`) is
   still directly testable; the award itself is not, headlessly. (`verified: 2026-08-14`)
+- **Clearing a mob's target does NOT make it stay cleared -- a running `TargetGoal` puts
+  it straight back.** `TargetGoal#canContinueToUse` opens with `livingentity =
+  mob.getTarget(); if (livingentity == null) livingentity = this.targetMob;` and ends with
+  `mob.setTarget(livingentity)`, so the goal re-installs its own cached target on the next
+  goal-cleanup tick. It also never re-runs the goal's `TargetingConditions` predicate --
+  only `mob.canAttack(target)`, team, distance and line of sight. **`canAttack(LivingEntity)`
+  is therefore the only seam that binds a chase both while it is being picked
+  (`TargetingConditions#test` calls it) and while it is running.** Any "this mob must stop
+  attacking X" rule belongs there, not in a target goal's predicate. Corollary: vanilla's
+  `NeutralMob#stopBeingAngry` already clears `lastHurtByMob`, the persistent anger target
+  AND `setTarget(null)` -- so "the anger was cleared but the target wasn't" is almost never
+  the real diagnosis; "it was cleared and re-installed two ticks later" usually is.
+  (`verified: 2026-08-15`)
+- **`LivingEntity.hurt` returns early -- before it records `lastHurtByMob` -- when
+  `invulnerableTime > 10 && amount <= lastHurt`, but fires `LivingIncomingDamageEvent`
+  *above* that return.** So a follow-up hit no bigger than the previous one still provokes
+  everything hooked to the damage event while recording no grudge, no knockback and no
+  actual damage. This bites GameTests specifically: `helper.spawn` drops a mob far enough
+  to deal 1.0 fall damage, so a 1.0F test swing a few ticks later is a silent no-op that
+  *looks* like it landed. Hit for meaningfully more (6.0F works) whenever the test depends
+  on `hurt` returning true. (`verified: 2026-08-15`)
+- **`HurtByTargetGoal.canUse` compares `mob.getLastHurtByMobTimestamp()` against its own
+  `timestamp` field, which starts at `0`** -- so damage dealt on the mob's spawn tick
+  (`tickCount == 0`) is invisible to the goal permanently, since the two match. A test that
+  needs a mob to acquire a target through personal retaliation must let a tick or two pass
+  before landing the hit. (`verified: 2026-08-15`)
 
 ## Workflow
 

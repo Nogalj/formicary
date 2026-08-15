@@ -674,3 +674,104 @@ meaningfully change gameplay go to Logan instead of here.
   1-3), appropriate for a boss-guarding deep tier. All four already matched the spec's
   intent from M4a; churning the numbers here would have been change for its own sake, which
   the spec explicitly warns against ("if current rates look right, say so explicitly").
+
+## Play-test round 1 (2026-08-15)
+
+### The queen's death grace did not land ("killing the queen didn't give me the effect")
+
+- **The diagnosis the report pointed at was one layer off, and it matters.** The
+  hypothesis handed over was "the grace clears `NeutralMob` anger but not active goal
+  targets". Read against the decompiled sources that is false: vanilla's
+  `NeutralMob#stopBeingAngry` already does `setLastHurtByMob(null)`,
+  `setPersistentAngerTarget(null)`, `setTarget(null)` and
+  `setRemainingPersistentAngerTime(0)` -- all four. The M7 grace was clearing the goal
+  target every time. **The fault is that clearing it does not make it stay cleared.**
+  `TargetGoal#canContinueToUse` opens with `livingentity = mob.getTarget(); if
+  (livingentity == null) livingentity = this.targetMob;` and ends with
+  `this.mob.setTarget(livingentity)` -- so a *running* target goal re-installs its own
+  cached target on the very next goal-cleanup tick, and the grace is undone within two
+  ticks of landing. Confirmed empirically: the pre-fix source passes an assertion that
+  the target is null immediately after the kill, and fails the assertion that a soldier
+  lets go once the player is disguised.
+
+- **So the fix goes in `canAttack`, not in the sweep.** `canAttack(LivingEntity)` is the
+  one predicate vanilla consults on *both* sides of a chase --
+  `TargetGoal#canContinueToUse` reads it directly, and `TargetingConditions#test` reads
+  it during acquisition. Overriding it on `SoldierAntEntity` and `QueenAntEntity` to
+  refuse a disguised player (`ColonyAnger.colonyMayAttack`) makes the disguise
+  authoritative at both layers with one rule, and takes `HurtByTargetGoal` with it --
+  the goal that was slipping through, since personal retaliation consults neither the
+  anger flag nor any target predicate once running. The alternative considered and
+  rejected was overriding `canContinueToUse` on each of the mod's four target goals:
+  same effect, four copies of the rule, and it would still have missed vanilla's
+  `HurtByTargetGoal`, which is the one that was actually holding the chase.
+
+- **DESIGN CHANGE: the brewed Pheromonal Disguise now breaks an existing aggro, not just
+  prevents a new one.** This is a real widening of the potion, deliberately accepted:
+  the alternative was a grace-only mechanism that reads as an inconsistent special case
+  ("the queen's version of the effect works differently from the one you brewed"), and
+  the abuse case stays shut either way -- `ColonyAnger.provoke` strips the disguise
+  before anything else happens, so attacking while disguised removes the effect on the
+  first swing. A disguise buys a disengage; it never buys a free hit. Applied to the
+  queen too: `QueenHostilityGoal` already documented her as blind to a disguised player
+  ("which is what lets a disguised player walk her chamber to scout"), so for her this is
+  the continuation layer catching up with the intent already written down, not a new one.
+
+- **The killer is credited regardless of distance; bystanders keep the radius.** `die`
+  gated the killer on `GRACE_RADIUS` too, which silently voided the whole reward for a
+  bow kill or for anyone the last phase burst had knocked out of the chamber. Reading
+  the radius as a rule about *bystanders* -- who else the colony forgives on the killer's
+  account -- is the only reading under which the mechanic ("the safe walk out is the
+  reward") survives contact with how the fight is actually played.
+
+- **The calm sweep now runs around each caught player as well as around her throne.**
+  Forced by the change above rather than chosen: once the killer need not be near her,
+  the ants still hunting them are near *them*. The sweep is identity-keyed on the caught
+  players (anger target / current target / `lastHurtByMob` all compared against a
+  specific player), so a sweep centred on a player who walked away cannot disturb
+  anything that was not already about them.
+
+- **`SoldierAntEntity#forgive` replaces the inline `stopBeingAngry` call, and widens what
+  the sweep reaches.** The old loop only visited soldiers matching `isAngryAtPlayer`,
+  which is `NeutralMob` anger specifically -- so a **deep-tier** soldier, which hunts on
+  sight and is never "angry" in that sense, walked out of the grace still hunting. That
+  is the Royal Depths, which is exactly where the queen is. `forgive` clears the anger,
+  the current target and the personal grudge independently.
+
+- **A tamed ant landing the killing blow now credits its owner.** Verified real:
+  `ColonyAnger.offenderOf` resolves only a `Player`, so a tamed ant's kill produced no
+  offender at all. Fixed locally in `QueenAntEntity#killerOf` rather than in
+  `offenderOf`, because that helper's refusal to see through a mob is precisely what
+  delivers M6's "tamed ants' fights never anger the colony or strip your disguise" --
+  teaching it about owners would have broken M6 to fix M7. Owner resolution goes through
+  the player list, so this branch is not reachable from a GameTest; it is a `runClient`
+  check.
+
+- **Horn-summoned allies are skipped by the grace sweep.** `ColonyAnger.isColonyAnt`
+  already excludes them everywhere else; an ally is the player's fighter, not the
+  colony's, so the colony standing down has nothing to say about it. Their `canAttack`
+  disguise branch is gated the same way, for the same reason.
+
+- **Known gap, deliberately left: a wild soldier already chasing a *tamed ant* whose
+  owner becomes disguised does not drop it.** Spec section 4 says wild soldiers treat
+  tamed ants exactly as they treat their owner, and `TamedAntTargetGoal` implements that
+  at acquisition -- so it has the identical continuation-layer hole this round fixed for
+  players. It is not fixed here because the honest rule (`isOwnerHostileTo`) is not
+  disguise-only: routing `canAttack` through it would also make a soldier drop a tamed
+  ant the moment a 30-second anger timer expired, which is a behaviour change well
+  beyond this report. Worth its own round.
+
+### Two 1.21 traps this round cost time on, both now banked in CLAUDE.md
+
+- **`LivingEntity.hurt` returns early -- before recording `lastHurtByMob` -- for a
+  follow-up hit that is not larger than the last one, while still firing the
+  `LivingIncomingDamageEvent` above that return.** A GameTest soldier takes 1.0 fall
+  damage from `helper.spawn`, so a 1.0F test swing two ticks later looks like it landed
+  (the colony gets angry, which is what the M3b tests assert) and yet records no grudge
+  at all. Cost one diagnostic run; the first draft of the mid-chase test failed at its
+  own setup for this reason and not for any reason in the mod.
+
+- **`HurtByTargetGoal.canUse` compares the mob's `lastHurtByMobTimestamp` against its own
+  stored `timestamp`, which starts at `0`** -- so a hit landed on the spawn tick is
+  invisible to the goal forever, because the timestamps match. Any test that needs a mob
+  to actually acquire through personal retaliation has to let a tick or two pass first.
