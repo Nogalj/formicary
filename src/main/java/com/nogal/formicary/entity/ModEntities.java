@@ -34,10 +34,16 @@ public class ModEntities {
                             .sized(0.9F, 0.6F)
                             .build("worker_ant"));
 
+    /**
+     * Play-test round 1, spec item 1: "soldiers more intimidating." 1.1x0.8 scaled by
+     * {@link com.nogal.formicary.client.model.SoldierAntModel#RENDER_SCALE} (1.3) and
+     * rounded to two places -- the hitbox tracks the renderer scale exactly so neither
+     * drifts out of sync with the other. Combat stats untouched.
+     */
     public static final DeferredHolder<EntityType<?>, EntityType<SoldierAntEntity>> SOLDIER_ANT =
             ENTITY_TYPES.register("soldier_ant",
                     () -> EntityType.Builder.of(SoldierAntEntity::new, MobCategory.CREATURE)
-                            .sized(1.1F, 0.8F)
+                            .sized(1.43F, 1.04F)
                             .build("soldier_ant"));
 
     public static final DeferredHolder<EntityType<?>, EntityType<LarvaEntity>> LARVA =
@@ -62,10 +68,11 @@ public class ModEntities {
                             .sized(0.9F, 0.6F)
                             .build("tamed_worker_ant"));
 
+    /** Matches {@link #SOLDIER_ANT}'s enlarged hitbox -- "tamed soldier should match." */
     public static final DeferredHolder<EntityType<?>, EntityType<TamedSoldierAntEntity>> TAMED_SOLDIER_ANT =
             ENTITY_TYPES.register("tamed_soldier_ant",
                     () -> EntityType.Builder.of(TamedSoldierAntEntity::new, MobCategory.CREATURE)
-                            .sized(1.1F, 0.8F)
+                            .sized(1.43F, 1.04F)
                             .build("tamed_soldier_ant"));
 
     /**

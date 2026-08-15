@@ -34,6 +34,19 @@ public class SoldierAntModel<T extends Entity> extends EntityModel<T> {
     public static final ModelLayerLocation LAYER_LOCATION = new ModelLayerLocation(
             ResourceLocation.fromNamespaceAndPath(Formicary.MODID, "soldier_ant"), "main");
 
+    /**
+     * Play-test round 1, spec item 1: "the owner wants soldiers more intimidating."
+     * Applied by both {@link com.nogal.formicary.client.renderer.SoldierAntRenderer} and
+     * {@link com.nogal.formicary.client.renderer.TamedSoldierAntRenderer} via the vanilla
+     * renderer-scale idiom ({@code LivingEntityRenderer#scale}, verified against
+     * {@code SlimeRenderer#scale} in {@code reference/}) rather than the
+     * {@code Attributes.SCALE} attribute, so it stays a pure render-time effect with no
+     * side door into the attribute system. {@link com.nogal.formicary.entity.ModEntities}'s
+     * {@code SOLDIER_ANT}/{@code TAMED_SOLDIER_ANT} hitbox is sized to the same factor by
+     * hand so the two never drift apart.
+     */
+    public static final float RENDER_SCALE = 1.3F;
+
     private static final float REST_LEG_Z = 0.8378F;
     private static final float REST_LEG_Y_FRONT = -0.5236F;
     private static final float REST_LEG_Y_HIND = 0.5236F;
