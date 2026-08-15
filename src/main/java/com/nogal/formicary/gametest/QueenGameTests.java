@@ -138,6 +138,17 @@ public class QueenGameTests {
      * fires before the damage is applied, so {@code ColonyAnger.provoke} runs and angers
      * every soldier in range), and only then does {@code die} run. That ordering is the
      * point of the test: the grace has to out-rank the anger its own trigger caused.
+     *
+     * <p>Play-test round 1 arms the guard the way a real fight arms one -- angry, actively
+     * targeting the slayer, and holding a personal grudge from having been hit -- and pins
+     * all three down afterwards. The last two assertions were already satisfied before the
+     * fix, because vanilla's {@code NeutralMob#stopBeingAngry} clears {@code target} and
+     * {@code lastHurtByMob} as well as the anger timer; they are here to keep that true,
+     * not to catch the bug. The bug lived one layer down and is owned by
+     * {@code DisguiseGameTests#a_soldier_mid_chase_drops_a_player_who_becomes_disguised}:
+     * clearing the target is not the same as it staying cleared, because a running
+     * {@code TargetGoal} re-installs it from its own cached {@code targetMob} on the very
+     * next goal-cleanup tick.
      */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "arena_platform", timeoutTicks = 200)
@@ -148,8 +159,11 @@ public class QueenGameTests {
         Player slayer = mockPlayerAt(helper, ARENA_SIDE);
 
         guard.angerAt(slayer);
+        guard.setTarget(slayer);
+        guard.setLastHurtByMob(slayer);
         worker.startFleeingFrom(slayer);
         helper.assertTrue(guard.isAngry(), "the guard should start angry");
+        helper.assertTrue(guard.getTarget() == slayer, "the guard should start mid-chase");
         helper.assertTrue(worker.isFleeing(), "the worker should start fleeing");
         helper.assertFalse(slayer.hasEffect(ModMobEffects.PHEROMONAL_DISGUISE),
                 "the slayer should not start disguised");
@@ -162,7 +176,46 @@ public class QueenGameTests {
         helper.assertValueEqual(slayer.getEffect(ModMobEffects.PHEROMONAL_DISGUISE).getDuration(),
                 QueenAntEntity.GRACE_DISGUISE_TICKS, "the grace's disguise duration");
         helper.assertFalse(guard.isAngry(), "her death should have called the guard off");
+        helper.assertTrue(guard.getTarget() == null,
+                "her death should have dropped the guard's current target, not just its anger");
+        helper.assertTrue(guard.getLastHurtByMob() == null,
+                "the personal grudge that would re-acquire the slayer should be cleared too");
         helper.assertFalse(worker.isFleeing(), "her death should have stopped the worker fleeing");
+        helper.succeed();
+    }
+
+    /**
+     * Play-test round 1: the killer is credited from any distance. Only bystanders are
+     * subject to {@link QueenAntEntity#GRACE_RADIUS} -- reading it as a rule about the
+     * killer too voided the reward outright for a bow kill or for anyone the last phase
+     * burst had knocked out of the chamber.
+     *
+     * <p>The slayer is parked well past the radius and the kill is driven through the real
+     * {@code die} path, so the assertion can only pass through {@code die}'s killer credit:
+     * {@code playersInRange} cannot see a mock player at any distance.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform", timeoutTicks = 200)
+    public static void the_grace_reaches_a_killer_standing_outside_its_radius(GameTestHelper helper) {
+        QueenAntEntity queen = helper.spawn(ModEntities.QUEEN_ANT.get(), ARENA_CENTRE);
+        Player sniper = mockPlayerAt(helper, ARENA_CENTRE);
+        // Twice the grace radius out, along X. Off the arena entirely -- which is fine, a
+        // mock player is never added to the level and collides with nothing.
+        sniper.setPos(sniper.getX() + QueenAntEntity.GRACE_RADIUS * 2.0, sniper.getY(), sniper.getZ());
+
+        helper.assertTrue(sniper.distanceToSqr(queen.position())
+                        > QueenAntEntity.GRACE_RADIUS * QueenAntEntity.GRACE_RADIUS,
+                "setup: the sniper must be outside the grace radius");
+        helper.assertFalse(sniper.hasEffect(ModMobEffects.PHEROMONAL_DISGUISE),
+                "the sniper should not start disguised");
+
+        queen.hurt(helper.getLevel().damageSources().playerAttack(sniper), 1000.0F);
+
+        helper.assertTrue(queen.isDeadOrDying(), "the queen should be dead");
+        helper.assertTrue(sniper.hasEffect(ModMobEffects.PHEROMONAL_DISGUISE),
+                "her killer should be disguised however far away they stood");
+        helper.assertValueEqual(sniper.getEffect(ModMobEffects.PHEROMONAL_DISGUISE).getDuration(),
+                QueenAntEntity.GRACE_DISGUISE_TICKS, "the grace's disguise duration");
         helper.succeed();
     }
 
@@ -178,17 +231,27 @@ public class QueenGameTests {
      * before {@code die} runs. There is therefore no end-to-end arrangement in which a
      * soldier inside the grace is angry at somebody else. The end-to-end path is covered by
      * the test above; this one owns the scoping rule.
+     *
+     * <p>Play-test round 1 adds the {@code chasing} soldier: one that is hunting the slayer
+     * without ever having been <em>angered</em> at them, which is what a deep-tier soldier
+     * in the Royal Depths is (on-sight hostility is not {@code NeutralMob} anger). The old
+     * sweep only ever touched soldiers matching {@code isAngryAtPlayer}, so that one walked
+     * out of the grace still hunting.
      */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "arena_platform", timeoutTicks = 200)
     public static void the_death_grace_only_forgives_the_players_it_reached(GameTestHelper helper) {
         SoldierAntEntity calmed = helper.spawn(ModEntities.SOLDIER_ANT.get(), ARENA_SIDE);
         SoldierAntEntity stillAngry = helper.spawn(ModEntities.SOLDIER_ANT.get(), ARENA_SIDE);
+        SoldierAntEntity chasing = helper.spawn(ModEntities.SOLDIER_ANT.get(), ARENA_SIDE);
         Player slayer = mockPlayerAt(helper, ARENA_SIDE);
         Player bystander = mockPlayerAt(helper, ARENA_SIDE);
 
         calmed.angerAt(slayer);
         stillAngry.angerAt(bystander);
+        chasing.setTarget(slayer);
+        chasing.setLastHurtByMob(slayer);
+        helper.assertFalse(chasing.isAngry(), "setup: the deep-tier hunter is not NeutralMob-angry");
 
         QueenAntEntity.grantDeathGrace(helper.getLevel(),
                 Vec3.atBottomCenterOf(helper.absolutePos(ARENA_CENTRE)), List.of(slayer));
@@ -201,6 +264,12 @@ public class QueenGameTests {
         helper.assertTrue(stillAngry.isAngry(), "anger at a different player should survive");
         helper.assertValueEqual(stillAngry.getPersistentAngerTarget(), bystander.getUUID(),
                 "the untouched guard's anger target");
+        helper.assertTrue(chasing.getTarget() == null,
+                "a soldier hunting the reached player without anger should still be called off");
+        helper.assertTrue(chasing.getLastHurtByMob() == null,
+                "and its personal grudge against them cleared with it");
+        helper.assertTrue(stillAngry.getTarget() == null,
+                "the untouched guard was never hunting anyone, and must not have gained a target");
         helper.succeed();
     }
 
