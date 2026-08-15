@@ -41,6 +41,15 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
     private static final float REST_ANTENNA_X = 0.5236F;
     private static final float REST_ANTENNA_Z = 0.2618F;
 
+    /**
+     * Play-test round 1, spec item 2: "rework to slimmer, tapered mandibles (e.g. two
+     * thinner angled segments per side)." The tip curls toward the midline by this much;
+     * sign is per-side (see {@link #createBodyLayer}). Matches
+     * {@code assets-src/models.py}'s {@code QUEEN_MANDIBLE_TIP_ANGLE} exactly -- that file
+     * is the source of truth, this is the hand translation.
+     */
+    private static final float MANDIBLE_TIP_ANGLE = 0.3491F;
+
     /** The gaster's rest offset under {@code body}; the idle pulse is written around it. */
     private static final float GASTER_REST_Y = -2.0F;
 
@@ -48,8 +57,10 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
 
     private final ModelPart body;
     public final ModelPart head;
-    private final ModelPart mandibleRight;
-    private final ModelPart mandibleLeft;
+    private final ModelPart mandibleBaseRight;
+    private final ModelPart mandibleTipRight;
+    private final ModelPart mandibleBaseLeft;
+    private final ModelPart mandibleTipLeft;
     private final ModelPart antennaRight;
     private final ModelPart antennaLeft;
     private final ModelPart gaster;
@@ -72,8 +83,10 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
     public QueenAntModel(ModelPart root) {
         this.body = root.getChild("body");
         this.head = this.body.getChild("head");
-        this.mandibleRight = this.head.getChild("mandible_r");
-        this.mandibleLeft = this.head.getChild("mandible_l");
+        this.mandibleBaseRight = this.head.getChild("mandible_r_base");
+        this.mandibleTipRight = this.head.getChild("mandible_r_tip");
+        this.mandibleBaseLeft = this.head.getChild("mandible_l_base");
+        this.mandibleTipLeft = this.head.getChild("mandible_l_tip");
         this.antennaRight = this.head.getChild("antenna_r");
         this.antennaLeft = this.head.getChild("antenna_l");
         this.gaster = this.body.getChild("gaster");
@@ -102,15 +115,31 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
                         .texOffs(94, 20).addBox(-3.0F, -6.5F, -8.0F, 6.0F, 2.0F, 5.0F, new CubeDeformation(0.0F)),
                 PartPose.offset(0.0F, 0.5F, -7.0F));
 
-        head.addOrReplaceChild("mandible_r",
+        // Play-test round 1, spec item 2: two tapered segments per side instead of one
+        // uniform 5x4x8 slab. Both stay children of `head` (not nested tip-under-base)
+        // so their rest pose is a direct hand translation of the python spec's flat,
+        // absolute-pose part list -- see QueenAntModel's class javadoc and
+        // assets-src/models.py's QUEEN_MANDIBLE_TIP_ANGLE comment. setupAnim flexes both
+        // segments of a side by the same angle, so they move together as a rigid unit.
+        head.addOrReplaceChild("mandible_r_base",
                 CubeListBuilder.create()
-                        .texOffs(94, 27).addBox(-5.0F, -2.0F, -8.0F, 5.0F, 4.0F, 8.0F, new CubeDeformation(0.0F)),
-                PartPose.offset(-3.0F, 5.5F, -11.0F));
+                        .texOffs(94, 27).addBox(-4.0F, -1.5F, -4.0F, 4.0F, 3.0F, 4.0F, new CubeDeformation(0.0F)),
+                PartPose.offset(-3.0F, 5.5F, -4.0F));
 
-        head.addOrReplaceChild("mandible_l",
+        head.addOrReplaceChild("mandible_r_tip",
                 CubeListBuilder.create()
-                        .texOffs(94, 27).mirror().addBox(0.0F, -2.0F, -8.0F, 5.0F, 4.0F, 8.0F, new CubeDeformation(0.0F)).mirror(false),
-                PartPose.offset(3.0F, 5.5F, -11.0F));
+                        .texOffs(94, 34).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 4.0F, new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-5.0F, 5.5F, -8.0F, 0.0F, -MANDIBLE_TIP_ANGLE, 0.0F));
+
+        head.addOrReplaceChild("mandible_l_base",
+                CubeListBuilder.create()
+                        .texOffs(94, 27).mirror().addBox(0.0F, -1.5F, -4.0F, 4.0F, 3.0F, 4.0F, new CubeDeformation(0.0F)).mirror(false),
+                PartPose.offset(3.0F, 5.5F, -4.0F));
+
+        head.addOrReplaceChild("mandible_l_tip",
+                CubeListBuilder.create()
+                        .texOffs(94, 34).mirror().addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 4.0F, new CubeDeformation(0.0F)).mirror(false),
+                PartPose.offsetAndRotation(5.0F, 5.5F, -8.0F, 0.0F, MANDIBLE_TIP_ANGLE, 0.0F));
 
         head.addOrReplaceChild("antenna_r",
                 CubeListBuilder.create()
@@ -164,10 +193,15 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
         this.antennaLeft.xRot = REST_ANTENNA_X - bob;
         this.antennaLeft.zRot = REST_ANTENNA_Z + sway;
 
-        // Mandibles work slowly and wide -- she is not in a hurry.
+        // Mandibles work slowly and wide -- she is not in a hurry. Both segments of a
+        // side get the same flex added on top of their own rest yRot (the tip's rest
+        // already carries MANDIBLE_TIP_ANGLE), so base and tip swing together as one
+        // rigid jaw instead of the tip lagging or drifting apart from the base.
         float mandibleFlex = Mth.sin(ageInTicks * 0.035F) * 0.09F;
-        this.mandibleRight.yRot = -mandibleFlex;
-        this.mandibleLeft.yRot = mandibleFlex;
+        this.mandibleBaseRight.yRot = -mandibleFlex;
+        this.mandibleTipRight.yRot = -MANDIBLE_TIP_ANGLE - mandibleFlex;
+        this.mandibleBaseLeft.yRot = mandibleFlex;
+        this.mandibleTipLeft.yRot = MANDIBLE_TIP_ANGLE + mandibleFlex;
 
         // The idle the spec asks for: the gaster breathes, laying eggs even at rest. A
         // translation rather than a scale, because ModelPart has no scale of its own and

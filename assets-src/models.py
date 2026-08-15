@@ -204,8 +204,9 @@ LARVA = {
 # Atlas is 128x64. Box-UV packing, checked to fit:
 #   gaster   (0,  0)  72x32     thorax  (0, 32)  56x24
 #   head     (72, 0)  46x20     petiole (72,20)  22x11
-#   crest    (94,20)  22x7      mandible(94,27)  26x12
-#   leg      (56,32)   8x15     antenna (64,32)   8x9
+#   crest    (94,20)  22x7      mandible_base (94,27) 16x7
+#   mandible_tip (94,34) 12x6   leg      (56,32)   8x15
+#   antenna  (64,32)   8x9
 #
 # Ground is y=24; her back sits at y=0, i.e. 24px = 1.5 blocks tall, under the
 # 1.8-block hitbox. Feet land at 12 + 13*cos(0.6109) = 22.7, so the splay and
@@ -213,6 +214,18 @@ LARVA = {
 QUEEN_REST_LEG_Z = 0.6109       # 35 degrees off vertical
 QUEEN_REST_LEG_Y_FRONT = -0.4363
 QUEEN_REST_LEG_Y_HIND = 0.4363
+
+# Play-test round 1, spec item 2: the mandibles read "too chunky" -- reworked from one
+# 5x4x8 block per side into two tapered segments (base 4x3x4, tip 2x2x4) so the jaw
+# actually narrows toward the point instead of staying a uniform slab. The tip also
+# curls toward the midline (yRot) for a pincer silhouette; sign is empirical -- verified
+# by rendering the preview and checking the tips converge rather than splay. Both
+# segments stay children of `head`, matching the flat single-level part list every other
+# model here uses (see the module docstring): the base's own rest rotation is the
+# identity, so nesting the tip under `head` directly instead of under the base produces
+# an identical absolute pose while keeping this file's "poses are absolute" invariant
+# intact -- no hierarchical composition to hand-simulate.
+QUEEN_MANDIBLE_TIP_ANGLE = 0.3491   # ~20 degrees
 
 QUEEN_ANT = {
     "name": "queen_ant",
@@ -226,11 +239,19 @@ QUEEN_ANT = {
             {"off": (72, 0), "box": (-6, -4.5, -11, 12, 9, 11)},        # skull
             {"off": (94, 20), "box": (-3, -6.5, -8, 6, 2, 5)},          # crest
         ]},
-        {"name": "mandible_r", "pose": (-3, 12, -18), "cubes": [
-            {"off": (94, 27), "box": (-5, -2, -8, 5, 4, 8)},
+        {"name": "mandible_r_base", "pose": (-3, 12, -11), "cubes": [
+            {"off": (94, 27), "box": (-4, -1.5, -4, 4, 3, 4)},
         ]},
-        {"name": "mandible_l", "pose": (3, 12, -18), "cubes": [
-            {"off": (94, 27), "box": (0, -2, -8, 5, 4, 8)},
+        {"name": "mandible_r_tip", "pose": (-5, 12, -15),
+         "rot": (0, -QUEEN_MANDIBLE_TIP_ANGLE, 0), "cubes": [
+            {"off": (94, 34), "box": (-1, -1, -4, 2, 2, 4)},
+        ]},
+        {"name": "mandible_l_base", "pose": (3, 12, -11), "cubes": [
+            {"off": (94, 27), "box": (0, -1.5, -4, 4, 3, 4)},
+        ]},
+        {"name": "mandible_l_tip", "pose": (5, 12, -15),
+         "rot": (0, QUEEN_MANDIBLE_TIP_ANGLE, 0), "cubes": [
+            {"off": (94, 34), "box": (-1, -1, -4, 2, 2, 4)},
         ]},
         {"name": "antenna_r", "pose": (-3, 4, -16),
          "rot": (REST_ANT_X, 0, -REST_ANT_Z), "cubes": [
@@ -311,6 +332,13 @@ JAW_DARK = (108, 70, 32, 255)
 
 ANTENNA_TIP = (232, 160, 64, 255)
 
+# Play-test round 1, spec item 3: "give tamed worker and tamed soldier their OWN texture
+# files distinguished by a clearly visible colored antenna-TIP marker." Royal-jelly gold
+# -- brighter and more yellow than either wild tip shade above and below (worker's warm
+# amber ANTENNA_TIP, soldier's redder S_ANTENNA_TIP further down), so it reads as a
+# distinct marker rather than a shade variant of the same hue at gameplay distance.
+TAMED_ANTENNA_TIP = (255, 214, 64, 255)
+
 BODY_PAL = [CHITIN_DARK, CHITIN_BASE, CHITIN_MID, CHITIN_LIGHT, CHITIN_PALE]
 BACK_PAL = [CHITIN_DARKEST, CHITIN_DARK, CHITIN_BASE, CHITIN_MID, CHITIN_LIGHT]
 BELLY_PAL = [BELLY_DARK, BELLY, BELLY, BELLY_LIGHT, BELLY_LIGHT]
@@ -366,6 +394,14 @@ L_SHADE = (222, 204, 174, 255)
 L_DARK = (198, 178, 146, 255)
 
 L_LINE = (222, 158, 70, 255)
+# Play-test round 1, spec item 4: "stray orange spots on the larva's SIDE faces." The
+# west/east faces at the mid/head/tail joints are only 2-3 texels deep, so a full-
+# strength L_LINE vband there covers 1/2 to 2/3 of the whole face -- nowhere near the
+# "faint" this palette's own comment above promises, and reads as an orange blotch
+# rather than a seam. L_LINE_FAINT is L_LINE blended 35% into L_BASE (the segment's own
+# base tone) instead of painted at full saturation, so a segment boundary is still
+# visible without dominating a face this small.
+L_LINE_FAINT = (232, 201, 152, 255)
 L_EYE = (60, 40, 24, 255)
 
 L_BODY_PAL = [L_SHADE, L_BASE, L_LIGHT, L_LIGHT, L_PALE]
@@ -461,7 +497,7 @@ def vband(draw, rect, x, color):
         draw.rectangle([x0 + x, y0, x0 + x, y1 - 1], fill=color)
 
 
-def paint_worker_ant():
+def paint_worker_ant(antenna_tip_color=ANTENNA_TIP):
     img = Image.new("RGBA", (TEX, TEX), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     parts = {p["name"]: p for p in WORKER_ANT["parts"]}
@@ -548,12 +584,14 @@ def paint_worker_ant():
     px(d, r["top"], 0, 1, JAW_DARK)
 
     # ---- antennae: dark shaft, amber tip (min-Y end is the tip) -----------
+    # `antenna_tip_color` is the tamed-caste hook (spec item 3) -- wild callers don't
+    # pass it and get the amber above.
     r = rects(parts["antenna_r"]["cubes"][0])
     for f in ("west", "north", "east", "south"):
         noise_rect(d, r[f], "antenna:" + f, LIMB_PAL, cell=1)
-        hband(d, r[f], 0, ANTENNA_TIP)
+        hband(d, r[f], 0, antenna_tip_color)
         hband(d, r[f], 2, CHITIN_DARKEST)       # base joint
-    fill(d, r["top"], ANTENNA_TIP)
+    fill(d, r["top"], antenna_tip_color)
     fill(d, r["bottom"], CHITIN_DARKEST)
 
     # ---- legs: dark chitin, lit joint band, near-black foot ---------------
@@ -568,7 +606,7 @@ def paint_worker_ant():
     return img
 
 
-def paint_soldier_ant():
+def paint_soldier_ant(antenna_tip_color=S_ANTENNA_TIP):
     img = Image.new("RGBA", (SOLDIER_TEX_W, SOLDIER_TEX_H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     parts = {p["name"]: p for p in SOLDIER_ANT["parts"]}
@@ -657,12 +695,14 @@ def paint_soldier_ant():
     px(d, r["top"], 0, 1, S_JAW_DARK)
 
     # ---- antennae: dark shaft, redder tip (min-Y end is the tip) -----------
+    # `antenna_tip_color` is the tamed-caste hook (spec item 3) -- wild callers don't
+    # pass it and get the maroon-red S_ANTENNA_TIP above.
     r = rects(parts["antenna_r"]["cubes"][0])
     for f in ("west", "north", "east", "south"):
         noise_rect(d, r[f], "antenna:" + f, S_LIMB_PAL, cell=1, namespace=NS)
-        hband(d, r[f], 0, S_ANTENNA_TIP)
+        hband(d, r[f], 0, antenna_tip_color)
         hband(d, r[f], 2, S_CHITIN_DARKEST)     # base joint
-    fill(d, r["top"], S_ANTENNA_TIP)
+    fill(d, r["top"], antenna_tip_color)
     fill(d, r["bottom"], S_CHITIN_DARKEST)
 
     # ---- legs: dark chitin, lit joint band, near-black foot ---------------
@@ -688,15 +728,19 @@ def paint_larva():
         _, _, _, w, h, dd = cube["box"]
         return face_rects(u, v, w, h, dd)
 
-    # ---- mid: the widest segment, pale cream with a faint seam each end ----
+    # ---- mid: the widest segment, pale cream -------------------------------
+    # Play-test round 1, spec item 4: mid used to paint its OWN seam at both its front
+    # (against head) and back (against tail) edge, on top of head's and tail's each
+    # painting their own seam at that identical boundary -- every junction got marked
+    # twice. On a face this thin (3 texels wide) two full-brightness L_LINE columns left
+    # only the single middle column unpainted, which is what read as "stray orange
+    # spots" rather than a seam. Mid no longer paints a seam of its own; the boundary is
+    # still marked once, by head/tail below, in the softened L_LINE_FAINT.
     r = rects(parts["mid"]["cubes"][0])
     for f in ("west", "north", "east", "south"):
         noise_rect(d, r[f], "mid:" + f, L_BODY_PAL, namespace=NS, jitter=0.14, cell=1)
     noise_rect(d, r["top"], "mid:top", L_TOP_PAL, namespace=NS, jitter=0.14, cell=1)
     noise_rect(d, r["bottom"], "mid:bottom", L_BOTTOM_PAL, namespace=NS, jitter=0.14, cell=1)
-    for f in ("west", "east"):
-        vband(d, r[f], 0, L_LINE)               # seam against the head (front)
-        vband(d, r[f], 2, L_LINE)               # seam against the tail (back)
 
     # ---- head: tapered, carries the two eye dots ---------------------------
     r = rects(parts["head"]["cubes"][0])
@@ -708,7 +752,7 @@ def paint_larva():
     px(d, n, 0, 1, L_EYE)
     px(d, n, 2, 1, L_EYE)
     for f in ("west", "east"):
-        vband(d, r[f], 1, L_LINE)               # seam against mid
+        vband(d, r[f], 1, L_LINE_FAINT)         # seam against mid
 
     # ---- tail: shorter and thinner, tapering down --------------------------
     r = rects(parts["tail"]["cubes"][0])
@@ -717,7 +761,7 @@ def paint_larva():
     noise_rect(d, r["top"], "tail:top", L_TOP_PAL, namespace=NS, jitter=0.14, cell=1)
     noise_rect(d, r["bottom"], "tail:bottom", L_BOTTOM_PAL, namespace=NS, jitter=0.14, cell=1)
     for f in ("west", "east"):
-        vband(d, r[f], 0, L_LINE)               # seam against mid
+        vband(d, r[f], 0, L_LINE_FAINT)         # seam against mid
 
     return img
 
@@ -817,18 +861,24 @@ def paint_queen_ant():
     px(d, r["north"], 2, 0, Q_GOLD_BRIGHT)
     px(d, r["north"], 3, 0, Q_GOLD_BRIGHT)
 
-    # ---- mandibles: plum base, gold biting tip -----------------------------
-    r = rects(parts["mandible_r"]["cubes"][0])
+    # ---- mandibles: plum base with a gold joint accent, then a slimmer gold ------
+    # ---- tip that carries the biting point (play-test round 1, spec item 2) ------
+    r = rects(parts["mandible_r_base"]["cubes"][0])
     for f in ("west", "north", "east", "south", "top"):
         fill(d, r[f], Q_PLUM_BASE)
     fill(d, r["bottom"], Q_PLUM_DARKEST)
-    fill(d, r["north"], Q_GOLD)                  # the -Z face is the biting tip
     for f in ("west", "east"):
-        vband(d, r[f], 0, Q_GOLD)
-        vband(d, r[f], 1, Q_GOLD_DEEP)
-        vband(d, r[f], 7, Q_PLUM_DARKEST)
+        hband(d, r[f], 0, Q_GOLD_DEEP)            # joint accent, same motif as the legs
     px(d, r["top"], 1, 1, Q_GOLD_BRIGHT)
-    px(d, r["top"], 3, 2, Q_GOLD_BRIGHT)
+
+    r = rects(parts["mandible_r_tip"]["cubes"][0])
+    for f in ("west", "north", "east", "south", "top"):
+        fill(d, r[f], Q_GOLD)
+    fill(d, r["bottom"], Q_PLUM_DARKEST)
+    fill(d, r["north"], Q_GOLD_BRIGHT)            # the -Z face is the true biting point
+    for f in ("west", "east"):
+        vband(d, r[f], 0, Q_GOLD_BRIGHT)          # brightest right at the point
+        vband(d, r[f], 3, Q_PLUM_DARK)            # dims back toward the base joint
 
     # ---- antennae: dark shaft, gold tip (min-Y end is the tip) -------------
     r = rects(parts["antenna_r"]["cubes"][0])
@@ -1005,9 +1055,27 @@ def contact_sheet(views, tex, atlas_scale=4):
     return sheet
 
 
+# Play-test round 1, spec item 3: tamed worker/soldier get their own atlas -- same
+# geometry (a shallow copy of the wild spec with just `name` overridden, so the
+# preview/atlas-writing code below keys off the right filename), repainted with
+# TAMED_ANTENNA_TIP instead of each caste's wild tip colour.
+TAMED_WORKER_ANT = dict(WORKER_ANT, name="tamed_worker_ant")
+TAMED_SOLDIER_ANT = dict(SOLDIER_ANT, name="tamed_soldier_ant")
+
+
+def paint_tamed_worker_ant():
+    return paint_worker_ant(antenna_tip_color=TAMED_ANTENNA_TIP)
+
+
+def paint_tamed_soldier_ant():
+    return paint_soldier_ant(antenna_tip_color=TAMED_ANTENNA_TIP)
+
+
 MODELS = [
     (WORKER_ANT, paint_worker_ant),
+    (TAMED_WORKER_ANT, paint_tamed_worker_ant),
     (SOLDIER_ANT, paint_soldier_ant),
+    (TAMED_SOLDIER_ANT, paint_tamed_soldier_ant),
     (LARVA, paint_larva),
     (QUEEN_ANT, paint_queen_ant),
 ]
