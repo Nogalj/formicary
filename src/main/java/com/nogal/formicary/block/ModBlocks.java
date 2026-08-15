@@ -2,8 +2,10 @@ package com.nogal.formicary.block;
 
 import com.nogal.formicary.Formicary;
 
+import net.minecraft.util.valueproviders.UniformInt;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.CarpetBlock;
+import net.minecraft.world.level.block.DropExperienceBlock;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.TransparentBlock;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -134,8 +136,22 @@ public class ModBlocks {
                     .strength(0.6F)
                     .lightLevel(state -> 6));
 
-    public static final DeferredBlock<Block> EGG_CLUSTER = BLOCKS.registerSimpleBlock(
+    /** Egg Cluster's break-XP range (play-test round 1, spec item 3: "~3-7"). */
+    private static final int EGG_CLUSTER_XP_MIN = 3;
+    private static final int EGG_CLUSTER_XP_MAX = 7;
+
+    /**
+     * Play-test round 1 (spec item 3): "drops no items, pops XP". {@link DropExperienceBlock}
+     * is vanilla's own class for exactly this (redstone/coal/lapis ore all use it, with the
+     * same {@code UniformInt.of(3, 7)} range redstone ore uses -- verified in the decompiled
+     * {@code Blocks.java}). Its XP is spawned by a NeoForge {@code BlockDropsEvent}
+     * (see {@code CommonHooks.handleBlockDrops}), entirely independent of the block's own
+     * loot table -- so the loot table below can be, and is, silk-touch-only. See {@code
+     * ModBlockLootSubProvider} for the silk-touch decision.
+     */
+    public static final DeferredBlock<DropExperienceBlock> EGG_CLUSTER = BLOCKS.registerBlock(
             "egg_cluster",
+            properties -> new DropExperienceBlock(UniformInt.of(EGG_CLUSTER_XP_MIN, EGG_CLUSTER_XP_MAX), properties),
             BlockBehaviour.Properties.of()
                     .mapColor(MapColor.SAND)
                     .sound(SoundType.HONEY_BLOCK)

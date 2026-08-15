@@ -36,6 +36,17 @@ import net.neoforged.neoforge.registries.DeferredHolder;
  *   <li>Amber Glass -- vanilla-glass convention, self-drops only with silk touch.</li>
  *   <li>The four {@code #formicary:colony_fabric} soils (M3b) -- self-drop only for a
  *       player in the full Chitin Armor set.</li>
+ *   <li>Egg Cluster (play-test round 1) -- drops no items on a normal break; its XP comes
+ *       from {@link com.nogal.formicary.block.ModBlocks#EGG_CLUSTER} being a {@code
+ *       DropExperienceBlock}, entirely outside this loot table (see that field's javadoc).
+ *       Silk Touch takes the block whole instead and forfeits the XP -- the same {@code
+ *       dropWhenSilkTouch} convention Amber Glass uses above, chosen deliberately over Royal
+ *       Comb's {@code createSingleItemTableWithSilkTouch} pattern (below), which still drops
+ *       something on a *non*-silk-touch break and would have undercut "drops no items".
+ *       Silk Touch forfeiting the XP is not this table's choice either way: vanilla's own
+ *       {@code SILK_TOUCH} enchantment zeroes block-break XP unconditionally (a {@code
+ *       BLOCK_EXPERIENCE} effect of {@code SetValue(constant(0.0F))}, verified in {@code
+ *       Enchantments.java}), so a silk-touched break was always going to forfeit it.</li>
  * </ul>
  * Fungal Bloom deliberately self-drops as an M1 placeholder (spores land in M8 -- see
  * {@code docs/DECISIONS.md}). Royal Comb's placeholder is gone: M7 makes it drop Royal
@@ -78,7 +89,10 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
                         .when(LootItemRandomChanceCondition.randomChance(0.5F))));
         dropSelf(ModBlocks.FUNGAL_CARPET.get());
         dropSelf(ModBlocks.BROOD_COMB.get());
-        dropSelf(ModBlocks.EGG_CLUSTER.get());
+        // Play-test round 1 (spec item 3): no items on a normal break -- see the class
+        // javadoc for the full silk-touch reasoning. XP comes from ModBlocks.EGG_CLUSTER
+        // being a DropExperienceBlock, not from this table.
+        dropWhenSilkTouch(ModBlocks.EGG_CLUSTER.get());
         dropSelf(ModBlocks.DAYLIGHT_MEMBRANE.get());
         dropSelf(ModBlocks.ANTHILL_SOIL.get());
         dropSelf(ModBlocks.ANTHILL_CORE.get());
