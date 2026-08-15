@@ -56,7 +56,7 @@ public final class TrailPath {
     public static final int TRAIL_DURATION_TICKS = 1000;
 
     /**
-     * Ticks between particle refreshes while a trail is lit: 40 = twice a minute.
+     * Ticks between particle refreshes while a trail is lit: 40 = once every two seconds.
      *
      * <p>Play-test round 1: doubled from 20 (once a second) alongside
      * {@link com.nogal.formicary.portal.PortalEvents#TRAIL_PARTICLES_PER_POINT} dropping
