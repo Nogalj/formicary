@@ -43,14 +43,27 @@ public final class TrailPath {
     /** How far the player must move from the last sample before another is taken. Tunable. */
     public static final double MIN_SAMPLE_DISTANCE = 2.0;
 
-    /** How long a used Trail Pheromone keeps drawing: 2400 ticks = 2 minutes. Tunable. */
-    public static final int TRAIL_DURATION_TICKS = 2400;
+    /**
+     * How long a used Trail Pheromone keeps drawing: 1000 ticks = 50 seconds.
+     *
+     * <p>Play-test round 1 ("only went about a quarter of the way before stopping"): the
+     * real bug was {@link #light} retracing only the newest {@code TRAIL_POINTS} (30) of
+     * the ring buffer instead of the whole recorded walk -- fixed below, not here. This
+     * constant dropping from 2400 (2 minutes) is the owner's separate, explicit ask once
+     * the trail covers the full path: a shorter watch is enough to walk it back out.
+     * Tunable.
+     */
+    public static final int TRAIL_DURATION_TICKS = 1000;
 
-    /** How many of the most recent samples a trail retraces. Tunable. */
-    public static final int TRAIL_POINTS = 30;
-
-    /** Ticks between particle refreshes while a trail is lit: 20 = once a second. Tunable. */
-    public static final int TRAIL_REFRESH_TICKS = 20;
+    /**
+     * Ticks between particle refreshes while a trail is lit: 40 = twice a minute.
+     *
+     * <p>Play-test round 1: doubled from 20 (once a second) alongside
+     * {@link com.nogal.formicary.portal.PortalEvents#TRAIL_PARTICLES_PER_POINT} dropping
+     * from 2 to 1, now that a lit trail can retrace the entire {@link #CAPACITY}-point
+     * buffer instead of the last 30 -- see {@link #light} for the full accounting. Tunable.
+     */
+    public static final int TRAIL_REFRESH_TICKS = 40;
 
     // ------------------------------------------------------------ ring buffer --
 
@@ -111,13 +124,23 @@ public final class TrailPath {
     // ------------------------------------------------------------- lit trail --
 
     /**
-     * Freezes the most recent {@link #TRAIL_POINTS} samples and starts the countdown.
+     * Freezes the <b>entire</b> recorded route -- up to {@link #CAPACITY} samples -- and
+     * starts the countdown.
+     *
+     * <p>Play-test round 1 ("the trail only went about a quarter of the way before
+     * stopping"): this used to call {@code newestFirst(TRAIL_POINTS)} with
+     * {@code TRAIL_POINTS = 30}, retracing only the newest 30 of up to 512 recorded
+     * samples (~60 of up to ~1024 blocks, at {@link #MIN_SAMPLE_DISTANCE} spacing) -- a
+     * trail through any longer walk visibly stopped short of the entrance. {@link #size()}
+     * is already "the total, capped at {@link #CAPACITY}", so retracing the full buffer is
+     * just {@code newestFirst(size())}; {@code TRAIL_POINTS} is gone rather than left
+     * around unused.
      *
      * @return {@code false} when there is nothing recorded to retrace, in which case no
      *         trail is lit and the caller must not consume the item
      */
     public boolean light() {
-        List<BlockPos> points = newestFirst(TRAIL_POINTS);
+        List<BlockPos> points = newestFirst(size());
         if (points.isEmpty()) {
             return false;
         }

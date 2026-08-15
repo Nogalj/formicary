@@ -197,4 +197,34 @@ public class PortalGameTests {
                 "the lit trail must still start where the player was when they used the item");
         helper.succeed();
     }
+
+    /**
+     * Play-test round 1 ("the trail only went about a quarter of the way before
+     * stopping"): a lit trail must retrace <b>every</b> recorded sample, not just the
+     * newest 30 -- the root cause pinned in the owner's report ({@code light()} used to
+     * call {@code newestFirst(TRAIL_POINTS)} with {@code TRAIL_POINTS = 30}). 40 is
+     * comfortably past that old cap and comfortably under {@link TrailPath#CAPACITY} (512),
+     * so this fails against the pre-fix behaviour and passes against the fix.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void trail_light_retraces_every_recorded_sample_not_just_the_newest_thirty(GameTestHelper helper) {
+        TrailPath path = new TrailPath();
+        int samples = 40;
+        for (int i = 0; i < samples; i++) {
+            helper.assertTrue(path.record(new BlockPos(i * 2, 64, 0)),
+                    "every step here is exactly MIN_SAMPLE_DISTANCE from the last, so it clears the spacing gate");
+        }
+        helper.assertValueEqual(path.size(), samples, "setup: every sample recorded, no wraparound yet");
+
+        helper.assertTrue(path.light(), "lighting a recorded path must succeed");
+        helper.assertValueEqual(path.litTrail().size(), samples,
+                "a lit trail must retrace the whole recorded route, not cap at the old 30-point window");
+        helper.assertValueEqual(path.litTrail().get(0), new BlockPos((samples - 1) * 2, 64, 0),
+                "the lit trail still starts at the newest sample");
+        helper.assertValueEqual(path.litTrail().get(samples - 1), new BlockPos(0, 64, 0),
+                "and still reaches all the way back to the very first recorded sample -- the full walk, not a "
+                        + "window of it");
+        helper.succeed();
+    }
 }

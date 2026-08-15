@@ -45,6 +45,19 @@ public final class PortalEvents {
     /** Particles puffed at the impact so the pearl visibly "goes into" the anthill. */
     private static final int IMPACT_PARTICLES = 24;
 
+    /**
+     * Particles sent per lit-trail point on each refresh.
+     *
+     * <p>Play-test round 1: dropped from 2 to 1 now that {@link TrailPath#light} retraces
+     * the whole recorded buffer (up to {@link TrailPath#CAPACITY}, 512 points) instead of
+     * the newest 30. At the old count of 2 that would have meant up to 1024 particle
+     * sends in a single tick, every {@link TrailPath#TRAIL_REFRESH_TICKS} ticks -- halving
+     * this alongside doubling the refresh interval (20 -> 40 ticks) brings the worst case
+     * down to 512 sends per 2 seconds, a ~4x reduction in steady-state particle rate even
+     * though the trail itself can now be ~17x longer.
+     */
+    private static final int TRAIL_PARTICLES_PER_POINT = 1;
+
     @SubscribeEvent
     public static void onProjectileImpact(ProjectileImpactEvent event) {
         if (!(event.getProjectile() instanceof ThrownEnderpearl pearl)) {
@@ -138,7 +151,8 @@ public final class PortalEvents {
         ServerLevel level = player.serverLevel();
         for (BlockPos point : points) {
             level.sendParticles(player, ParticleTypes.HAPPY_VILLAGER, true,
-                    point.getX() + 0.5, point.getY() + 0.6, point.getZ() + 0.5, 2, 0.15, 0.25, 0.15, 0.0);
+                    point.getX() + 0.5, point.getY() + 0.6, point.getZ() + 0.5,
+                    TRAIL_PARTICLES_PER_POINT, 0.15, 0.25, 0.15, 0.0);
         }
     }
 
