@@ -2,18 +2,31 @@ package com.nogal.formicary.worldgen;
 
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.BROOD_COMB_CHANCE_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CEILING_BOTTOM;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.EGG_CLUSTER_CHANCE_BY_TIER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_SOLDIERS_MAX_BY_TIER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_SOLDIERS_MIN_BY_TIER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_WORKERS_MAX_BY_TIER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_WORKERS_MIN_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FLOOR_TOP;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FUNGAL_BLOOM_CHANCE_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FUNGAL_CARPET_CHANCE_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MIN_Y;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_BROOD_COMB_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_EGG_CLUSTER_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_LARVAE_MAX;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_LARVAE_MIN;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_RESIN_WEEP_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_ROYAL_COMB_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.RESIN_BLOCK_CHANCE_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.RESIN_WEEP_CHANCE_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ROOMY_CLEARANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ROYAL_COMB_CHANCE_BY_TIER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SPAWN_CLUSTERS_PER_CHUNK_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SPAWN_FLOOR_ATTEMPTS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SPAWN_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.between;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.rollCount;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_BROOD_COMB_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_DAIS_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_EGG_CLUSTER_CHANCE;
@@ -28,7 +41,6 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierMinY;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,21 +49,20 @@ import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.ModBlocks;
+import com.nogal.formicary.entity.LarvaEntity;
 import com.nogal.formicary.entity.ModEntities;
 import com.nogal.formicary.entity.QueenAntEntity;
 
 import net.minecraft.Util;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Holder;
 import net.minecraft.core.SectionPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.WorldGenRegion;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
-import net.minecraft.util.random.WeightedRandomList;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.SpawnGroupData;
 import net.minecraft.world.entity.SpawnPlacements;
@@ -59,10 +70,8 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.NoiseColumn;
 import net.minecraft.world.level.StructureManager;
-import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeManager;
 import net.minecraft.world.level.biome.BiomeSource;
-import net.minecraft.world.level.biome.MobSpawnSettings;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -174,6 +183,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
 
         ColonyNoise.Shaft[] chunkShafts = noise.shaftsNear(minX, minZ);
         ColonyNoise.Throne[] chunkThrones = noise.thronesNear(minX, minZ);
+        ColonyNoise.Nursery[] chunkNurseries = noise.nurseriesNear(minX, minZ);
         Heightmap oceanFloor = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.OCEAN_FLOOR_WG);
         Heightmap worldSurface = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.WORLD_SURFACE_WG);
 
@@ -190,10 +200,11 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                     int z = minZ + localZ;
                     ColonyNoise.Shaft[] columnShafts = noise.shaftsForColumn(chunkShafts, x, z);
                     ColonyNoise.Throne[] columnThrones = noise.thronesForColumn(chunkThrones, x, z);
+                    ColonyNoise.Nursery[] columnNurseries = noise.nurseriesForColumn(chunkNurseries, x, z);
                     int sectionIndex = -1;
                     LevelChunkSection section = null;
                     for (int y = top - 1; y >= bottom; y--) {
-                        if (noise.isAir(columnShafts, columnThrones, x, y, z)) {
+                        if (noise.isAir(columnShafts, columnThrones, columnNurseries, x, y, z)) {
                             continue;
                         }
                         int index = chunk.getSectionIndex(y);
@@ -202,7 +213,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                             section = chunk.getSection(index);
                         }
                         BlockState state;
-                        if (noise.isDaylightMembrane(columnShafts, columnThrones, x, y, z)) {
+                        if (noise.isDaylightMembrane(columnShafts, columnThrones, columnNurseries, x, y, z)) {
                             state = this.membraneState;
                         } else if (noise.isThroneDais(columnThrones, x, y, z)) {
                             // The queen's plinth: resin, so the dais reads as built rather
@@ -255,6 +266,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
 
         byte[] airRun = airRunLengths(noise, chunk, minX, minZ, bottom, top);
         ColonyNoise.Throne[] chunkThrones = noise.thronesNear(minX, minZ);
+        ColonyNoise.Nursery[] chunkNurseries = noise.nurseriesNear(minX, minZ);
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 
         for (int localX = 0; localX < 16; localX++) {
@@ -262,16 +274,19 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             for (int localZ = 0; localZ < 16; localZ++) {
                 int z = minZ + localZ;
                 ColonyNoise.Throne[] columnThrones = noise.thronesForColumn(chunkThrones, x, z);
+                ColonyNoise.Nursery[] columnNurseries = noise.nurseriesForColumn(chunkNurseries, x, z);
                 for (int y = bottom; y < top; y++) {
                     int tier = tierIndex(y);
-                    boolean throne = noise.isInThroneRoom(columnThrones, x, y, z);
+                    boolean throne = columnThrones.length > 0 && noise.isInThroneRoom(columnThrones, x, y, z);
+                    boolean nursery = !throne && columnNurseries.length > 0
+                            && noise.isInNurseryRoom(columnNurseries, x, y, z);
                     boolean here = run(airRun, localX + 1, localZ + 1, y, bottom, top) > 0;
                     if (here) {
                         decorateFloorSpace(chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z, tier,
-                                throne, bottom, top);
+                                throne, nursery, bottom, top);
                     } else {
-                        decorateSurface(chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z, tier,
-                                throne, bottom, top);
+                        decorateSurface(noise, chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z, tier,
+                                throne, nursery, bottom, top);
                     }
                 }
             }
@@ -308,8 +323,10 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                     int chunkZ = z - Math.floorMod(z, 16);
                     ColonyNoise.Shaft[] shafts = noise.shaftsForColumn(noise.shaftsNear(chunkX, chunkZ), x, z);
                     ColonyNoise.Throne[] thrones = noise.thronesForColumn(noise.thronesNear(chunkX, chunkZ), x, z);
+                    ColonyNoise.Nursery[] nurseries =
+                            noise.nurseriesForColumn(noise.nurseriesNear(chunkX, chunkZ), x, z);
                     for (int y = bottom; y < top; y++) {
-                        column[y - bottom] = noise.isAir(shafts, thrones, x, y, z);
+                        column[y - bottom] = noise.isAir(shafts, thrones, nurseries, x, y, z);
                     }
                 }
 
@@ -342,10 +359,18 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         return runs[(ix * DECOR_SPAN + iz) * (top - bottom) + (y - bottom)];
     }
 
-    /** Air standing on a floor: fungus, carpet, egg clusters. */
+    /**
+     * Air standing on a floor: fungus, carpet, egg clusters.
+     *
+     * <p>Egg clusters have no ambient chance at all after play-test round 1 -- the only two
+     * branches that place one are the throne chamber and the nursery chamber below. Brood
+     * scattered along a corridor was the same mistake as speckled comb: it made the block
+     * common enough to be scenery and left the rooms that are supposed to be full of it
+     * indistinguishable from the corridor outside.
+     */
     private void decorateFloorSpace(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
             PositionalRandomFactory randomFactory, byte[] airRun, int localX, int localZ,
-            int x, int y, int z, int tier, boolean throne, int bottom, int top) {
+            int x, int y, int z, int tier, boolean throne, boolean nursery, int bottom, int top) {
         boolean solidBelow = run(airRun, localX + 1, localZ + 1, y - 1, bottom, top) == 0;
         if (!solidBelow || run(airRun, localX + 1, localZ + 1, y + 1, bottom, top) == 0) {
             return;
@@ -360,6 +385,16 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             }
             return;
         }
+        if (nursery) {
+            // Deliberately not gated on `roomy`: the chamber's interior is 7 tall, but under
+            // the curve of the dome the air run above a floor block is shorter than
+            // ROOMY_CLEARANCE, which would have left the eggs in a disc in the middle of the
+            // room and bare floor around the rim.
+            if (roll < NURSERY_EGG_CLUSTER_CHANCE) {
+                chunk.setBlockState(cursor.set(x, y, z), ModBlocks.EGG_CLUSTER.get().defaultBlockState(), false);
+            }
+            return;
+        }
         double cumulative = FUNGAL_BLOOM_CHANCE_BY_TIER[tier];
         if (roll < cumulative) {
             chunk.setBlockState(cursor.set(x, y, z), ModBlocks.FUNGAL_BLOOM.get().defaultBlockState(), false);
@@ -368,20 +403,13 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         cumulative += FUNGAL_CARPET_CHANCE_BY_TIER[tier];
         if (roll < cumulative) {
             chunk.setBlockState(cursor.set(x, y, z), ModBlocks.FUNGAL_CARPET.get().defaultBlockState(), false);
-            return;
-        }
-        if (roomy) {
-            cumulative += EGG_CLUSTER_CHANCE_BY_TIER[tier];
-            if (roll < cumulative) {
-                chunk.setBlockState(cursor.set(x, y, z), ModBlocks.EGG_CLUSTER.get().defaultBlockState(), false);
-            }
         }
     }
 
     /** Solid fabric with air against it: comb lining, resin weeps, amber veins. */
-    private void decorateSurface(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
+    private void decorateSurface(ColonyNoise noise, ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
             PositionalRandomFactory randomFactory, byte[] airRun, int localX, int localZ,
-            int x, int y, int z, int tier, boolean throne, int bottom, int top) {
+            int x, int y, int z, int tier, boolean throne, boolean nursery, int bottom, int top) {
         int above = run(airRun, localX + 1, localZ + 1, y + 1, bottom, top);
         int below = run(airRun, localX + 1, localZ + 1, y - 1, bottom, top);
         int north = run(airRun, localX + 1, localZ, y, bottom, top);
@@ -400,8 +428,15 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             decorateThroneSurface(chunk, cursor, x, y, z, roll, sideOrCeiling);
             return;
         }
+        if (nursery) {
+            decorateNurserySurface(chunk, cursor, x, y, z, roll, sideOrCeiling);
+            return;
+        }
         double cumulative = 0.0;
-        if (roomy) {
+        // Comb is patch-gated (play-test round 1): outside a patch these two branches are
+        // skipped entirely rather than scaled, which also hands the whole 0..1 roll to the
+        // resin blocks below instead of squeezing them into the tail of a comb chance.
+        if (roomy && noise.isCombPatch(x, y, z)) {
             cumulative += ROYAL_COMB_CHANCE_BY_TIER[tier];
             if (roll < cumulative) {
                 chunk.setBlockState(cursor.set(x, y, z), ModBlocks.ROYAL_COMB.get().defaultBlockState(), false);
@@ -459,6 +494,35 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         }
     }
 
+    /**
+     * A nursery chamber's dressing: comb on every wall, laid on far thicker than the tier
+     * around it.
+     *
+     * <p>Flat chances rather than the tier's patch gate, on purpose. The patch field exists
+     * to stop comb reading as speckle across a whole gallery; a 12-block room whose walls
+     * are a third comb is already the patch, and running the gate inside it would have cut
+     * roughly nine tenths of the rooms' comb away for no gain in legibility.
+     */
+    private void decorateNurserySurface(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
+            int x, int y, int z, double roll, boolean sideOrCeiling) {
+        double cumulative = NURSERY_ROYAL_COMB_CHANCE;
+        if (roll < cumulative) {
+            chunk.setBlockState(cursor.set(x, y, z), ModBlocks.ROYAL_COMB.get().defaultBlockState(), false);
+            return;
+        }
+        cumulative += NURSERY_BROOD_COMB_CHANCE;
+        if (roll < cumulative) {
+            chunk.setBlockState(cursor.set(x, y, z), ModBlocks.BROOD_COMB.get().defaultBlockState(), false);
+            return;
+        }
+        if (sideOrCeiling) {
+            cumulative += NURSERY_RESIN_WEEP_CHANCE;
+            if (roll < cumulative) {
+                chunk.setBlockState(cursor.set(x, y, z), ModBlocks.RESIN_WEEP.get().defaultBlockState(), false);
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Spawning
     // ------------------------------------------------------------------
@@ -476,6 +540,29 @@ public class ColonyChunkGenerator extends ChunkGenerator {
      * times would populate the top tier four times over and leave the Nurseries and Royal
      * Depths empty. This does the same job per band instead, with the same placement and
      * event checks vanilla applies.
+     *
+     * <h2>Why generation-time seeding is the whole population (play-test round 1)</h2>
+     * The owner reported the colony felt empty, which raised the question of whether runtime
+     * respawn was topping it up at all. Read out of the 1.21 sources, it effectively is not,
+     * for two compounding reasons:
+     * <ul>
+     *   <li>{@code MobCategory.CREATURE.isPersistent()} is {@code true}, and
+     *       {@code NaturalSpawner.spawnForChunk} skips a persistent category unless its
+     *       {@code forcedDespawn} argument is set -- which {@code ServerChunkCache.tickChunks}
+     *       only passes on {@code gameTime % 400 == 0}. So the whole dimension gets one
+     *       spawn attempt per loaded chunk per 20 seconds at best.</li>
+     *   <li>Worse, {@code SpawnState.canSpawnForCategory} caps CREATUREs at
+     *       {@code 10 * spawnableChunkCount / 289} -- about ten for one player -- counting
+     *       every non-persistent mob in the level. Every colony ant overrides
+     *       {@code removeWhenFarAway} to {@code false} (deliberately: a resident that
+     *       evaporates at 128 blocks is a bug), so they never despawn and the cap is
+     *       permanently full. Runtime respawn therefore approximately never fires here.</li>
+     * </ul>
+     * The choice made rather than fought: leave it. Ants that vanish behind you would be a
+     * far worse dimension than one whose population is fixed at generation, and the
+     * generation-time density below is what the play-test complaint is actually about. The
+     * biome spawn lists are kept (minus the larva, which is now chamber-only) so that the
+     * trickle which does get through spawns the right castes in the right tiers.
      */
     @Override
     public void spawnOriginalMobs(WorldGenRegion level) {
@@ -484,6 +571,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         random.setDecorationSeed(level.getSeed(), chunkPos.getMinBlockX(), chunkPos.getMinBlockZ());
 
         spawnQueenIfThisChunkHoldsAThrone(level, chunkPos);
+        spawnLarvaeInNurseryChambers(level, chunkPos, random);
 
         for (int tier = 0; tier < TIER_COUNT; tier++) {
             int bandMin = Math.max(tierMinY(tier), level.getMinBuildHeight() + 1);
@@ -491,9 +579,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             if (bandMax <= bandMin) {
                 continue;
             }
-            Holder<Biome> biome = level.getBiome(
-                    new BlockPos(chunkPos.getMiddleBlockX(), (bandMin + bandMax) / 2, chunkPos.getMiddleBlockZ()));
-            spawnTier(level, biome, chunkPos, random, bandMin, bandMax);
+            spawnTier(level, tier, chunkPos, random, bandMin, bandMax);
         }
     }
 
@@ -534,41 +620,105 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         }
     }
 
-    private void spawnTier(WorldGenRegion level, Holder<Biome> biome, ChunkPos chunkPos, RandomSource random,
+    /**
+     * Seeds one tier's mixed worker/soldier clusters into this chunk.
+     *
+     * <p>The composition is taken from {@link ColonyGeneratorTunables} rather than from the
+     * biome's weighted spawn list, which is the change play-test round 1 asked for: a
+     * weighted list draws one {@code SpawnerData} per group and so can only ever produce a
+     * single-caste knot, and no set of weights expresses "these castes, in this ratio, in
+     * the same party". Soldiers are placed first, so the escort ends up at the seed position
+     * and the workers spread out around it rather than the other way round.
+     */
+    private void spawnTier(WorldGenRegion level, int tier, ChunkPos chunkPos, RandomSource random,
             int bandMin, int bandMax) {
-        MobSpawnSettings settings = biome.value().getMobSettings();
-        WeightedRandomList<MobSpawnSettings.SpawnerData> spawners = settings.getMobs(MobCategory.CREATURE);
-        if (spawners.isEmpty()) {
-            return;
-        }
         int originX = chunkPos.getMinBlockX();
         int originZ = chunkPos.getMinBlockZ();
 
-        while (random.nextFloat() < settings.getCreatureProbability()) {
-            Optional<MobSpawnSettings.SpawnerData> picked = spawners.getRandom(random);
-            if (picked.isEmpty()) {
+        for (int cluster = rollCount(SPAWN_CLUSTERS_PER_CHUNK_BY_TIER[tier], random); cluster > 0; cluster--) {
+            int soldiers = between(CLUSTER_SOLDIERS_MIN_BY_TIER[tier], CLUSTER_SOLDIERS_MAX_BY_TIER[tier], random);
+            int workers = between(CLUSTER_WORKERS_MIN_BY_TIER[tier], CLUSTER_WORKERS_MAX_BY_TIER[tier], random);
+            if (soldiers + workers == 0) {
                 continue;
             }
-            MobSpawnSettings.SpawnerData data = picked.get();
-            int groupSize = data.minCount + random.nextInt(1 + data.maxCount - data.minCount);
-            // One-slot carrier for the group data vanilla threads through a spawn group.
-            // Deliberately a local, not a field: spawnOriginalMobs runs on the chunk worker
+            // One carrier per caste for the group data vanilla threads through a spawn
+            // group: a mixed cluster is two vanilla groups sharing a position, and handing a
+            // worker's SpawnGroupData to a soldier would be a type the callee never made.
+            // Deliberately locals, not fields: spawnOriginalMobs runs on the chunk worker
             // pool and one generator instance serves every chunk in the dimension at once.
-            SpawnGroupData[] groupData = new SpawnGroupData[1];
+            SpawnGroupData[] soldierGroup = new SpawnGroupData[1];
+            SpawnGroupData[] workerGroup = new SpawnGroupData[1];
             int x = originX + random.nextInt(16);
             int z = originZ + random.nextInt(16);
 
-            for (int member = 0; member < groupSize; member++) {
+            for (int member = 0; member < soldiers + workers; member++) {
+                boolean soldier = member < soldiers;
+                EntityType<? extends Mob> type =
+                        soldier ? ModEntities.SOLDIER_ANT.get() : ModEntities.WORKER_ANT.get();
+                SpawnGroupData[] groupData = soldier ? soldierGroup : workerGroup;
                 boolean placed = false;
                 for (int attempt = 0; !placed && attempt < SPAWN_FLOOR_ATTEMPTS; attempt++) {
                     int y = findFloor(level, x, z, bandMin, bandMax, random);
                     if (y > Integer.MIN_VALUE) {
-                        placed = trySpawn(level, data, x, y, z, chunkPos, groupData, random);
+                        placed = trySpawn(level, type, x, y, z, chunkPos, groupData, random);
                     }
                     x = Mth.clamp(x + random.nextInt(7) - 3, originX, originX + 15);
                     z = Mth.clamp(z + random.nextInt(7) - 3, originZ, originZ + 15);
                 }
             }
+        }
+    }
+
+    /**
+     * Seeds a nursery chamber's brood, exactly once per chamber.
+     *
+     * <p>Same mechanism, and the same reasoning, as
+     * {@link #spawnQueenIfThisChunkHoldsAThrone}: {@code ChunkStatus.SPAWN} runs once in a
+     * chunk's life, so "the chunk holding this chamber's centre column seeds it" is a
+     * once-ever event with no marker block or saved flag. Positions are recomputed from
+     * {@link ColonyNoise} rather than searched for -- the chamber's floor slab is forced
+     * solid by the same pure function that carved the room, so {@code floorY + 1} is known
+     * to be standable without reading a block.
+     *
+     * <p>These larvae are the only ones in the world: the ambient spawn entry was removed
+     * from the Nurseries biome in this round, so brood exists in brood rooms and nowhere
+     * else. {@code setPersistenceRequired} for the same reason -- placed content, not
+     * population -- which also keeps them out of the CREATURE cap that the ambient ants have
+     * to share.
+     */
+    private void spawnLarvaeInNurseryChambers(WorldGenRegion level, ChunkPos chunkPos, RandomSource random) {
+        ColonyNoise noise = noise(level.getLevel().getChunkSource().randomState());
+        for (ColonyNoise.Nursery nursery : noise.nurseriesNear(chunkPos.getMinBlockX(), chunkPos.getMinBlockZ())) {
+            int centreX = (int) Math.round(nursery.centreX());
+            int centreZ = (int) Math.round(nursery.centreZ());
+            if (SectionPos.blockToSectionCoord(centreX) != chunkPos.x
+                    || SectionPos.blockToSectionCoord(centreZ) != chunkPos.z) {
+                continue;
+            }
+            int count = between(NURSERY_LARVAE_MIN, NURSERY_LARVAE_MAX, random);
+            for (int i = 0; i < count; i++) {
+                // Spread around the floor on a ring well inside the wall, so a larva never
+                // lands in the shell or under the curve of the dome.
+                double angle = (i + random.nextDouble()) * Math.PI * 2.0 / count;
+                double radius = (NURSERY_RADIUS - 2.0) * Math.sqrt(random.nextDouble());
+                double x = nursery.centreX() + Math.cos(angle) * radius;
+                double z = nursery.centreZ() + Math.sin(angle) * radius;
+                int y = nursery.floorY() + 1;
+
+                LarvaEntity larva = ModEntities.LARVA.get().create(level.getLevel());
+                if (larva == null) {
+                    Formicary.LOGGER.warn("Formicary: could not create a larva for the nursery at {}, {}",
+                            centreX, centreZ);
+                    continue;
+                }
+                larva.moveTo(x, y, z, random.nextFloat() * 360.0F, 0.0F);
+                larva.finalizeSpawn(level, level.getCurrentDifficultyAt(BlockPos.containing(x, y, z)),
+                        MobSpawnType.CHUNK_GENERATION, null);
+                larva.setPersistenceRequired();
+                level.addFreshEntityWithPassengers(larva);
+            }
+            Formicary.LOGGER.info("Formicary: seeded {} larvae in the nursery chamber at ({}, {}, {})",
+                    count, centreX, nursery.floorY() + 1, centreZ);
         }
     }
 
@@ -593,27 +743,27 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         return Integer.MIN_VALUE;
     }
 
-    private boolean trySpawn(WorldGenRegion level, MobSpawnSettings.SpawnerData data, int x, int y, int z,
+    private boolean trySpawn(WorldGenRegion level, EntityType<? extends Mob> type, int x, int y, int z,
             ChunkPos chunkPos, SpawnGroupData[] groupData, RandomSource random) {
-        BlockPos pos = SpawnPlacements.getPlacementType(data.type).adjustSpawnPosition(level, new BlockPos(x, y, z));
-        if (!data.type.canSummon() || !SpawnPlacements.isSpawnPositionOk(data.type, level, pos)) {
+        BlockPos pos = SpawnPlacements.getPlacementType(type).adjustSpawnPosition(level, new BlockPos(x, y, z));
+        if (!type.canSummon() || !SpawnPlacements.isSpawnPositionOk(type, level, pos)) {
             return false;
         }
-        float width = data.type.getWidth();
+        float width = type.getWidth();
         double spawnX = Mth.clamp(x, chunkPos.getMinBlockX() + width, chunkPos.getMinBlockX() + 16.0 - width);
         double spawnZ = Mth.clamp(z, chunkPos.getMinBlockZ() + width, chunkPos.getMinBlockZ() + 16.0 - width);
-        if (!level.noCollision(data.type.getSpawnAABB(spawnX, pos.getY(), spawnZ))
-                || !SpawnPlacements.checkSpawnRules(data.type, level, MobSpawnType.CHUNK_GENERATION,
+        if (!level.noCollision(type.getSpawnAABB(spawnX, pos.getY(), spawnZ))
+                || !SpawnPlacements.checkSpawnRules(type, level, MobSpawnType.CHUNK_GENERATION,
                         BlockPos.containing(spawnX, pos.getY(), spawnZ), level.getRandom())) {
             return false;
         }
 
         Entity entity;
         try {
-            entity = data.type.create(level.getLevel());
+            entity = type.create(level.getLevel());
         } catch (Exception exception) {
             Formicary.LOGGER.warn("Formicary: failed to create {} for chunk-generation spawn",
-                    data.type.getDescriptionId(), exception);
+                    type.getDescriptionId(), exception);
             return false;
         }
         if (!(entity instanceof Mob mob)) {
@@ -673,13 +823,14 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         int chunkZ = z - Math.floorMod(z, 16);
         ColonyNoise.Shaft[] shafts = noise.shaftsForColumn(noise.shaftsNear(chunkX, chunkZ), x, z);
         ColonyNoise.Throne[] thrones = noise.thronesForColumn(noise.thronesNear(chunkX, chunkZ), x, z);
+        ColonyNoise.Nursery[] nurseries = noise.nurseriesForColumn(noise.nurseriesNear(chunkX, chunkZ), x, z);
         int bottom = height.getMinBuildHeight();
         BlockState[] column = new BlockState[height.getHeight()];
         for (int i = 0; i < column.length; i++) {
             int y = bottom + i;
-            if (noise.isAir(shafts, thrones, x, y, z)) {
+            if (noise.isAir(shafts, thrones, nurseries, x, y, z)) {
                 column[i] = AIR;
-            } else if (noise.isDaylightMembrane(shafts, thrones, x, y, z)) {
+            } else if (noise.isDaylightMembrane(shafts, thrones, nurseries, x, y, z)) {
                 column[i] = this.membraneState;
             } else if (noise.isThroneDais(thrones, x, y, z)) {
                 column[i] = this.daisState;

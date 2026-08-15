@@ -1,6 +1,7 @@
 package com.nogal.formicary.worldgen;
 
 import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 
 /**
  * EVERY magic number the Formicary dimension's shape is made of, in one place.
@@ -160,10 +161,28 @@ public final class ColonyGeneratorTunables {
     public static final double ACCENT_XZ_SCALE = 0.055;
     public static final double ACCENT_Y_SCALE = 0.075;
 
-    /** Hardened Soil appears where the accent field is above this, per tier. */
-    public static final double[] HARDENED_ACCENT_THRESHOLD_BY_TIER = {0.10, 0.34, 0.36, 0.32};
-    /** Royal Depths only: buried Resin Block veins where the accent field is below this. */
-    public static final double ROYAL_RESIN_THRESHOLD = -0.42;
+    /**
+     * Hardened Soil appears where the accent field is above this, per tier.
+     *
+     * <p>Tier 0 is the odd one out and deliberately so (play-test round 1: "the Royal Depths
+     * did not read as a different place from the Nurseries"). The accent field is
+     * single-octave Perlin measured at {@code P(v > t)} = 36% at 0.10, 24% at 0.20, 18% at
+     * 0.26, so the old 0.10 made the Royal Depths 36% Hardened Soil against 64% Deep Loam --
+     * i.e. mostly the same Deep Loam that IS the Nurseries' fabric (89% of it). Pushing the
+     * threshold to a negative value inverts that: {@code P(v > -0.26) = 1 - P(v > 0.26)} is
+     * about 82%, so the deep tier becomes overwhelmingly packed, hardened soil and the walk
+     * down from the Nurseries changes colour in one step. The remaining 18% is Deep Loam
+     * mottling and the resin veins below.
+     */
+    public static final double[] HARDENED_ACCENT_THRESHOLD_BY_TIER = {-0.26, 0.34, 0.36, 0.32};
+    /**
+     * Royal Depths only: buried Resin Block veins where the accent field is below this.
+     * Raised from -0.42 to -0.46 alongside the threshold above -- the veins now have to
+     * carry the tier's amber accent on their own (they used to sit inside a large field of
+     * Deep Loam), and 4.3% of the tier's solid volume is enough to read as veined without
+     * competing with the hardened fabric.
+     */
+    public static final double ROYAL_RESIN_THRESHOLD = -0.46;
 
     // ------------------------------------------------------------------
     // Floor / wall decoration (placed in buildSurface, see ColonyChunkGenerator)
@@ -177,14 +196,49 @@ public final class ColonyGeneratorTunables {
     public static final double[] FUNGAL_BLOOM_CHANCE_BY_TIER = {0.00, 0.01, 0.07, 0.012};
     /** Resin Weep embedded in walls / ceilings. */
     public static final double[] RESIN_WEEP_CHANCE_BY_TIER = {0.035, 0.010, 0.045, 0.008};
-    /** Brood Comb lining roomy surfaces -- the Nurseries' signature. */
-    public static final double[] BROOD_COMB_CHANCE_BY_TIER = {0.010, 0.170, 0.000, 0.000};
-    /** Egg Cluster on roomy floors. */
-    public static final double[] EGG_CLUSTER_CHANCE_BY_TIER = {0.000, 0.060, 0.000, 0.000};
-    /** Royal Comb -- rare, and only where brood comb already belongs. */
-    public static final double[] ROYAL_COMB_CHANCE_BY_TIER = {0.004, 0.008, 0.000, 0.000};
     /** Royal Depths' sparse amber accents: Resin Block exposed in a wall. */
     public static final double[] RESIN_BLOCK_CHANCE_BY_TIER = {0.020, 0.000, 0.000, 0.000};
+
+    // --- comb: rarer overall, but in patches rather than speckle ---------------
+    //
+    // Play-test round 1: comb "looked like static". It was a flat per-block chance on every
+    // roomy surface (0.170 in the Nurseries), which is exactly a speckle generator -- 17% of
+    // a wall's blocks scattered at random reads as noise, never as a growth. Comb is now
+    // gated by its own low-frequency field FIRST: outside a patch no comb can appear at all,
+    // inside one the per-block chance is high enough that the patch is a solid blob with a
+    // ragged edge. Total comb comes out lower than before (see NoiseProbe -PprobeWhat=comb),
+    // which is the point -- fewer, bigger, findable.
+
+    /**
+     * Sampling scale of the comb-patch field. Feature size is about {@code 1/scale} blocks,
+     * so 0.18 gives roughly 5-6 block cells. This number, not the threshold, is what sets
+     * patch SIZE, and it was chosen by measurement: at 0.11 the Nurseries' patches came out
+     * averaging 13 blocks with a 133-block monster in a 96x96 sample -- the blobs had begun
+     * to percolate into sheets. See {@code NoiseProbe -PprobeWhat=comb}.
+     */
+    public static final double COMB_PATCH_XZ_SCALE = 0.18;
+    /** Slightly faster in Y so a patch hugs a wall instead of running floor-to-ceiling. */
+    public static final double COMB_PATCH_Y_SCALE = 0.21;
+
+    /**
+     * Comb may only appear where the patch field is above this. Measured on the identical
+     * single-octave field: {@code P(v > 0.30) = 14.0%}, {@code P(v > 0.55) = 1.5%}. 9.00 is
+     * "never" for the two tiers that grow no comb.
+     */
+    public static final double[] COMB_PATCH_THRESHOLD_BY_TIER = {0.55, 0.30, 9.00, 9.00};
+
+    /**
+     * Brood Comb density <em>inside</em> a patch -- no longer a global per-block chance. It
+     * is high because a sparse patch is just speckle with extra steps: what makes a patch
+     * read as one thing is that nearly every eligible block in it is comb, with the ragged
+     * edge coming from the field's own boundary rather than from holes punched through the
+     * middle. Measured totals over roomy surfaces (probe, 96x96, seed 1234567): Nurseries
+     * 142 per 1000 against the old flat 178, in patches averaging 7.8 blocks; Royal Depths
+     * 10 per 1000 against the old 14.
+     */
+    public static final double[] BROOD_COMB_CHANCE_BY_TIER = {0.820, 0.900, 0.000, 0.000};
+    /** Royal Comb -- rare, and only inside a comb patch, where brood comb already belongs. */
+    public static final double[] ROYAL_COMB_CHANCE_BY_TIER = {0.030, 0.045, 0.000, 0.000};
 
     // ------------------------------------------------------------------
     // Daylight Membrane exit patches (M5) -- the way out, embedded in the ceiling cap
@@ -347,15 +401,173 @@ public final class ColonyGeneratorTunables {
     public static final double THRONE_EGG_CLUSTER_CHANCE = 0.060;
 
     // ------------------------------------------------------------------
-    // Mob spawning at chunk generation (see ColonyChunkGenerator#spawnOriginalMobs)
+    // Nursery chambers (play-test round 1) -- small brood rooms in the Nurseries tier
+    //
+    // Same construction as the throne chamber above, and for the same reason: a room hung
+    // off a connectivity ramp at a fixed offset, with its floor set to the exact Y that
+    // ramp's walkway reaches at the approach bearing, is reachable BY CONSTRUCTION. A room
+    // dropped at a free XZ would make "can the player get in?" a property of the noise --
+    // acceptable for a decorative pocket, not for the only place larvae exist.
+    //
+    // Where they differ is count and size: one per 96-block cell against the throne's 224
+    // (5.4x as many) and 12 blocks across against its 28.
+    //
+    // 96 is the smallest cell that CANNOT produce two overlapping chambers, and that bound
+    // is why it is not smaller. A chamber's centre lands within
+    // {@code SHAFT_SPACING/2 + SHAFT_JITTER/2 + NURSERY_APPROACH_DISTANCE} = 56 blocks of
+    // its cell centre and no closer than 8 blocks the other way, so two chambers in
+    // neighbouring cells are at least {@code 96 - 56 - 8 = 32} blocks apart against the 16
+    // they would need to touch. A 48-block cell was tried first and measurably failed: the
+    // probe found two chambers 5.8 blocks apart, one of whose shells sealed the other's
+    // corridor, leaving its brood in a solid bubble (0 of 67 floor blocks reachable). Two
+    // rooms at different floor heights merging into one is not a cosmetic problem -- it is
+    // an unannounced drop and a sealed room, and no resolution rule inside `nurseryState`
+    // fixes both.
     // ------------------------------------------------------------------
 
-    /** Attempts made per tier, per chunk, to find a floor to seed a spawn group on. */
+    /** One nursery chamber per this many blocks on each axis. */
+    public static final int NURSERY_SPACING = 96;
+
+    /** Interior radius: 6 gives a 12-block-wide room, against the throne's 28. */
+    public static final double NURSERY_RADIUS = 6.0;
+
+    /** Height of the vertical wall before the dome starts, above the floor. */
+    public static final int NURSERY_WALL_HEIGHT = 3;
+
+    /** Height of the dome above the wall. Interior clearance is the sum: 7. */
+    public static final int NURSERY_DOME_HEIGHT = 4;
+
+    /** How thick the forced-solid shell around the interior is. */
+    public static final double NURSERY_SHELL_THICKNESS = 2.0;
+
+    /**
+     * Distance from the ramp axis to the chamber's centre. Must exceed
+     * {@code NURSERY_RADIUS + NURSERY_SHELL_THICKNESS + SHAFT_MAX_REACH} = 21.1 so the
+     * helicoid never intrudes into the room; at 24 the nearest the ramp's carve gets to the
+     * shell is about 5 blocks of solid fabric.
+     */
+    public static final double NURSERY_APPROACH_DISTANCE = 24.0;
+
+    /** Half-width of the approach corridor; 1.0 gives a 3-block-wide passage. */
+    public static final double NURSERY_CORRIDOR_HALF_WIDTH = 1.0;
+
+    /** Air blocks carved above the corridor floor. */
+    public static final int NURSERY_CORRIDOR_HEIGHT = 3;
+
+    /** Where the corridor starts, measured from the ramp axis outward. */
+    public static final double NURSERY_CORRIDOR_START = 3.0;
+
+    /** Where it stops -- just inside the chamber's shell, which is already air. */
+    public static final double NURSERY_CORRIDOR_END =
+            NURSERY_APPROACH_DISTANCE - NURSERY_RADIUS + 2.0;
+
+    /**
+     * Lowest floor the chamber will sit at. The ramp turn chosen is the first one at or
+     * above this and the ramp descends 24 blocks per turn, so the floor lands in
+     * {@code [54, 78)} and the interior ({@code floor + 7}) plus its shell stays inside the
+     * Nurseries band ({@code y < 96}).
+     *
+     * <p>The {@code + LANDING_HEIGHT} is load-bearing, not padding. A landing chamber is
+     * carved around every ramp axis at each tier boundary -- radius 11, {@code y} in
+     * {@code [48, 54)} for this one -- and {@link ColonyNoise#shaftState} outranks every
+     * chamber, so a corridor whose forced-solid walkway fell inside that band had the floor
+     * cut out from under it for the 1-2 blocks where the landing disc overhangs the ramp's
+     * annulus. The probe caught it as a chamber with 113 standable floor blocks and 0 of
+     * them reachable; the room was fine, the doorway opened onto a five-block drop into the
+     * landing.
+     */
+    public static final int NURSERY_FLOOR_MIN_Y = MIN_Y + TIER_HEIGHT + LANDING_HEIGHT;
+
+    /**
+     * Widest a chamber's carve can reach from its centre; used to prune the per-column
+     * search. As with the throne it is the corridor, not the dome, that sets it.
+     */
+    public static final double NURSERY_MAX_REACH = Math.max(
+            NURSERY_RADIUS + NURSERY_SHELL_THICKNESS,
+            NURSERY_APPROACH_DISTANCE - NURSERY_CORRIDOR_START + NURSERY_CORRIDOR_HALF_WIDTH) + 1.0;
+
+    // --- decoration inside the chamber, replacing the per-tier chances above ---
+    //
+    // Egg Cluster has NO per-tier ambient chance any more (the old
+    // EGG_CLUSTER_CHANCE_BY_TIER = {0, 0.060, 0, 0} is gone): eggs are brood, and brood
+    // belongs in a brood room. They now appear only here and in the throne chamber, which
+    // is what makes finding one mean something.
+
+    public static final double NURSERY_BROOD_COMB_CHANCE = 0.320;
+    public static final double NURSERY_ROYAL_COMB_CHANCE = 0.012;
+    public static final double NURSERY_EGG_CLUSTER_CHANCE = 0.140;
+    public static final double NURSERY_RESIN_WEEP_CHANCE = 0.020;
+
+    /** Larvae seeded on a nursery chamber's floor when its chunk generates. */
+    public static final int NURSERY_LARVAE_MIN = 2;
+    public static final int NURSERY_LARVAE_MAX = 4;
+
+    // ------------------------------------------------------------------
+    // Mob spawning at chunk generation (see ColonyChunkGenerator#spawnOriginalMobs)
+    //
+    // Play-test round 1: "the colony felt too empty". Two changes, one cause each.
+    //
+    // DENSITY. The old loop drew groups from the biome's weighted spawn list with vanilla's
+    // geometric "while (random < creatureProbability)" gate, which at the biomes' 0.10-0.20
+    // probabilities means 0.11-0.25 groups per chunk per tier. NoiseProbe simulates both
+    // schemes against the same air field and the same floor-search loss: the old one placed
+    // 1.66 ants per chunk across the whole four-tier column, these numbers place 3.95 --
+    // 2.38x, inside the 2-3x the play-test asked for. Stating them as clusters per chunk
+    // rather than as a probability whose expectation is p/(1-p) is the point of the rewrite:
+    // the old knob could not be reasoned about without doing that algebra first.
+    //
+    // COMPOSITION. A vanilla spawn group is one SpawnerData, hence one caste, so the colony
+    // arrived as pure-worker or pure-soldier knots. A cluster here is mixed by construction
+    // at 3-4 workers to 1 soldier -- a foraging party with an escort, which is what an ant
+    // colony looks like. That is why generation-time seeding no longer reads the biome
+    // spawn lists at all: a weighted list can only express a per-draw probability, never
+    // "these castes, together, in this ratio". The biome lists stay for runtime respawn
+    // (see ColonyChunkGenerator#spawnOriginalMobs for what that is actually worth here).
+    // ------------------------------------------------------------------
+
+    /**
+     * Expected number of mixed ant clusters seeded per chunk, per tier. Fractional: the
+     * whole part is always placed and the remainder is a probability.
+     */
+    public static final double[] SPAWN_CLUSTERS_PER_CHUNK_BY_TIER = {0.15, 0.32, 0.26, 0.22};
+
+    /** Workers per cluster, inclusive range. Tier 0 (Royal Depths) fields none. */
+    public static final int[] CLUSTER_WORKERS_MIN_BY_TIER = {0, 3, 3, 3};
+    public static final int[] CLUSTER_WORKERS_MAX_BY_TIER = {0, 4, 4, 4};
+
+    /**
+     * Soldiers per cluster, inclusive range. One per party keeps the ratio at the 3:1 -- 4:1
+     * the brief asks for; the Royal Depths stay soldier-only, which M4a chose deliberately
+     * (a boss-guarding tier with no foragers in it) and nothing in this round disturbs.
+     */
+    public static final int[] CLUSTER_SOLDIERS_MIN_BY_TIER = {2, 1, 1, 1};
+    public static final int[] CLUSTER_SOLDIERS_MAX_BY_TIER = {4, 1, 1, 1};
+
+    /** Attempts made per cluster member, per chunk, to find a floor to stand it on. */
     public static final int SPAWN_FLOOR_ATTEMPTS = 12;
 
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
+
+    /**
+     * A fractional count made whole: the integer part always, the remainder as a chance.
+     *
+     * <p>Lives here rather than in {@link ColonyChunkGenerator} so {@link NoiseProbe} can
+     * measure the spawn density with the arithmetic under test rather than a re-derivation
+     * of it -- the probe runs without the game bootstrapped, and merely <em>touching</em>
+     * {@code ColonyChunkGenerator} loads {@code ChunkGenerator}, whose static initialiser
+     * reaches {@code BuiltInRegistries} and throws "Not bootstrapped".
+     */
+    public static int rollCount(double expected, RandomSource random) {
+        int whole = (int) expected;
+        return random.nextDouble() < expected - whole ? whole + 1 : whole;
+    }
+
+    /** An inclusive integer range roll; {@code min == max} costs no random draw. */
+    public static int between(int min, int max, RandomSource random) {
+        return max <= min ? min : min + random.nextInt(max - min + 1);
+    }
 
     /** Bottom-up tier index for a block Y: 0 = Royal Depths ... 3 = Upper Galleries. */
     public static int tierIndex(int y) {

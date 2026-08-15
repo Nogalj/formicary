@@ -25,12 +25,6 @@
         "weight": 12,
         "minCount": 2,
         "maxCount": 3
-      },
-      {
-        "type": "formicary:larva",
-        "weight": 6,
-        "minCount": 1,
-        "maxCount": 3
       }
     ],
     "ambient": [],

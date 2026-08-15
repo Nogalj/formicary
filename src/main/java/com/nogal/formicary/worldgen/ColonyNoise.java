@@ -4,6 +4,9 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ACCENT_XZ_SCA
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ACCENT_Y_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CEILING_BOTTOM;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_LARGE_THRESHOLD_BY_TIER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COMB_PATCH_THRESHOLD_BY_TIER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COMB_PATCH_XZ_SCALE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COMB_PATCH_Y_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_LARGE_XZ_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_LARGE_Y_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SMALL_THRESHOLD_BY_TIER;
@@ -17,6 +20,18 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_THIC
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_THRESHOLD;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_XZ_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MIN_Y;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_APPROACH_DISTANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_CORRIDOR_END;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_CORRIDOR_HALF_WIDTH;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_CORRIDOR_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_CORRIDOR_START;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_DOME_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_FLOOR_MIN_Y;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_MAX_REACH;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_SHELL_THICKNESS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_SPACING;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_WALL_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.RAMP_AIR_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.RAMP_CENTER_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.RAMP_HALF_WIDTH;
@@ -88,6 +103,7 @@ public final class ColonyNoise {
     private final PerlinNoise accent;
     private final PerlinNoise wallJitter;
     private final PerlinNoise membrane;
+    private final PerlinNoise combPatch;
 
     public ColonyNoise(PositionalRandomFactory factory) {
         this.factory = factory;
@@ -98,6 +114,7 @@ public final class ColonyNoise {
         this.accent = octave(factory, "colony_accent");
         this.wallJitter = octave(factory, "colony_wall_jitter");
         this.membrane = octave(factory, "colony_membrane");
+        this.combPatch = octave(factory, "colony_comb_patch");
     }
 
     private static PerlinNoise octave(PositionalRandomFactory factory, String name) {
@@ -435,6 +452,177 @@ public final class ColonyNoise {
     }
 
     // ------------------------------------------------------------------
+    // Nursery chambers (play-test round 1)
+    // ------------------------------------------------------------------
+
+    /**
+     * One brood chamber: a small domed room in the Nurseries tier, built exactly like
+     * {@link Throne} -- centred at ({@code centreX}, {@code centreZ}) with its floor at
+     * {@code floorY}, joined to the connectivity ramp at ({@code axisX}, {@code axisZ}) by a
+     * straight corridor along the unit vector ({@code dirX}, {@code dirZ}).
+     */
+    public record Nursery(double centreX, double centreZ, double axisX, double axisZ,
+            double dirX, double dirZ, int floorY) {
+    }
+
+    /** {@link #nurseryState} verdicts. */
+    public static final int NURSERY_NONE = 0;
+    public static final int NURSERY_AIR = 1;
+    public static final int NURSERY_SOLID = -1;
+
+    public static final Nursery[] NO_NURSERIES = new Nursery[0];
+
+    /**
+     * The chamber belonging to one {@link ColonyGeneratorTunables#NURSERY_SPACING} cell.
+     *
+     * <p>Structurally identical to {@link #throneForCell}: the ramp whose own cell contains
+     * this cell's centre is resolved first, and the room then hangs off that ramp at a
+     * seed-chosen bearing with its floor set to the ramp's own walkway height there.
+     *
+     * <p>The floor is the first ramp turn at or above
+     * {@link ColonyGeneratorTunables#NURSERY_FLOOR_MIN_Y}, which puts it in {@code [54, 78)}
+     * -- the room and its shell therefore stay inside the Nurseries band, and can never
+     * collide with a throne chamber (whose floors live in {@code [8, 33)}).
+     */
+    private Nursery nurseryForCell(int cellX, int cellZ) {
+        // y = 2: a third independent stream, so this never draws the same numbers as
+        // shaftForCell (y = 0) or throneForCell (y = 1) for the same cell.
+        RandomSource random = this.factory.at(cellX, 2, cellZ);
+        int centreX = cellX * NURSERY_SPACING + NURSERY_SPACING / 2;
+        int centreZ = cellZ * NURSERY_SPACING + NURSERY_SPACING / 2;
+        Shaft shaft = shaftForCell(Math.floorDiv(centreX, SHAFT_SPACING), Math.floorDiv(centreZ, SHAFT_SPACING));
+
+        double approach = random.nextDouble() * TWO_PI;
+        double dirX = Math.cos(approach);
+        double dirZ = Math.sin(approach);
+
+        double bearing = approach - shaft.phase();
+        bearing -= Math.floor(bearing / TWO_PI) * TWO_PI;
+        double base = MIN_Y + bearing / RAMP_RADIANS_PER_BLOCK;
+        int turn = (int) Math.ceil((NURSERY_FLOOR_MIN_Y - base) / RAMP_PERIOD);
+        int floorY = (int) Math.floor(base + turn * RAMP_PERIOD);
+
+        return new Nursery(shaft.axisX() + NURSERY_APPROACH_DISTANCE * dirX,
+                shaft.axisZ() + NURSERY_APPROACH_DISTANCE * dirZ,
+                shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY);
+    }
+
+    /**
+     * Every nursery chamber that can possibly reach into the 16x16 area rooted at
+     * ({@code blockMinX}, {@code blockMinZ}).
+     *
+     * <p>3x3 is provably enough, and unlike the throne's the margin here is worth writing
+     * down because the cell is small. A chamber's centre lands within
+     * {@code SHAFT_SPACING/2 + SHAFT_JITTER/2 + NURSERY_APPROACH_DISTANCE} = 56 blocks of
+     * its cell centre and its carve reaches
+     * {@link ColonyGeneratorTunables#NURSERY_MAX_REACH} = 23 from there, so 79 blocks from
+     * the cell centre at worst. A chunk lies wholly inside one cell (both 16 and 96 are
+     * multiples of 16) and so within 48 blocks of that cell's centre. Two cells away is 192
+     * blocks: {@code 192 - 79 = 113 > 48}, no overlap. One cell away is 96:
+     * {@code 96 - 79 = 17 < 48}, so the ring of eight neighbours is genuinely needed.
+     */
+    public Nursery[] nurseriesNear(int blockMinX, int blockMinZ) {
+        int cellX = Math.floorDiv(blockMinX, NURSERY_SPACING);
+        int cellZ = Math.floorDiv(blockMinZ, NURSERY_SPACING);
+        Nursery[] out = new Nursery[9];
+        int i = 0;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                out[i++] = nurseryForCell(cellX + dx, cellZ + dz);
+            }
+        }
+        return out;
+    }
+
+    /** Chambers from {@code candidates} whose carve can reach the column at (x, z). */
+    public Nursery[] nurseriesForColumn(Nursery[] candidates, int x, int z) {
+        int count = 0;
+        Nursery[] scratch = new Nursery[candidates.length];
+        for (Nursery nursery : candidates) {
+            double dx = x - nursery.centreX();
+            double dz = z - nursery.centreZ();
+            if (dx * dx + dz * dz <= NURSERY_MAX_REACH * NURSERY_MAX_REACH) {
+                scratch[count++] = nursery;
+            }
+        }
+        if (count == 0) {
+            return NO_NURSERIES;
+        }
+        Nursery[] out = new Nursery[count];
+        System.arraycopy(scratch, 0, out, 0, count);
+        return out;
+    }
+
+    /**
+     * What a nursery chamber says about (x, y, z): the hollow interior, the approach
+     * corridor and its walkway, the shell, or nothing.
+     *
+     * <p>One difference from {@link #throneState}: the corridor's own floor is forced solid.
+     * The throne's is not, and gets away with it because the noise happens to leave ground
+     * under a 34-block approach; a nursery hangs 24 blocks out in the Nurseries tier, which
+     * is the airiest band in the dimension (24% air), so leaving the floor to the noise
+     * would eventually produce a doorway opening onto a drop.
+     */
+    public int nurseryState(Nursery[] nurseries, int x, int y, int z) {
+        for (Nursery nursery : nurseries) {
+            double dx = x - nursery.centreX();
+            double dz = z - nursery.centreZ();
+            double distance = Math.sqrt(dx * dx + dz * dz);
+            int height = y - nursery.floorY();
+
+            if (height >= 0 && height <= NURSERY_CORRIDOR_HEIGHT && isInNurseryCorridor(nursery, x, z)) {
+                return height == 0 ? NURSERY_SOLID : NURSERY_AIR;
+            }
+            if (isInsideNursery(distance, height, 0.0)) {
+                return NURSERY_AIR;
+            }
+            if (isInsideNursery(distance, height, NURSERY_SHELL_THICKNESS)) {
+                return NURSERY_SOLID;
+            }
+        }
+        return NURSERY_NONE;
+    }
+
+    /** The room's shape, exactly as {@link #isInsideThrone} but with the nursery's numbers. */
+    private static boolean isInsideNursery(double distance, double height, double grow) {
+        double radius = NURSERY_RADIUS + grow;
+        double dome = NURSERY_DOME_HEIGHT + grow;
+        if (height < 1.0 - grow || height > NURSERY_WALL_HEIGHT + dome) {
+            return false;
+        }
+        if (height <= NURSERY_WALL_HEIGHT) {
+            return distance <= radius;
+        }
+        double t = (height - NURSERY_WALL_HEIGHT) / dome;
+        return distance <= radius * Math.sqrt(Math.max(0.0, 1.0 - t * t));
+    }
+
+    /** Whether (x, z) is inside the corridor's footprint, measured along the axis ray. */
+    private static boolean isInNurseryCorridor(Nursery nursery, int x, int z) {
+        double px = x - nursery.axisX();
+        double pz = z - nursery.axisZ();
+        double along = px * nursery.dirX() + pz * nursery.dirZ();
+        if (along < NURSERY_CORRIDOR_START || along > NURSERY_CORRIDOR_END) {
+            return false;
+        }
+        return Math.abs(px * nursery.dirZ() - pz * nursery.dirX()) <= NURSERY_CORRIDOR_HALF_WIDTH;
+    }
+
+    /** Whether (x, y, z) is inside a nursery chamber's hollow (used to pick decoration). */
+    public boolean isInNurseryRoom(Nursery[] nurseries, int x, int y, int z) {
+        for (Nursery nursery : nurseries) {
+            double dx = x - nursery.centreX();
+            double dz = z - nursery.centreZ();
+            double distance = Math.sqrt(dx * dx + dz * dz);
+            double height = y - nursery.floorY();
+            if (isInsideNursery(distance, height, NURSERY_SHELL_THICKNESS)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------
     // Noise carve
     // ------------------------------------------------------------------
 
@@ -473,12 +661,16 @@ public final class ColonyNoise {
      * walkway wherever a big room crosses it and the descent becomes a one-way drop, which
      * is a soft-lock: mining the fabric is gated behind a full set of Chitin Armor.
      *
-     * <p>The throne chamber (M7) sits <em>below</em> the spine in that order, deliberately:
-     * it may carve through the noise and force its own shell solid, but it never overrides
-     * a ramp floor or a ramp walkway. That keeps M4a's walkability guarantee exactly as it
-     * was -- the room hangs off the spine, it does not cut into it.
+     * <p>The throne chamber (M7) and the nursery chambers sit <em>below</em> the spine in
+     * that order, deliberately: they may carve through the noise and force their own shells
+     * solid, but never override a ramp floor or a ramp walkway. That keeps M4a's walkability
+     * guarantee exactly as it was -- the rooms hang off the spine, they do not cut into it.
+     * The two chamber kinds cannot interact: their floors live in disjoint Y bands
+     * ({@code [8, 33)} against {@code [52, 76)}), so their order relative to each other is
+     * arbitrary.
      */
-    public boolean isAir(Shaft[] columnShafts, Throne[] columnThrones, int x, int y, int z) {
+    public boolean isAir(Shaft[] columnShafts, Throne[] columnThrones, Nursery[] columnNurseries,
+            int x, int y, int z) {
         if (y < FLOOR_TOP || y >= CEILING_BOTTOM) {
             return false;
         }
@@ -497,6 +689,15 @@ public final class ColonyNoise {
                 return true;
             }
             if (state != THRONE_NONE) {
+                return false;
+            }
+        }
+        if (columnNurseries.length > 0) {
+            int state = nurseryState(columnNurseries, x, y, z);
+            if (state == NURSERY_AIR) {
+                return true;
+            }
+            if (state != NURSERY_NONE) {
                 return false;
             }
         }
@@ -526,14 +727,33 @@ public final class ColonyNoise {
      * {@code ColonyChunkGenerator#getBaseColumn} and the chunk fill agree without either
      * looking at the other's output.
      */
-    public boolean isDaylightMembrane(Shaft[] columnShafts, Throne[] columnThrones, int x, int y, int z) {
+    public boolean isDaylightMembrane(Shaft[] columnShafts, Throne[] columnThrones,
+            Nursery[] columnNurseries, int x, int y, int z) {
         if (y < CEILING_BOTTOM || y >= CEILING_BOTTOM + MEMBRANE_THICKNESS) {
             return false;
         }
-        if (!isAir(columnShafts, columnThrones, x, CEILING_BOTTOM - 1, z)) {
+        if (!isAir(columnShafts, columnThrones, columnNurseries, x, CEILING_BOTTOM - 1, z)) {
             return false;
         }
         return probeMembrane(x, z) > MEMBRANE_THRESHOLD;
+    }
+
+    // ------------------------------------------------------------------
+    // Comb patches (play-test round 1)
+    // ------------------------------------------------------------------
+
+    /**
+     * Whether comb is allowed to grow at (x, y, z) at all.
+     *
+     * <p>The gate that turns comb from speckle into patches. It is a plain threshold on a
+     * low-frequency field, so a patch is a contiguous blob of world positions -- the
+     * per-block chance in {@link ColonyGeneratorTunables#BROOD_COMB_CHANCE_BY_TIER} then
+     * only decides how solid that blob is and how ragged its edge. Being a pure function of
+     * position (rather than, say, a flood fill seeded at a lucky roll) is what keeps a patch
+     * whole across a chunk boundary.
+     */
+    public boolean isCombPatch(int x, int y, int z) {
+        return probeCombPatch(x, y, z) > COMB_PATCH_THRESHOLD_BY_TIER[tierIndex(y)];
     }
 
     // ------------------------------------------------------------------
@@ -567,6 +787,11 @@ public final class ColonyNoise {
     /** The Daylight Membrane patch field, before the threshold and the visibility mask. */
     public double probeMembrane(int x, int z) {
         return this.membrane.getValue(x * MEMBRANE_XZ_SCALE, 0.0, z * MEMBRANE_XZ_SCALE);
+    }
+
+    /** The comb-patch field, before the per-tier threshold. */
+    public double probeCombPatch(int x, int y, int z) {
+        return this.combPatch.getValue(x * COMB_PATCH_XZ_SCALE, y * COMB_PATCH_Y_SCALE, z * COMB_PATCH_XZ_SCALE);
     }
 
     // ------------------------------------------------------------------
