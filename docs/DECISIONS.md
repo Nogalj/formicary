@@ -1021,3 +1021,82 @@ block.
   deliberate-failure sanity check on a sibling test in the same file (flipped one
   assertion, watched `runGameTestServer` fail with `Expected Chitin item` at the exact
   test name, reverted).
+
+### Entity visuals: soldier scale, queen mandibles, tamed markers, larva UV fix
+
+Owner feedback, four items, all in `assets-src/models.py` + the hand-translated Java
+models/renderers/`ModEntities`.
+
+- **Soldier scale: the vanilla renderer-scale idiom, verified against `SlimeRenderer` in
+  `reference/`, not the `Attributes.SCALE` attribute.** `LivingEntityRenderer.render`
+  applies `entity.getScale()` (an attribute-backed value, default 1.0) BEFORE calling the
+  protected no-op hook `scale(T, PoseStack, float)` that `SlimeRenderer` overrides for its
+  per-instance size -- two independent scale seams, verified by reading
+  `LivingEntityRenderer.java` lines 97-102 directly. Using the attribute would have meant
+  either adding `Attributes.SCALE` to `SoldierAntEntity.createAttributes()` (a combat-
+  adjacent surface the spec says to leave alone: `generic.scale` is read by more than
+  rendering in some code paths) or fighting the attribute system for a value that is
+  purely cosmetic. The renderer-scale hook is exactly that: cosmetic, render-thread-only,
+  zero interaction with attributes. `SoldierAntModel.RENDER_SCALE = 1.3F` (midpoint of the
+  spec's 1.25-1.35) is shared by both `SoldierAntRenderer` and `TamedSoldierAntRenderer`
+  ("tamed soldier should match") so the two can't drift.
+- **The hitbox is hand-scaled by the identical factor, not derived from it at runtime.**
+  `ModEntities.SOLDIER_ANT`/`TAMED_SOLDIER_ANT` go from `.sized(1.1F, 0.8F)` to
+  `.sized(1.43F, 1.04F)` (1.1x1.3, 0.8x1.3, both exact). This is a real gameplay value
+  (collision, spawn placement), unlike the renderer scale, so it gets its own GameTest --
+  see `EntityVisualsGameTests` below. Combat stats (`createAttributes()`) untouched on
+  both castes, per the spec.
+- **Queen mandibles: one 5x4x8 slab per side becomes two tapered segments (base 4x3x4,
+  tip 2x2x4), both children of `head` rather than tip-nested-under-base.** The flat,
+  single-level part list is this file's own invariant (module docstring: "only leaf parts
+  carry rotations... project identically" -- the preview renderer has no hierarchical-pose
+  composition). Since the base's own rest rotation is the identity (no `"rot"` key, same
+  as the original single-box mandible), nesting the tip under the base in Java would
+  produce an absolute rest pose identical to nesting it under `head` directly -- so `head`
+  is what both Java and the python spec use, keeping the "poses are absolute" contract
+  intact instead of special-casing one model. `setupAnim` applies the same idle flex angle
+  to both segments of a side every frame (never reads back a previous rotation, per this
+  file's banked rule 4), so they swing as one rigid jaw with no visible joint gap.
+  `QUEEN_MANDIBLE_TIP_ANGLE = 0.3491` (~20 degrees) curls the tip toward the midline; the
+  *sign* needed to curl inward rather than splay outward was derived from
+  `rotate_zyx`'s actual matrix (`x' = x*cos(ry) + z*sin(ry)` for the tip's far corner,
+  which sits at negative local Z) and then confirmed empirically by rendering the preview
+  and checking the tips converge -- not assumed from the rotation direction's usual
+  verbal convention, which is easy to get backwards. Texture: the base keeps the plum
+  body colour with a gold joint-accent band (the same visual language the legs already
+  use for their joints); the tip is now the dominant gold, brightest at the true biting
+  point (`Q_GOLD_BRIGHT` on its own `north`/front face) and dimming back toward
+  `Q_PLUM_DARK` where it meets the base -- so the two-piece read comes from colour as well
+  as geometry. Atlas: the old single `mandible (94,27) 26x12` slot splits into
+  `mandible_base (94,27) 16x7` / `mandible_tip (94,34) 12x6`, both still inside the
+  region the atlas comment already called free.
+- **Tamed antenna-tip markers: a parameter, not a new spec.** `TAMED_ANTENNA_TIP =
+  (255, 214, 64, 255)` -- royal-jelly gold, chosen to sit well clear of both wild tip
+  colours it has to be distinguishable from (`ANTENNA_TIP` (232,160,64) on the worker,
+  `S_ANTENNA_TIP` (196,98,52) on the soldier -- both duller and more orange/red at
+  similar lightness). The tamed castes are visually identical to their wild counterparts
+  in every other respect, so `paint_worker_ant`/`paint_soldier_ant` grew an
+  `antenna_tip_color` parameter (default = the existing wild constant, so the wild output
+  is provably unchanged -- confirmed byte-for-byte identical after regeneration, neither
+  `worker_ant.png` nor `soldier_ant.png` appears in `git status`) instead of forking a
+  second geometry spec. `TAMED_WORKER_ANT`/`TAMED_SOLDIER_ANT` are shallow copies of the
+  wild spec dicts with only `name` overridden, so the shared `WORKER_ANT`/`SOLDIER_ANT`
+  part lists stay the single source of truth for geometry and only the paint call differs.
+  `TamedWorkerAntRenderer`/`TamedSoldierAntRenderer` now point at their own
+  `tamed_worker_ant.png`/`tamed_soldier_ant.png` instead of reusing the wild files.
+- **Larva "stray orange spots": a redundant double-seam, not a coordinate bug.** Read the
+  atlas at 16x before touching anything (`face_rects` math checked out -- no rect overlap,
+  no off-by-one) rather than guessing from the palette comment alone. The actual mechanism:
+  `mid`'s west/east faces are only 3 texels wide (its box depth), and the code painted a
+  full-brightness `L_LINE` (222,158,70) vband at BOTH ends -- the seam against `head` at
+  one edge, the seam against `tail` at the other -- leaving only the single middle column
+  unmarked. `head` and `tail` then EACH painted their own seam at the identical physical
+  boundary from their own side, so every junction was marked twice. On a face this thin,
+  "faint amber segment lines" (the palette's own comment) came out as roughly two-thirds
+  of the visible surface in raw, saturated orange. Fix has two parts: `mid` no longer
+  paints a seam of its own (the junction is still marked once, by its neighbour), and the
+  remaining single seam on `head`/`tail` uses a new `L_LINE_FAINT` (232,201,152) -- `L_LINE`
+  blended 35% into the segment's own `L_BASE` tone -- instead of the raw saturated colour,
+  so what's left actually reads as faint rather than as a highlight. Verified by
+  regenerating and re-reading the upscaled atlas: the side view went from two solid orange
+  bars to a barely-there warm tint at each segment boundary.
