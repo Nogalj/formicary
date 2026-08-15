@@ -932,3 +932,92 @@ spawn density                 : 3.95 / 4.47 / 4.31 ants per chunk against the ol
 walkable connectivity          : PASS on all three (Royal Depths reachable on foot, and back)
 throne chamber                : PASS on all three (the queen's dais joins the ramp)
 ```
+
+### Loot + XP: chitin goes soldier-only, every ant grants XP, Egg Cluster becomes pure XP
+
+Owner feedback, three items: chitin was too easy to farm off the harmless caste, no ant
+granted XP at all, and Egg Cluster -- brood, not loot -- was dropping itself like any other
+block.
+
+- **Chitin: subtractive, not rebalanced.** Today's tables already had the shape the fix
+  wanted for the soldier (`soldierTable()` = chitin + a resin chance); the only change
+  needed was deleting the worker's and tamed worker's chitin pools, not touching a single
+  number. `ModEntityLootSubProvider#chitinTable` is untouched and still backs
+  `soldierTable()` -- the method didn't get removed, its two extra callers did. The tamed
+  worker's loot table is now a bare `LootTable.lootTable()`, identical in shape to the
+  larva's: it never had a Scent Gland (that pool is the wild worker's alone -- see the
+  class javadoc) and now has no chitin either, so there is genuinely nothing left in it.
+  Its actual payout, the pack inventory `dropCustomDeathLoot` returns, is separate and
+  untouched.
+
+- **XP: the trap was `Animal`, not `Mob`.** Every wild caste (`PathfinderMob` directly)
+  just needed `this.xpReward = N` in its constructor -- `Mob.getBaseExperienceReward()`
+  reads that field unconditionally when it is positive (plus a per-equipped-item bonus none
+  of these ants trigger, having no armor or held items). The two tamed castes extend
+  `TamableAnimal`, and `TamableAnimal`'s ancestor `Animal` *also* overrides
+  `getBaseExperienceReward()` -- to a flat `1 + random.nextInt(3)` that never reads
+  `xpReward` at all (verified in the decompiled `Animal.java`). Setting the field there
+  would have compiled clean and produced a caste that looked fixed and wasn't: a tamed
+  soldier would go on granting 1-3 XP forever instead of 7. Both tamed entities now
+  override `getBaseExperienceReward()` directly, returning their wild counterpart's
+  constant, which is the only way to make "tamed X = X" literally true rather than
+  "tamed X happens to overlap X's range about a third of the time."
+
+- **The numbers**, all named constants now (`XP_REWARD` on each class, `WORKER_XP_REWARD`-
+  style names avoided in favour of one name per class since nothing needs to
+  disambiguate them):
+
+  ```
+  LarvaEntity.XP_REWARD          = 1
+  WorkerAntEntity.XP_REWARD      = 3   (spec: "~2-3")
+  SoldierAntEntity.XP_REWARD     = 7   (spec: "~6-8")
+  QueenAntEntity.XP_REWARD       = 50  (spec: "~50-60, wither-class")
+  TamedWorkerAntEntity           = WorkerAntEntity.XP_REWARD, via override
+  TamedSoldierAntEntity          = SoldierAntEntity.XP_REWARD, via override
+  ```
+
+  The queen needed no numeric change at all: `this.xpReward = 50` already matched
+  `WitherBoss.xpReward` (`net/minecraft/world/entity/boss/wither/WitherBoss.java:86` in the
+  extracted sources) exactly, so "boss-tier, wither-class" was already true before this
+  round. It was promoted to a named `XP_REWARD` constant purely for consistency with the
+  class's other tunables -- a behaviour-free change.
+
+- **Egg Cluster: `DropExperienceBlock`, not a loot-table trick.** Vanilla already has the
+  class for "breaks into XP, not items" -- every ore uses it
+  (`net/minecraft/world/level/block/DropExperienceBlock.java`), and `UniformInt.of(3, 7)`
+  is not a number picked to match the spec's "~3-7" after the fact, it is the literal range
+  diamond ore and emerald ore are constructed with in the decompiled `Blocks.java`
+  (`DIAMOND_ORE`/`EMERALD_ORE` and their deepslate variants, all four -- unrelated to eggs
+  otherwise, just where "3 to 7" already lived as a precedent). Its mechanism matters for
+  the loot table: `getExpDrop()`
+  is read by a NeoForge `BlockDropsEvent` fired from `CommonHooks.handleBlockDrops` (called
+  by every `Block.dropResources` overload) entirely independently of the item drops the
+  loot table computes -- verified by reading `BlockDropsEvent`'s constructor and
+  `CommonHooks.handleBlockDrops` directly. The loot table's only remaining job is deciding
+  whether the block itself ever drops.
+
+- **Silk touch: the block whole, and the XP is forfeit either way.** Chose
+  `dropWhenSilkTouch` -- the same helper this file already uses for Amber Glass -- over
+  Royal Comb's `createSingleItemTableWithSilkTouch` pattern. The two read almost the same
+  but differ on the case that matters here: Royal Comb's pattern still drops *something*
+  (jelly) on a plain break, where Amber Glass's drops nothing without Silk Touch and the
+  block only with it. "Drops no items" (spec, verbatim) is Amber Glass's shape, not Royal
+  Comb's. Whether Silk Touch should also keep the XP wasn't actually this table's decision
+  to make: `Enchantments.java`'s `SILK_TOUCH` registration attaches a
+  `BLOCK_EXPERIENCE` effect of `SetValue(LevelBasedValue.constant(0.0F))` unconditionally,
+  so a silk-touched break forfeits block XP for every block in the game, egg cluster
+  included, regardless of what its own loot table or `DropExperienceBlock` says. The
+  decision that *was* this table's to make was simply: give Silk Touch something to take
+  (the block) rather than nothing at all.
+
+- **Test harness gotcha, banked in CLAUDE.md: `GameTestHelper.destroyBlock(pos)` is not
+  "break this block."** It hardcodes `dropBlock=false`
+  (`this.getLevel().destroyBlock(this.absolutePos(pos), false, null)`), which skips
+  `Block.dropResources` -- and with it both the loot table AND the `BlockDropsEvent`/XP
+  path -- entirely. A first draft of the Egg Cluster GameTest used the helper's shortcut
+  and passed for the wrong reason (nothing happened, so nothing was asserted against).
+  `level.destroyBlock(pos, true)` (the `LevelWriter` default-method overload, `dropBlock`
+  true) is the one that actually routes through the real break pipeline; confirmed by a
+  deliberate-failure sanity check on a sibling test in the same file (flipped one
+  assertion, watched `runGameTestServer` fail with `Expected Chitin item` at the exact
+  test name, reverted).

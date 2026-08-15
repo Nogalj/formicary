@@ -142,9 +142,10 @@ public class ModBlocks {
 
     /**
      * Play-test round 1 (spec item 3): "drops no items, pops XP". {@link DropExperienceBlock}
-     * is vanilla's own class for exactly this (redstone/coal/lapis ore all use it, with the
-     * same {@code UniformInt.of(3, 7)} range redstone ore uses -- verified in the decompiled
-     * {@code Blocks.java}). Its XP is spawned by a NeoForge {@code BlockDropsEvent}
+     * is vanilla's own class for exactly this (every ore uses it), and {@code
+     * UniformInt.of(3, 7)} is the literal range diamond and emerald ore are constructed
+     * with -- verified in the decompiled {@code Blocks.java}, not picked to match the spec
+     * after the fact. Its XP is spawned by a NeoForge {@code BlockDropsEvent}
      * (see {@code CommonHooks.handleBlockDrops}), entirely independent of the block's own
      * loot table -- so the loot table below can be, and is, silk-touch-only. See {@code
      * ModBlockLootSubProvider} for the silk-touch decision.

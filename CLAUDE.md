@@ -430,6 +430,30 @@ is a known-correct 1.21 entity model reference.
   `ChunkGenerator`, whose `<clinit>` builds a registry codec and dies with
   `IllegalArgumentException: Not bootstrapped`. Shared arithmetic the probe needs belongs in
   a registry-free class -- `ColonyGeneratorTunables` is the one here. (`verified: 2026-08-15`)
+- **`TamableAnimal`'s ancestor `Animal` overrides `getBaseExperienceReward()` to a flat
+  `1 + random.nextInt(3)`, ignoring `Mob#xpReward` completely.** Setting `this.xpReward` in
+  a `TamableAnimal` subclass's constructor -- the pattern that works for every
+  `PathfinderMob`-direct entity, where `Mob.getBaseExperienceReward()` reads the field --
+  compiles clean and silently does nothing. A tamed caste that needs a specific XP reward
+  must override `getBaseExperienceReward()` itself. Verified in the decompiled `Animal.java`
+  and caught by a GameTest asserting an orb value outside `Animal`'s 1-3 fallback range.
+  (`verified: 2026-08-15`)
+- **`DropExperienceBlock` decouples a block's XP from its loot table entirely.** Its
+  `getExpDrop()` is read by a NeoForge `BlockDropsEvent`, fired from
+  `CommonHooks.handleBlockDrops` on every `Block.dropResources` call, independently of
+  whatever the loot table drops as items -- so a block can have an empty (or silk-touch-
+  only) loot table and still pop XP on every break. Silk Touch forfeits that XP
+  unconditionally regardless of the block's own data: `Enchantments.java`'s `SILK_TOUCH`
+  registration attaches a `BLOCK_EXPERIENCE` effect of
+  `SetValue(LevelBasedValue.constant(0.0F))` to every silk-touched break in the game.
+  `UniformInt.of(3, 7)` is the exact range vanilla constructs diamond/emerald ore with.
+  (`verified: 2026-08-15`)
+- **`GameTestHelper.destroyBlock(pos)` hardcodes `dropBlock=false`** (`this.getLevel()
+  .destroyBlock(this.absolutePos(pos), false, null)`) -- it skips `Block.dropResources`
+  entirely, so neither the loot table nor a `DropExperienceBlock`'s `BlockDropsEvent` XP
+  fires. A test asserting on break drops needs the real pipeline: `level.destroyBlock(pos,
+  true)` (the `LevelWriter` default overload, `dropBlock=true`), not the helper's shortcut.
+  (`verified: 2026-08-15`)
 
 ## Workflow
 
