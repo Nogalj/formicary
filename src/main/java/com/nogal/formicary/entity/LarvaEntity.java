@@ -56,11 +56,21 @@ import net.minecraft.world.level.Level;
 public class LarvaEntity extends PathfinderMob {
     private static final String TAG_PLACED = "Placed";
 
+    /**
+     * XP reward on death (play-test round 1, spec item 2: "all ants drop XP"). Smallest of
+     * the castes -- it is brood, not a fighter. {@code PathfinderMob} routes this through
+     * {@code Mob#xpReward} / {@code Mob.getBaseExperienceReward()} directly; see {@code
+     * WorkerAntEntity#XP_REWARD} for the caste that needed the field-vs-override distinction
+     * spelled out. Tunable.
+     */
+    public static final int XP_REWARD = 1;
+
     private static final EntityDataAccessor<Boolean> DATA_PLACED =
             SynchedEntityData.defineId(LarvaEntity.class, EntityDataSerializers.BOOLEAN);
 
     public LarvaEntity(EntityType<? extends LarvaEntity> entityType, Level level) {
         super(entityType, level);
+        this.xpReward = XP_REWARD;
     }
 
     public static AttributeSupplier.Builder createAttributes() {

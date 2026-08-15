@@ -44,6 +44,19 @@ public class WorkerAntEntity extends PathfinderMob implements CarriesItem {
     private static final String TAG_FLEE_TIME = "FleeTime";
     private static final String TAG_FLEEING_FROM = "FleeingFrom";
 
+    /**
+     * XP reward on death (play-test round 1, spec item 2: "all ants drop XP, soldiers and
+     * queen more"). Tunable -- spec says "~2-3".
+     *
+     * <p>{@link TamedWorkerAntEntity#getBaseExperienceReward()} reuses this constant rather
+     * than setting {@code Mob#xpReward} in its own constructor: {@code TamedWorkerAntEntity
+     * extends TamableAnimal}, and vanilla's {@code Animal} (a {@code TamableAnimal}
+     * ancestor) overrides {@code getBaseExperienceReward()} to return a flat {@code 1 +
+     * random.nextInt(3)}, ignoring {@code xpReward} entirely -- verified in {@code
+     * Animal.java}. Setting the field there would compile and silently do nothing.
+     */
+    public static final int XP_REWARD = 3;
+
     private int fleeTicks;
 
     @Nullable
@@ -51,6 +64,7 @@ public class WorkerAntEntity extends PathfinderMob implements CarriesItem {
 
     public WorkerAntEntity(EntityType<? extends WorkerAntEntity> entityType, Level level) {
         super(entityType, level);
+        this.xpReward = XP_REWARD;
     }
 
     public static AttributeSupplier.Builder createAttributes() {

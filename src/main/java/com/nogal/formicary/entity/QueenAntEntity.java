@@ -111,6 +111,14 @@ public class QueenAntEntity extends PathfinderMob {
     /** Pheromonal Disguise granted on her death: 3600 ticks = 3 minutes. Tunable. */
     public static final int GRACE_DISGUISE_TICKS = 3600;
 
+    /**
+     * XP reward on death (play-test round 1, spec item 2: "queen ~50-60, boss-tier,
+     * wither-class"). Already matched {@code WitherBoss.xpReward} exactly before this round
+     * (verified in {@code reference/}) -- unchanged, just promoted to a named constant like
+     * every other tunable above. Tunable.
+     */
+    public static final int XP_REWARD = 50;
+
     // ----------------------------------------------------------------- state --
 
     private final ServerBossEvent bossEvent = new ServerBossEvent(this.getDisplayName(),
@@ -124,7 +132,7 @@ public class QueenAntEntity extends PathfinderMob {
 
     public QueenAntEntity(EntityType<? extends QueenAntEntity> entityType, Level level) {
         super(entityType, level);
-        this.xpReward = 50;
+        this.xpReward = XP_REWARD;
         this.setPersistenceRequired();
     }
 

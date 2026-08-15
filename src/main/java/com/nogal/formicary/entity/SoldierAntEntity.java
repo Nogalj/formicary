@@ -50,6 +50,14 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
     private static final String TAG_SUMMONER = "Summoner";
     private static final String TAG_SUMMON_EXPIRY = "SummonExpiry";
 
+    /**
+     * XP reward on death (play-test round 1, spec item 2: "all ants drop XP, soldiers and
+     * queen more"). Tunable -- spec says "~6-8". See {@link WorkerAntEntity#XP_REWARD} for
+     * why {@link TamedSoldierAntEntity#getBaseExperienceReward()} reuses this constant
+     * through an override rather than setting {@code Mob#xpReward} directly.
+     */
+    public static final int XP_REWARD = 7;
+
     private int remainingAngerTime;
 
     @Nullable
@@ -64,6 +72,7 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
 
     public SoldierAntEntity(EntityType<? extends SoldierAntEntity> entityType, Level level) {
         super(entityType, level);
+        this.xpReward = XP_REWARD;
     }
 
     public static AttributeSupplier.Builder createAttributes() {

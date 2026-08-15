@@ -425,6 +425,19 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
         return null;
     }
 
+    /**
+     * Play-test round 1, spec item 2: "tamed worker = worker". {@code TamableAnimal}'s
+     * ancestor {@code Animal} already overrides this method to return a flat {@code 1 +
+     * random.nextInt(3)}, completely ignoring {@code Mob#xpReward} -- so matching the wild
+     * worker's reward needs this override, not a field assignment in the constructor (which
+     * would compile fine and silently do nothing; verified against {@code Animal.java} in
+     * {@code reference/}).
+     */
+    @Override
+    protected int getBaseExperienceReward() {
+        return WorkerAntEntity.XP_REWARD;
+    }
+
     // -------------------------------------------------------------- sounds --
 
     @Override

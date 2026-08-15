@@ -204,6 +204,16 @@ public class TamedSoldierAntEntity extends TamableAnimal implements TamedAnt {
         return null;
     }
 
+    /**
+     * Play-test round 1, spec item 2: "tamed soldier = soldier". See {@code
+     * TamedWorkerAntEntity#getBaseExperienceReward()} for why this has to be an override of
+     * {@code Animal}'s method rather than a {@code Mob#xpReward} field assignment.
+     */
+    @Override
+    protected int getBaseExperienceReward() {
+        return SoldierAntEntity.XP_REWARD;
+    }
+
     // -------------------------------------------------------------- sounds --
 
     @Override
