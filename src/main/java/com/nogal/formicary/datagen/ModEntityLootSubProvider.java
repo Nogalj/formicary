@@ -21,11 +21,17 @@ import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
 import net.minecraft.world.level.storage.loot.providers.number.UniformGenerator;
 
 /**
- * Loot tables for the M2/M3a castes: worker and soldier drop chitin (looting-sensitive,
- * mirroring vanilla's {@code EnchantedCountIncreaseFunction.lootingMultiplier} convention
- * for entity drops -- see {@code VanillaEntityLoot}), the soldier has a chance at resin
- * too, and the larva drops nothing (it's meant to be captured, not killed). M4b adds the
- * Scent Gland (brewed into Pheromonal Disguise) to both castes.
+ * Loot tables for the colony's castes. Play-test round 1 (spec item 1, "chitin is
+ * soldier-only") narrowed chitin to {@link ModEntities#SOLDIER_ANT} and
+ * {@link ModEntities#TAMED_SOLDIER_ANT} only -- it used to also drop from both worker
+ * variants. The soldier's chitin is looting-sensitive (mirroring vanilla's {@code
+ * EnchantedCountIncreaseFunction.lootingMultiplier} convention for entity drops -- see
+ * {@code VanillaEntityLoot}) and has a chance at resin too; the larva drops nothing (it's
+ * meant to be captured, not killed). M4b's Scent Gland (brewed into Pheromonal Disguise)
+ * is unaffected by the chitin change: the wild worker keeps its pool exactly as before, and
+ * the wild soldier keeps its own alongside its chitin. Neither tamed caste gets a Scent
+ * Gland -- it is the colony's pheromone signature, and a tamed ant has been out of the
+ * nest since it hatched.
  *
  * <p>{@link #getKnownEntityTypes()} is overridden to return only this mod's registered
  * entity types: the base implementation defaults to {@code BuiltInRegistries.ENTITY_TYPE}
@@ -50,16 +56,20 @@ public class ModEntityLootSubProvider extends EntityLootSubProvider {
 
     @Override
     public void generate() {
+        // Play-test round 1 (spec item 1): chitin is soldier-only now. The worker keeps
+        // just its Scent Gland pool -- no chitin table at all.
         this.add(ModEntities.WORKER_ANT.get(),
-                chitinTable(0.0F, 2.0F).withPool(scentGlandPool(WORKER_SCENT_GLAND_CHANCE)));
+                LootTable.lootTable().withPool(scentGlandPool(WORKER_SCENT_GLAND_CHANCE)));
         this.add(ModEntities.SOLDIER_ANT.get(),
                 soldierTable().withPool(scentGlandPool(SOLDIER_SCENT_GLAND_CHANCE)));
         this.add(ModEntities.LARVA.get(), LootTable.lootTable());
-        // M6: a tamed ant drops the same chitin its wild counterpart does -- no Scent Gland
-        // though, since that is the colony's pheromone signature and a tamed ant has been
-        // out of the nest since it hatched. Its pack is returned separately by
-        // TamedWorkerAntEntity.dropCustomDeathLoot, which is inventory, not loot.
-        this.add(ModEntities.TAMED_WORKER_ANT.get(), chitinTable(0.0F, 2.0F));
+        // A tamed worker drops nothing from this table: it never had a Scent Gland (see the
+        // class javadoc), and it no longer has chitin either. Its pack is returned
+        // separately by TamedWorkerAntEntity.dropCustomDeathLoot, which is inventory, not
+        // loot.
+        this.add(ModEntities.TAMED_WORKER_ANT.get(), LootTable.lootTable());
+        // A tamed soldier keeps its chitin (+ resin chance) unchanged -- it was never in
+        // scope for the redistribution, only the worker/tamed-worker chitin was.
         this.add(ModEntities.TAMED_SOLDIER_ANT.get(), soldierTable());
         this.add(ModEntities.QUEEN_ANT.get(), queenTable());
     }
