@@ -2,11 +2,14 @@ package com.nogal.formicary.item;
 
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.ModBlocks;
+import com.nogal.formicary.effect.ModPotions;
 import com.nogal.formicary.entity.ModEntities;
 
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.PotionContents;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -37,9 +40,22 @@ public class ModCreativeModeTabs {
                         output.accept(ModItems.CHITIN_CHESTPLATE.get());
                         output.accept(ModItems.CHITIN_LEGGINGS.get());
                         output.accept(ModItems.CHITIN_BOOTS.get());
+                        // Play-test round 1: the Pheromonal Disguise potion was brewable but
+                        // absent from this tab -- PotionContents.createItemStack(Item, Holder
+                        // <Potion>) is the same helper vanilla's own CreativeModeTabs uses to
+                        // generate its potion rows (verified in reference/CreativeModeTabs.java's
+                        // generatePotionEffectTypes), so a bare Items.POTION/SPLASH_POTION/
+                        // LINGERING_POTION carrying our potion's PotionContents is a real,
+                        // drinkable stack, not a decorative icon.
+                        output.accept(PotionContents.createItemStack(Items.POTION, ModPotions.PHEROMONAL_DISGUISE));
+                        output.accept(
+                                PotionContents.createItemStack(Items.SPLASH_POTION, ModPotions.PHEROMONAL_DISGUISE));
+                        output.accept(PotionContents.createItemStack(Items.LINGERING_POTION,
+                                ModPotions.PHEROMONAL_DISGUISE));
                         output.accept(ModEntities.WORKER_ANT_SPAWN_EGG.get());
                         output.accept(ModEntities.SOLDIER_ANT_SPAWN_EGG.get());
                         output.accept(ModEntities.LARVA_SPAWN_EGG.get());
+                        output.accept(ModEntities.QUEEN_ANT_SPAWN_EGG.get());
                     })
                     .build());
 

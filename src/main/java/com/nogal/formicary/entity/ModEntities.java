@@ -76,13 +76,19 @@ public class ModEntities {
                             .build("tamed_soldier_ant"));
 
     /**
-     * The boss (M7). Placed by {@code ColonyChunkGenerator} in a throne chamber and nowhere
-     * else: no spawn placement, no spawn list entry, and deliberately no spawn egg, so the
-     * only queen in a world is the one the chamber generated.
+     * The boss (M7). Placed by {@code ColonyChunkGenerator} in a throne chamber, with no
+     * spawn placement and no spawn list entry -- she does not populate the world on her
+     * own, only the chamber places her naturally.
      *
      * <p>2.4 x 1.8 is a size, not a fit: her model's mandibles and abdomen tip overhang it
      * (she is about 3 blocks nose to tail), which is normal for a long mob and keeps the
      * collision box something that can path a 3-wide corridor.
+     *
+     * <p>Play-test round 1 reverses the M7-era "deliberately no spawn egg" call below --
+     * see {@link #QUEEN_ANT_SPAWN_EGG}. An egg-spawned queen has no {@code throneHome} (only
+     * {@link com.nogal.formicary.worldgen.ColonyChunkGenerator} calls {@code
+     * setThroneHome}), so unlike the generated boss she is not leashed to a chamber and will
+     * simply roam -- creative-mode summoning, not a second scripted encounter.
      */
     public static final DeferredHolder<EntityType<?>, EntityType<QueenAntEntity>> QUEEN_ANT =
             ENTITY_TYPES.register("queen_ant",
@@ -106,6 +112,18 @@ public class ModEntities {
     public static final DeferredItem<DeferredSpawnEggItem> LARVA_SPAWN_EGG =
             ModItems.ITEMS.registerItem("larva_spawn_egg",
                     props -> new DeferredSpawnEggItem(LARVA, 0xEEE0C4, 0xDE9E46, props));
+
+    /**
+     * Play-test round 1, spec item 5. Registered with the identical
+     * {@code DeferredItem<DeferredSpawnEggItem>} + {@code DeferredSpawnEggItem(type,
+     * background, highlight, props)} shape the three castes above already use. Colours are
+     * {@code Q_PLUM_BASE}/{@code Q_GOLD_BRIGHT} straight from her own palette in
+     * {@code assets-src/models.py} -- the plum shell and its brightest gold accent, the same
+     * "shell colour + brightest highlight" pairing {@link #SOLDIER_ANT_SPAWN_EGG} uses.
+     */
+    public static final DeferredItem<DeferredSpawnEggItem> QUEEN_ANT_SPAWN_EGG =
+            ModItems.ITEMS.registerItem("queen_ant_spawn_egg",
+                    props -> new DeferredSpawnEggItem(QUEEN_ANT, 0x461C30, 0xF4CA68, props));
 
     @EventBusSubscriber(modid = Formicary.MODID, bus = EventBusSubscriber.Bus.MOD)
     public static class ModBusEvents {

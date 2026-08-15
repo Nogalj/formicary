@@ -64,6 +64,8 @@ public class ModItemModelProvider extends ItemModelProvider {
         withExistingParent("worker_ant_spawn_egg", "item/template_spawn_egg");
         withExistingParent("soldier_ant_spawn_egg", "item/template_spawn_egg");
         withExistingParent("larva_spawn_egg", "item/template_spawn_egg");
+        // Play-test round 1, spec item 5.
+        withExistingParent("queen_ant_spawn_egg", "item/template_spawn_egg");
     }
 
     private void blockItem(String name) {

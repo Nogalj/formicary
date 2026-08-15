@@ -68,10 +68,10 @@ public class ModLanguageProvider extends LanguageProvider {
         addEntityType(ModEntities.TAMED_WORKER_ANT, "Tamed Worker Ant");
         addEntityType(ModEntities.TAMED_SOLDIER_ANT, "Tamed Soldier Ant");
 
-        // M7: no spawn egg either -- the only queen in a world is the one her chamber
-        // generated. This name is also what the boss bar reads (ServerBossEvent takes
-        // getDisplayName()).
+        // This name is also what the boss bar reads (ServerBossEvent takes getDisplayName()).
         addEntityType(ModEntities.QUEEN_ANT, "The Queen");
+        // Play-test round 1, spec item 5: reverses the M7-era "no spawn egg" call.
+        addItem(ModEntities.QUEEN_ANT_SPAWN_EGG, "Queen Ant Spawn Egg");
 
         add("itemGroup.formicary.formicary", "Formicary");
 

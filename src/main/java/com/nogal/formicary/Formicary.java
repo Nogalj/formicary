@@ -65,6 +65,8 @@ public class Formicary {
             event.accept(ModEntities.WORKER_ANT_SPAWN_EGG);
             event.accept(ModEntities.SOLDIER_ANT_SPAWN_EGG);
             event.accept(ModEntities.LARVA_SPAWN_EGG);
+            // Play-test round 1, spec item 5.
+            event.accept(ModEntities.QUEEN_ANT_SPAWN_EGG);
         }
     }
 }
