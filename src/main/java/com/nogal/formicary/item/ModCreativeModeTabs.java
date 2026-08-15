@@ -15,7 +15,9 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 
 /**
  * A single creative tab ("Formicary") holding every M1 block item + the resin item.
- * Icon is Anthill Core per spec.
+ * Icon is Anthill Soil -- the block the overworld mound is actually built from, so the tab
+ * reads as "the anthill" (play-test round 1; the spec's original Anthill Core icon showed the
+ * buried magma-vein core players never see from outside).
  */
 public class ModCreativeModeTabs {
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
@@ -25,7 +27,7 @@ public class ModCreativeModeTabs {
             "formicary",
             () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.formicary.formicary"))
-                    .icon(() -> ModBlocks.ANTHILL_CORE.toStack())
+                    .icon(() -> ModBlocks.ANTHILL_SOIL.toStack())
                     .displayItems((parameters, output) -> {
                         ModBlocks.BLOCKS.getEntries().forEach(entry -> output.accept(entry.get()));
                         output.accept(ModItems.RESIN.get());
