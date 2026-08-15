@@ -164,13 +164,53 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
         this.discard();
     }
 
-    /** An ally never turns on the player who summoned it, whichever goal proposed it. */
+    /**
+     * Two standing refusals, both enforced here rather than in a goal because
+     * {@code canAttack} is the one seam vanilla re-reads while a chase is <em>running</em>
+     * ({@code TargetGoal#canContinueToUse}) as well as when one is being picked
+     * ({@code TargetingConditions#test}):
+     * <ul>
+     *   <li>an ally never turns on the player who summoned it, whichever goal proposed it;</li>
+     *   <li>a wild soldier never attacks a disguised player -- see
+     *       {@link ColonyAnger#colonyMayAttack} for why the goals' own predicates were not
+     *       enough, and {@code HurtByTargetGoal} for the goal that used to slip through
+     *       (personal retaliation re-checks nothing about who it is chasing).</li>
+     * </ul>
+     */
     @Override
     public boolean canAttack(LivingEntity target) {
-        if (this.isAllied() && target instanceof Player player && this.isSummonedBy(player)) {
+        if (this.isAllied()) {
+            if (target instanceof Player summonerCandidate && this.isSummonedBy(summonerCandidate)) {
+                return false;
+            }
+        } else if (!ColonyAnger.colonyMayAttack(target)) {
             return false;
         }
         return super.canAttack(target);
+    }
+
+    /**
+     * Calls this soldier off {@code player} completely: the persistent anger, the current
+     * goal target, and the personal grudge that would re-acquire it.
+     *
+     * <p>All three are needed, and the queen's death grace (M7) only did the first, which is
+     * why killing her read as "nothing happened" in play. {@code stopBeingAngry} clears the
+     * {@code NeutralMob} state that {@link ColonyAngerTargetGoal} gates on, but a soldier
+     * that had personally been hit was being held on target by {@code HurtByTargetGoal}
+     * instead -- a goal that consults neither the anger flag nor the target predicate once
+     * it is running. Clearing {@code lastHurtByMob} is what stops that goal from simply
+     * re-acquiring on its next {@code canUse}.
+     */
+    public void forgive(Player player) {
+        if (this.isAngryAtPlayer(player)) {
+            this.stopBeingAngry();
+        }
+        if (this.getTarget() == player) {
+            this.setTarget(null);
+        }
+        if (this.getLastHurtByMob() == player) {
+            this.setLastHurtByMob(null);
+        }
     }
 
     /**

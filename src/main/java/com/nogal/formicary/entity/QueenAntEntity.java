@@ -21,6 +21,7 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
@@ -272,6 +273,12 @@ public class QueenAntEntity extends PathfinderMob {
      * The spec's reward for the fight: "on her death, every player within ~24 blocks gains
      * Pheromonal Disguise for ~3 min and existing colony anger toward them is cleared -- a
      * safe walk out."
+     *
+     * <p>Her killer is credited <em>regardless of distance</em>. The radius is a rule about
+     * bystanders -- who else the colony forgives on her account -- and reading it as a rule
+     * about the killer too silently voided the whole reward for anyone who finished her with
+     * a bow, or was knocked out of the chamber by the last phase burst. Play-test round 1
+     * ("killing the queen didn't give me the effect") is the report this answers.
      */
     @Override
     public void die(DamageSource damageSource) {
@@ -282,9 +289,34 @@ public class QueenAntEntity extends PathfinderMob {
         this.bossEvent.setProgress(0.0F);
         Vec3 origin = this.position();
         List<Player> caught = playersInRange(level, origin, GRACE_RADIUS);
-        // The killer counts even if the entity lookup missed them -- see pheromoneBurst.
-        addTargetIfPlayerInRange(caught, ColonyAnger.offenderOf(damageSource), origin, GRACE_RADIUS);
+        // The killer counts even if the entity lookup missed them -- see pheromoneBurst --
+        // and counts from any distance, unlike the bystanders around her.
+        addPlayer(caught, killerOf(level, damageSource));
         grantDeathGrace(level, origin, caught);
+    }
+
+    /**
+     * The player to credit with the killing blow: whoever swung or shot, or -- when one of
+     * the player's own ants landed it -- that ant's owner.
+     *
+     * <p>The fallback is deliberately local rather than folded into
+     * {@link ColonyAnger#offenderOf}: that helper's refusal to see through a mob is what
+     * delivers "tamed ants' fights never anger the colony or strip your disguise" (spec
+     * section 4), so teaching it about owners would break M6 to fix M7. Resolving the owner
+     * goes through the player list, so this branch is unreachable from a GameTest (a mock
+     * player is never added to the level) -- it is verified in {@code runClient}.
+     */
+    @Nullable
+    private static Player killerOf(ServerLevel level, @Nullable DamageSource damageSource) {
+        Player offender = ColonyAnger.offenderOf(damageSource);
+        if (offender != null) {
+            return offender;
+        }
+        if (damageSource != null && damageSource.getEntity() instanceof TamedAnt ant
+                && ant.getOwnerUUID() != null) {
+            return level.getEntity(ant.getOwnerUUID()) instanceof Player owner ? owner : null;
+        }
+        return null;
     }
 
     /**
@@ -292,6 +324,11 @@ public class QueenAntEntity extends PathfinderMob {
      *
      * <p>Public and list-taking for the same reason {@link #pheromoneBurst} is: a GameTest's
      * player is invisible to {@link #playersInRange}.
+     *
+     * <p>The colony is called off around {@code origin} <em>and</em> around each player the
+     * grace reached, because {@link #die} no longer requires the killer to be inside
+     * {@link #GRACE_RADIUS} of her -- the soldiers still chasing a killer who backed out of
+     * the chamber are near that killer, not near her throne.
      */
     public static void grantDeathGrace(ServerLevel level, Vec3 origin, List<Player> caught) {
         if (caught.isEmpty()) {
@@ -302,13 +339,29 @@ public class QueenAntEntity extends PathfinderMob {
         }
         level.sendParticles(ParticleTypes.FALLING_HONEY, origin.x, origin.y + 1.0, origin.z, 200, 5.0, 2.0, 5.0, 0.01);
 
-        AABB area = AABB.ofSize(origin, GRACE_RADIUS * 2.0, GRACE_RADIUS * 2.0, GRACE_RADIUS * 2.0);
+        callColonyOff(level, origin, caught);
+        for (Player player : caught) {
+            callColonyOff(level, player.position(), caught);
+        }
+    }
+
+    /**
+     * Calls every wild colony ant within {@link #GRACE_RADIUS} of {@code centre} off the
+     * players in {@code caught}, immediately -- anger, current target and personal grudge
+     * alike (see {@link SoldierAntEntity#forgive}).
+     *
+     * <p>Horn-summoned allies are skipped: {@code ColonyAnger.isColonyAnt} already excludes
+     * them everywhere else, and an ally is the player's fighter rather than the colony's, so
+     * the colony standing down has nothing to say about it.
+     */
+    private static void callColonyOff(ServerLevel level, Vec3 centre, List<Player> caught) {
+        AABB area = AABB.ofSize(centre, GRACE_RADIUS * 2.0, GRACE_RADIUS * 2.0, GRACE_RADIUS * 2.0);
         for (SoldierAntEntity soldier : level.getEntitiesOfClass(SoldierAntEntity.class, area)) {
+            if (soldier.isAllied()) {
+                continue;
+            }
             for (Player player : caught) {
-                if (soldier.isAngryAtPlayer(player)) {
-                    soldier.stopBeingAngry();
-                    break;
-                }
+                soldier.forgive(player);
             }
         }
         for (WorkerAntEntity worker : level.getEntitiesOfClass(WorkerAntEntity.class, area)) {
@@ -331,9 +384,16 @@ public class QueenAntEntity extends PathfinderMob {
 
     private static void addTargetIfPlayerInRange(List<Player> caught, @Nullable Object candidate,
             Vec3 origin, double radius) {
-        if (candidate instanceof Player player && player.isAlive() && !player.isSpectator()
-                && player.distanceToSqr(origin) <= radius * radius && !caught.contains(player)) {
-            caught.add(player);
+        if (candidate instanceof Player player && player.distanceToSqr(origin) <= radius * radius) {
+            addPlayer(caught, player);
+        }
+    }
+
+    /** Adds {@code candidate} to {@code caught} if it is a living, non-spectator newcomer. */
+    private static void addPlayer(List<Player> caught, @Nullable Player candidate) {
+        if (candidate != null && candidate.isAlive() && !candidate.isSpectator()
+                && !caught.contains(candidate)) {
+            caught.add(candidate);
         }
     }
 
@@ -383,6 +443,18 @@ public class QueenAntEntity extends PathfinderMob {
     @Override
     public boolean canBeLeashed() {
         return false;
+    }
+
+    /**
+     * She is a wild colony ant, so the disguise binds her at the continuation layer too --
+     * see {@link ColonyAnger#colonyMayAttack}. {@link QueenHostilityGoal} already documents
+     * her as blind to a disguised player ("which is what lets a disguised player walk her
+     * chamber to scout"); without this she would acquire nobody but never let go of anyone,
+     * because {@code HurtByTargetGoal} re-checks only {@code canAttack}.
+     */
+    @Override
+    public boolean canAttack(LivingEntity target) {
+        return ColonyAnger.colonyMayAttack(target) && super.canAttack(target);
     }
 
     // -------------------------------------------------------------- sounds --

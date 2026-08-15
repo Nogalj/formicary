@@ -14,6 +14,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -58,6 +59,31 @@ public final class ColonyAnger {
     /** A player the colony is willing to turn on: alive, not a spectator, not disguised. */
     public static boolean isValidTarget(@Nullable Player player) {
         return player != null && player.isAlive() && !player.isSpectator() && !isDisguised(player);
+    }
+
+    /**
+     * Whether a <em>wild</em> colony ant may attack {@code target} <em>right now</em> --
+     * the continuation-layer half of the disguise rule.
+     *
+     * <p>Every target goal in this mod already refuses to <em>acquire</em> a disguised
+     * player, but acquisition is not where a chase lives. Vanilla's
+     * {@code TargetGoal#canContinueToUse} never re-runs the goal's own
+     * {@code TargetingConditions} predicate: it only re-checks {@code mob.canAttack(target)},
+     * team, distance and line of sight. So a soldier already mid-chase kept attacking a
+     * player who had just become disguised -- which is exactly what "killing the queen
+     * didn't give me the effect that makes the ants not hostile" looked like from inside
+     * the fight.
+     *
+     * <p>Wiring this into the ants' {@code canAttack} override makes the disguise
+     * authoritative at both layers at once, because {@code canAttack} is read by
+     * {@code TargetGoal#canContinueToUse} <em>and</em> by
+     * {@code TargetingConditions#test}. It deliberately upgrades the brewed potion too: the
+     * Pheromonal Disguise now breaks an existing aggro rather than only preventing a new
+     * one. The abuse case that guards is unchanged -- {@link #provoke} strips the effect
+     * before anything else happens, so a disguise buys a disengage, never a free hit.
+     */
+    public static boolean colonyMayAttack(LivingEntity target) {
+        return !(target instanceof Player player) || !isDisguised(player);
     }
 
     // -------------------------------------------------------------- triggers --
