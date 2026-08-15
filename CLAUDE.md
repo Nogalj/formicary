@@ -5,7 +5,9 @@ savanna anthill; four ant mobs; a larva-raising loop that yields crop-harvesting
 ants. Spec: `D:\MyProjects\_notes\formicary-build-prompt.md`. Decisions log: `docs/DECISIONS.md`.
 
 This file tells Claude Code how the repo is wired and the correctness rules to follow.
-Keep it updated: every time a version-specific mistake is caught, bank the fix here as a rule.
+Keep it updated: every time a version-specific mistake is caught, bank the fix verbatim in
+the matching `docs/gotchas/` file and add a symptom-keyed line to the index below. Only a
+rule that fires in most sessions AND fits in ~2 lines stays resident here.
 
 ## Project facts
 
@@ -33,14 +35,11 @@ from `project.mod_id` in `build.gradle`, so the namespace is `formicary`). After
 run `.\gradlew build` and fix every compile error before claiming a task is done -- the
 compiler is the source of truth, not training memory.
 
-GameTest facts (verified 2026-08-01 in ModTest, same pins): there is NO built-in empty
-structure template -- `@GameTest(template=...)` needs a real `.nbt` at
-`data/formicary/structure/<name>.nbt`. This repo generates its own with
-`python assets-src\structures.py` (5x3x5 `platform` + 48x3x5 `long_platform`; add a size
-to that script's `TEMPLATES` dict rather than hand-authoring nbt). Annotate the test class
-`@GameTestHolder(Formicary.MODID)` and methods `@PrefixGameTestTemplate(false)` or the
-template resolves under the wrong namespace/class-name prefix. GameTestServer runs at
-NORMAL difficulty (Monsters safe).
+Live texture/JSON iteration without restarting the client: edit assets ->
+`.\gradlew processResources` -> F3+T in the running client (dev runs read
+`build/resources/main`). Java class changes still need a client restart.
+(`verified: 2026-08-13`)
+
 1.21 datapack folders: `loot_table` (singular) and `neoforge/biome_modifier`.
 
 ## Ground truth -- do NOT trust training memory for API signatures
@@ -54,6 +53,8 @@ NeoForge across many versions. Before using any MC/NeoForge symbol, verify again
 3. The official 1.21 MDK: https://github.com/NeoForgeMDKs/MDK-1.21-ModDevGradle
 
 If a signature cannot be verified, say so -- never invent one.
+`reference/` is a PARTIAL extraction -- a missing class is NOT a missing API. Re-extract
+recipe + the log of what each milestone added: `docs/gotchas/reference-extraction.md`.
 
 ## Hard rules (footguns)
 
@@ -71,389 +72,58 @@ If a signature cannot be verified, say so -- never invent one.
 
 ## Entity models -- art pipeline
 
-Programmer art first: the no-Blockbench pipeline from ModTest (`assets-src/models.py`
-there) is the reference approach -- one python spec per model drives both the texture
-painting (PIL) and orthographic QA previews (`assets-src/previews/`), then the same
-numbers are hand-translated into `LayerDefinition` Java. Box-UV face rects in ModTest's
-script are verified against decompiled `ModelPart.java` -- trust it over memory.
-This repo now has its own `assets-src/models.py` (worker ant, M2) -- add new mobs as
-another spec dict there rather than starting a new script. Run
-`python assets-src\models.py` to regenerate textures + previews after edits; its
-preview renderer is a real orthographic projection (rotations applied Rz*Ry*Rx, faces
-depth-sorted), so what the contact sheet shows is what the game draws.
-Entity textures go to `src/main/resources/assets/formicary/textures/entity/`.
-`D:\MyProjects\ModTest\src\main\java\com\nogal\modtest\client\model\TarantulaModel.java`
-is a known-correct 1.21 entity model reference.
+Programmer art, no Blockbench: one spec dict per mob in `assets-src/models.py` drives both
+texture painting and orthographic QA previews -- run `python assets-src\models.py` after
+edits. Before ANY model/render work, open `docs/gotchas/entity-models.md` (1.21 signature
+changes, held-item layer, UV rules, the full pipeline description).
 
-1.21 entity-model rules (all verified in ModTest):
+## Gotcha index -- open on symptom match
 
-1. **`renderToBuffer` takes an int colour, not four floats.** `Model` declares
-   `renderToBuffer(PoseStack, VertexConsumer, int, int, int color)` and `ModelPart.render`
-   has only `(PoseStack, VertexConsumer, int, int)` / `(..., int color)` overloads.
-2. **`new ResourceLocation(...)` is gone** -- use `ResourceLocation.fromNamespaceAndPath(ns, path)`.
-3. `LayerDefinition.create(mesh, W, H)` bakes the texture resolution -- it must match the
-   painted texture or UVs are wrong.
-4. In `setupAnim`, write rest poses **absolutely** every frame. Reading a part's current
-   `zRot` to use as a rest value accumulates drift, because nothing resets a plain
-   `EntityModel`'s parts between frames (only `HierarchicalModel.animate()` does).
+All under `docs/gotchas/`. Every entry is a verbatim banked rule with its `verified:`
+date; the index line is the only route to it -- open the file before working in its
+subsystem, and bank new rules there, not here.
 
-## Banked rules (caught during this build)
-
-- **Datagen `BlockLootSubProvider.getKnownBlocks()` defaults to EVERY block in the game**
-  (`BuiltInRegistries.BLOCK`) -- leave it unoverridden and runData throws "Missing
-  loottable" for all vanilla blocks. Always override it to return this mod's
-  `ModBlocks.BLOCKS.getEntries()`. (`verified: 2026-08-13`)
-- **Live texture/JSON iteration without restarting the client:** edit assets ->
-  `.\gradlew processResources` -> F3+T in the running client (dev runs read
-  `build/resources/main`). Java class changes still need a client restart.
-  (`verified: 2026-08-13`)
-- **A plain `MobRenderer` draws NOTHING for a mob's main-hand item.** Vanilla's
-  `ItemInHandLayer` requires the model to implement `ArmedModel`, which no custom
-  non-humanoid does. Copy `FoxHeldItemLayer` instead: a `RenderLayer` that parks the
-  PoseStack on the head pivot, follows the head rotation, then calls
-  `context.getItemInHandRenderer().renderItem(entity, stack, ItemDisplayContext.GROUND,
-  false, poseStack, buffer, light)`. See `client/renderer/WorkerAntCarriedItemLayer.java`.
-  (`verified: 2026-08-13`)
-- **`reference/` is a PARTIAL extraction** (it was seeded from ModTest's block/datagen-era
-  copy). A missing class is not a missing API. Re-extract on demand from
-  `build/moddev/artifacts/neoforge-21.0.167-sources.jar` with
-  `[System.IO.Compression.ZipFile]::OpenRead(...)` filtered by package prefix -- M2 had to
-  add `world/phys`, `client/renderer`, `world/item`, `core`, `util`, `com/mojang/math`,
-  `world/level/EntityGetter.java`, `world/level/Level.java` and
-  `world/entity/ai/navigation`. M3b had to add the whole of `tags/`,
-  `data/tags/`, `world/level/storage/loot/` and `advancements/critereon/`, plus
-  `server/level/ServerLevel.java`, `world/entity/ai/targeting/TargetingConditions.java`,
-  `world/entity/player/Player.java`, `world/damagesource/DamageSources.java` and
-  `net/neoforged/neoforge/common/NeoForge.java`. M3a had to add `world/InteractionResult.java`,
-  `world/InteractionHand.java`, `world/item/ItemUtils.java`,
-  `data/loot/EntityLootSubProvider.java` + `packs/VanillaEntityLoot.java`,
-  `world/entity/EntityType.java`, `world/entity/player/Inventory.java`,
-  `world/level/storage/loot/{parameters/LootContextParamSets,predicates/
-  LootItemRandomChanceCondition,functions/EnchantedCountIncreaseFunction,
-  functions/SetItemCountFunction,providers/number/UniformGenerator,
-  entries/LootItem,LootPool,LootTable}.java` and `sounds/SoundSource.java`. M6 had to add
-  `world/{Container,SimpleContainer,ContainerHelper,CompoundContainer,WorldlyContainer,
-  Containers,ContainerListener}.java`,
-  `world/level/block/entity/{ChestBlockEntity,BaseContainerBlockEntity,
-  RandomizableContainerBlockEntity}.java`,
-  `world/entity/{OwnableEntity}.java`, `world/entity/ai/goal/{GoalSelector,
-  target/TargetGoal}.java` and `network/syncher/{EntityDataSerializers,
-  SynchedEntityData}.java`. M7 had to add `world/BossEvent.java` (the top-level
-  `net/minecraft/world/*.java` files are thin on the ground in this copy -- a sibling of an
-  already-present class is no guarantee). (`verified: 2026-08-13`)
-- **NeoForge event names for 1.21 that training memory gets wrong.** All three verified in
-  the extracted 21.0.167 sources: damage is
-  `net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent` (fires in
-  `LivingEntity#hurt` before mitigation -- the old `LivingHurtEvent` is GONE, and
-  `LivingDamageEvent` is now an abstract `Pre`/`Post` pair fired later in the sequence);
-  block breaking is `net.neoforged.neoforge.event.level.BlockEvent.BreakEvent`; mining
-  speed is `net.neoforged.neoforge.event.entity.player.PlayerEvent.BreakSpeed`
-  (`getOriginalSpeed()` / `getNewSpeed()` / `setNewSpeed(float)`). The game bus enum is
-  `EventBusSubscriber.Bus.GAME` -- and `EventBusSubscriber` ships in the FML *loader* jar
-  (`net.neoforged.fancymodloader:loader`), NOT the neoforge sources jar, so `javap` on
-  that jar is the only way to check it. (`verified: 2026-08-13`)
-- **1.21 armor materials are a REGISTRY, not an enum.** `Registries.ARMOR_MATERIAL`;
-  vanilla builds each entry with `Registry.registerForHolder(...)` in `ArmorMaterials`,
-  and `ArmorItem` takes a `Holder<ArmorMaterial>` -- so a `DeferredRegister` +
-  `DeferredHolder` is the mod-side equivalent and no ordering dance is needed
-  (`ArmorItem` memoises its attribute modifiers, so it never dereferences the holder
-  during registration). The `ArmorMaterial.Layer` asset name resolves to
-  `<ns>:textures/models/armor/<path>_layer_1.png` (outer: HEAD/CHEST/FEET) and
-  `_layer_2.png` (inner: LEGS only -- `HumanoidArmorLayer.usesInnerModel` returns true
-  just for `EquipmentSlot.LEGS`). Humanoid overlay UV rects are 64x32 with head at
-  `texOffs(0,0) 8x8x8`, body `(16,16) 8x12x4`, arm `(40,16) 4x12x4`, leg `(0,16) 4x12x4`.
-  (`verified: 2026-08-13`)
-- **Custom loot conditions:** register a `LootItemConditionType(MapCodec<...>)` into
-  `Registries.LOOT_CONDITION_TYPE` via `DeferredRegister`; copy vanilla's
-  `LootItemKilledByPlayerCondition` shape (stateless singleton + `MapCodec.unit`). The
-  player who broke a block arrives as `LootContextParams.THIS_ENTITY`, which
-  `LootContextParamSets.BLOCK` declares **optional** -- use `getParamOrNull`, and declare
-  it in `getReferencedContextParams()` or datagen validation rejects the table.
-  (`verified: 2026-08-13`)
-- **GameTest structure templates can be written straight from python** -- gzipped NBT,
-  root compound with `size` (LIST<INT>), `entities` (empty LIST<END>), `blocks`
-  (LIST<COMPOUND> of `{pos: LIST<INT>[3], state: INT}`), `palette` (LIST<COMPOUND> of
-  `{Name: STRING}`) and `DataVersion: 3953`. `assets-src/structures.py` does it; the
-  layout was verified by reading ModTest's `platform.nbt` back, not recalled.
-  `GameTestHelper.makeMockPlayer(GameType)` returns a bare `Player` that is **never added
-  to the level**, so it can carry a `DamageSource` (vanilla's damage events then fire for
-  real) but it cannot drive `ServerPlayerGameMode`, and `level.getNearestPlayer` will not
-  see it. (`verified: 2026-08-13`)
-- **`EntityLootSubProvider.getKnownEntityTypes()` defaults to EVERY entity type in the
-  game** (`BuiltInRegistries.ENTITY_TYPE`) -- the same trap as
-  `BlockLootSubProvider.getKnownBlocks()` (above), and it throws "Missing loottable" for
-  every vanilla mob if left unoverridden. Always override it to return just this mod's
-  `EntityType`s. `EntityType#getDefaultLootTable()` derives the table id as
-  `entities/<namespace>/<path>` automatically, so `add(EntityType, builder)` (no explicit
-  key) is enough. (`verified: 2026-08-13`)
-- **Custom worldgen: the registries hold `MapCodec`s, not instances.** A data-driven
-  `dimension` JSON names a generator via its `"type"` field, which
-  `ChunkGenerator.CODEC` / `BiomeSource.CODEC` dispatch through
-  `BuiltInRegistries.CHUNK_GENERATOR` / `BIOME_SOURCE`. So the DeferredRegisters are
-  `DeferredRegister<MapCodec<? extends ChunkGenerator>>` against `Registries.CHUNK_GENERATOR`
-  (path `worldgen/chunk_generator`) and `Registries.BIOME_SOURCE` (`worldgen/biome_source`),
-  and what you register is the class's `CODEC` field. Miss the bridge and the server dies at
-  JSON parse, not at runtime. Datapack directories: `data/<ns>/dimension_type/` for
-  `Registries.DIMENSION_TYPE`, and **`data/<ns>/dimension/`** for `Registries.LEVEL_STEM`
-  -- the registry named `minecraft:dimension` holds `LevelStem`, while `Registries.DIMENSION`
-  is the separate runtime `Level` registry sharing that id. (`verified: 2026-08-13`)
-- **`BiomeSource#getNoiseBiome` takes QUART coordinates, not blocks** (one sample per
-  4x4x4). Convert with `QuartPos.toBlock(y)` before comparing against block-space Y bands,
-  or every boundary lands at a quarter of its intended height. Verified against
-  `BiomeSource#getBiomesWithin` and `TheEndBiomeSource`. (`verified: 2026-08-13`)
-- **A custom `ChunkGenerator` never receives the world seed.** `fillFromNoise` /
-  `buildSurface` only get a `RandomState`; take seeded randomness from
-  `randomState.getOrCreateRandomFactory(ResourceLocation)`, which forks the level seed and
-  is cached per name. (For a non-`NoiseBasedChunkGenerator`, `ChunkMap` builds that
-  `RandomState` from `NoiseGeneratorSettings.dummy()` and the real level seed.)
-  `PerlinNoise.create(random, List.of(0))` is the predictable primitive: with a single
-  octave 0 both of its internal scale factors come out as exactly 1.0, so `getValue` is raw
-  `ImprovedNoise` at the coordinates you pass and your thresholds mean something stable.
-  Measured span over ~1M samples: min -0.90, max 0.91, mean |v| 0.215. (`verified: 2026-08-13`)
-- **`NaturalSpawner.spawnMobsForChunkGeneration` only ever populates the topmost cave in a
-  `has_ceiling` dimension.** Its `getTopNonCollidingPos` takes the ceiling branch and walks
-  down to the *first* air pocket below the roof, and `NoiseBasedChunkGenerator` feeds it the
-  biome at `maxBuildHeight - 1`. In a vertically banded dimension, calling it once per band
-  fills the top band N times and leaves the rest empty -- write a per-band spawner instead.
-  Also: an `EntityType` with no registered `SpawnPlacements` falls back to
-  `NO_RESTRICTIONS`, which approves spawning inside solid blocks; register
-  `SpawnPlacementTypes.ON_GROUND` via `RegisterSpawnPlacementsEvent` (mod bus).
-  (`verified: 2026-08-13`)
-- **`GameTestServer` cannot see datapack dimensions.** It bakes the `WorldPresets.FLAT`
-  preset into a deliberately empty `LevelStem` registry, so a custom dimension is absent
-  from the test server no matter what the datapack says. Verify dimension loading with
-  `runServer` (the save grows `world/dimensions/<ns>/<path>/`), not with a GameTest.
-  (`verified: 2026-08-13`)
-- **`ProtoChunk#getBlockState` masks X/Z with `& 15`.** Reading a neighbour one block
-  outside the chunk silently wraps to the opposite edge of the *same* chunk instead of
-  failing. Anything in worldgen that looks sideways must either stay inside the chunk or
-  recompute from a position-pure function. (`verified: 2026-08-13`)
-- **`GameTestHelper.absolutePos(0,0,0)` is the STRUCTURE BLOCK, not the template's own
-  origin** -- the placed template sits one block above it, so a template's `y=0` layer (the
-  arena floor) is at *relative* `y=1`, and standable air starts at relative `y=2`. Every
-  existing test in this repo happens to work either way (they place blocks at rel y=1,
-  overwriting a floor block, and `helper.spawn` pushes entities out of solids), which is why
-  it went unnoticed until M5 wrote a test that read the floor. Rule of thumb for anything
-  height-sensitive: write every block the assertion reads, and derive Ys from
-  `absolutePos` of a position you wrote. (`verified: 2026-08-13`)
-- **A data-driven structure a mod can point at its own `.nbt` must be `minecraft:jigsaw`.**
-  Every other registered structure type (`desert_pyramid`, `igloo`, `swamp_hut`,
-  `ocean_ruin`, ...) generates its pieces in Java, so its JSON has no template field at all
-  -- checked against the vanilla files in
-  `build/moddev/artifacts/neoforge-21.0.167-client-extra-aka-minecraft-resources.jar`, which
-  is the place to read real 1.21 worldgen JSON shapes. Jigsaw with `size: 1` and a
-  one-element `template_pool` is the single-piece case. Datapack dirs (all under
-  `data/<ns>/`): `worldgen/structure`, `worldgen/template_pool`, `worldgen/structure_set`,
-  and the template itself in `structure/`. `spawn_overrides` is a REQUIRED field of every
-  structure JSON; `terrain_adaptation` is optional. Placement: with
-  `"project_start_to_heightmap"` set, `JigsawPlacement.addPieces` moves the piece so
-  `boundingBox.minY() + getGroundLevelDelta() == firstFreeHeight`, and
-  `getGroundLevelDelta()` is **1** and is not overridden by `SinglePoolElement` -- so
-  template `y=0` lands on the topmost solid block (replacing the surface block) and `y=1` is
-  the first block standing proud of the ground. (`verified: 2026-08-13`)
-- **A hand-written structure NBT that omits air leaves the terrain alone.**
-  `StructureTemplate.placeInWorld` only ever touches positions listed in `blocks`, so a
-  template with no air entries stamps its shape onto the world instead of clearing a box
-  first. (Vanilla-saved structures DO list their air, which is why
-  `legacy_single_pool_element` and its `BlockIgnoreProcessor.STRUCTURE_AND_AIR` exist.)
-  `assets-src/structures.py` writes layered templates this way. (`verified: 2026-08-13`)
-- **`ProjectileImpactEvent` cancel does not stop the projectile.** `ThrowableProjectile#tick`
-  reads `if (hit != MISS && !EventHooks.onProjectileImpact(this, hit)) hitTargetOrDeflectSelf(hit);`
-  -- cancelling suppresses `onHit` (and with it the pearl's teleport, fall damage and
-  endermite roll) but leaves the entity alive and still moving, so it must be `discard()`ed
-  explicitly or it fires the event again on the next block. Event class is
-  `net.neoforged.neoforge.event.entity.ProjectileImpactEvent`. Also: there is no bare
-  `PlayerTickEvent` to subscribe to in 1.21 -- it is an abstract `Pre`/`Post` pair under
-  `net.neoforged.neoforge.event.tick`. (`verified: 2026-08-13`)
-- **Data attachments are a real registry**, `NeoForgeRegistries.Keys.ATTACHMENT_TYPES`, so
-  `DeferredRegister.create(...)` + registering `AttachmentType.builder(...).build()` is the
-  pattern. Three traps: `getData` *stores the default in the holder* and so can never mean
-  "absent" -- use `getExistingData` for optional state; `copyOnDeath()` throws unless a
-  serializer was set first, and without it a serialised attachment survives relogs but NOT
-  respawns; and `serialize(Codec)` is the easy route (`BlockPos.CODEC` exists).
-  (`verified: 2026-08-13`)
-- **Cross-dimension teleport in 1.21 is `DimensionTransition`, not `PortalInfo`.** The
-  command-equivalent entry point is
-  `ServerPlayer#teleportTo(ServerLevel, x, y, z, Set<RelativeMovement>, yRot, xRot)` -- it
-  adds the `TicketType.POST_TELEPORT` chunk ticket, then delegates to
-  `teleportTo(ServerLevel, x, y, z, yaw, pitch)`, which routes a cross-dimension move through
-  `changeDimension(new DimensionTransition(...))`. The plain `teleportTo(double, double,
-  double)` cannot change dimension at all. Generate the destination chunk yourself
-  (`level.getChunk(cx, cz)`) before reading blocks there: an ungenerated chunk reads as air
-  all the way down, which looks exactly like a safe landing spot. (`verified: 2026-08-13`)
-- **`TamableAnimal` traps.** (a) `mobInteract` is **public** by the time it reaches
-  `Animal`, so an override in any `TamableAnimal` subclass must be `public` too --
-  `protected` (what `PathfinderMob` subclasses in this repo use) is a compile error, not a
-  warning. (b) `OwnerHurtByTargetGoal` and `OwnerHurtTargetGoal` both open with
-  `if (isTame() && !isOrderedToSit())`, so vanilla's sit/stay cannot back a "stays put but
-  still fights" mode -- that needs its own flag. (c) `OwnableEntity#getOwner` resolves
-  through `level().getPlayerByUUID`, so it is always null for a `GameTestHelper` mock
-  player; assert on `getOwnerUUID()` instead. (`verified: 2026-08-13`)
-- **`Mob.serverAiStep` runs `goalSelector.tick()` -- and therefore every non-running goal's
-  `canUse()` -- only on alternating ticks** (`(tickCount + getId()) % 2`); the other tick
-  gets `tickRunningGoals(false)`. Anything budgeting work per `canUse` call is really
-  budgeting per *two* ticks. (`verified: 2026-08-13`)
-- **`@GameTest(skyAccess = ...)` defaults to FALSE, which roofs the arena in BARRIER
-  blocks** (`GameTestInfo.prepareTestStructure` -> `StructureUtils.encaseStructure(bounds,
-  level, !skyAccess)`; the side walls are placed either way). Any assertion that depends on
-  sky light -- `CropBlock#canSurvive` calls `hasSufficientLight`, so planting a crop is one
-  -- fails silently under the default. (`verified: 2026-08-13`)
-- **Vanilla crop loot is not uniformly self-seeding.** Read out of
-  `data/minecraft/loot_table/blocks/*.json` in the client-extra jar: `carrots` and `potatoes`
-  have an unconditional first pool (always >=1, and that item is the seed), while `wheat`'s
-  seed pool is the fortune-binomial one alone -- ~9% of breaks yield zero `wheat_seeds`. Pick
-  carrots/potatoes for any test that has to replant deterministically. (`verified: 2026-08-13`)
-- **Container transfer: `HopperBlockEntity.getContainerAt(Level, BlockPos)` and
-  `addItem(@Nullable Container source, Container dest, ItemStack, @Nullable Direction)` are
-  the public entry points** (the first handles double chests via `ChestBlock.getContainer`).
-  `tryMoveInItem` hands the destination the *same* `ItemStack` object when the target slot is
-  empty and returns `ItemStack.EMPTY`, so the caller MUST write the returned remainder back
-  into its own slot or the two containers alias one stack. (`verified: 2026-08-13`)
-- **A chunk generated by a bare `level.getChunk(cx, cz)` never loads its worldgen entities.**
-  The chunk reaches `ChunkStatus.FULL`, but the entities `spawnOriginalMobs` handed to the
-  `WorldGenRegion` live in the `ProtoChunk` and are only handed to the level by
-  `LevelChunk.runPostLoad()`, which fires on the `FullChunkStatus` promotion a *ticket*
-  drives -- and they are not written by `ChunkSerializer` either (entities have their own
-  storage since 1.17), so they are silently lost on save. Any probe or tool that generates
-  chunks in order to look at what spawned must take a ticket:
-  `ServerLevel#setChunkForced(x, z, true)` is the one-liner. Cost an M7 probe run: the queen
-  logged as seated and then could not be found, on a chunk that had already been written to
-  disk without her. (`verified: 2026-08-13`)
-- **1.21 boss-bar and mob-signature gotchas.** `ServerBossEvent(Component, BossBarColor,
-  BossBarOverlay)` lives in `net.minecraft.server.level`, its enums in
-  `net.minecraft.world.BossEvent` (which is NOT in the seeded `reference/` -- extract
-  `net/minecraft/world/BossEvent.java`), and the plumbing is `Entity#startSeenByPlayer` /
-  `#stopSeenByPlayer` overridden to `addPlayer`/`removePlayer` (copy `WitherBoss`). Two
-  signatures that training memory gets wrong and the compiler catches:
-  `Mob#canBeLeashed()` takes **no** `Player` in 1.21, and `LivingEntity#getVoicePitch()` is
-  **public**, so a `protected` override is a "weaker access privileges" error. `Mob` also does
-  **not** persist its `restrictTo` restriction -- save the centre yourself and re-apply it in
-  `readAdditionalSaveData` or a relog frees the mob. (`verified: 2026-08-13`)
-- **Vanilla's owner-aware goals are `TamableAnimal`-only.** `OwnerHurtByTargetGoal`,
-  `OwnerHurtTargetGoal` and `FollowOwnerGoal` all take a `TamableAnimal` in their constructors,
-  so a "temporarily allied" mob that is not one has to reimplement them. The vanilla shape
-  worth copying is the timestamp guard: read `getLastHurtByMob()` / `getLastHurtMob()` together
-  with `getLastHurtByMobTimestamp()` / `getLastHurtMobTimestamp()` and refuse to re-adopt a
-  grudge whose timestamp you have already seen. (`verified: 2026-08-13`)
-- **`RecipeProvider`'s hook is `protected void buildRecipes(RecipeOutput)`** (the
-  `(RecipeOutput, HolderLookup.Provider)` overload just delegates), and its constructor takes
-  the `CompletableFuture<HolderLookup.Provider>` from `GatherDataEvent#getLookupProvider`,
-  not a resolved provider. Output folders are `data/<ns>/recipe/` (singular, like
-  `loot_table`) and `data/<ns>/advancement/recipes/<category>/`. (`verified: 2026-08-13`)
-- **`ShapedRecipeBuilder.pattern`'s empty-slot character is a literal space (`' '`), not
-  `#`** -- only `' '` is special-cased (and reserved: `.define(' ', ...)` throws); any other
-  character, `#` included, must be `.define`d or `runData` fails with "Pattern references
-  symbol '#' but it's not defined in the key". (`verified: 2026-08-14`)
-- **A `CropBlock` subclass needing a non-default age range must override
-  `createBlockStateDefinition` too, not just `getAgeProperty`/`getMaxAge`.**
-  `CropBlock.createBlockStateDefinition` does `builder.add(AGE)` -- a direct reference to
-  `CropBlock`'s own *static* `AGE` field (`AGE_7`), not `this.getAgeProperty()`. A field
-  reference inside an inherited, unoverridden method is not virtual, so skipping this
-  override silently builds the block with wheat's 8-value property while every other method
-  asks for the subclass's own one -- caught at registration with "Cannot get property ...
-  does not exist in Block". `BeetrootBlock` re-overrides this for the identical reason, and
-  is the pattern to copy wholesale (`getAgeProperty`, `getMaxAge`, `getBaseSeedId`,
-  `randomTick`, `createBlockStateDefinition`, `getShape` if the age count changed the
-  render height too). (`verified: 2026-08-14`)
-- **`CropBlock.getGrowthSpeed` is `static`, so a subclass cannot override it virtually** --
-  `CropBlock.randomTick` calls it unqualified, which resolves at compile time to
-  `CropBlock`'s own copy regardless of the runtime type. To retune growth speed, override
-  `randomTick` itself and gate the `super.randomTick(...)` call behind an extra random
-  check -- `BeetrootBlock` is vanilla's own proof of this exact technique
-  (`random.nextInt(3) != 0`). (`verified: 2026-08-14`)
-- **A custom advancement `CriterionTrigger` registers into `Registries.TRIGGER_TYPE`
-  (`BuiltInRegistries.TRIGGER_TYPES`) via `DeferredRegister`** -- the same shape
-  `ModLootConditions` already uses for `Registries.LOOT_CONDITION_TYPE`. Vanilla's own
-  `CriteriaTriggers` registers each trigger the same way with a bare `new` instead of a
-  deferred constructor reference. A trigger class extends `SimpleCriterionTrigger<T>` (T a
-  record implementing `SimpleCriterionTrigger.SimpleInstance`, at minimum an `Optional
-  <ContextAwarePredicate> player()`); firing is `myTrigger.get().trigger(serverPlayer, ...)`
-  from the gameplay code that earns it. `Advancement`'s own codec rejects an empty criteria
-  map, so even a root advancement needs at least one -- vanilla's `story/root` uses
-  `PlayerTrigger.TriggerInstance.tick()`, a criterion granted the moment the player exists,
-  for exactly this reason. (`verified: 2026-08-14`)
-- **`GameTestHelper.makeMockPlayer` returns a bare `Player`, not a `ServerPlayer`** -- it
-  has no `getAdvancements()`, so a custom `CriterionTrigger`'s actual award cannot be
-  asserted through it. The only alternative, `makeMockServerPlayerInLevel()`, is
-  `@Deprecated(forRemoval = true)` and adds a real player to the level via the player list.
-  A trigger's own matching/predicate logic (a pure function on its `TriggerInstance`) is
-  still directly testable; the award itself is not, headlessly. (`verified: 2026-08-14`)
-- **Clearing a mob's target does NOT make it stay cleared -- a running `TargetGoal` puts
-  it straight back.** `TargetGoal#canContinueToUse` opens with `livingentity =
-  mob.getTarget(); if (livingentity == null) livingentity = this.targetMob;` and ends with
-  `mob.setTarget(livingentity)`, so the goal re-installs its own cached target on the next
-  goal-cleanup tick. It also never re-runs the goal's `TargetingConditions` predicate --
-  only `mob.canAttack(target)`, team, distance and line of sight. **`canAttack(LivingEntity)`
-  is therefore the only seam that binds a chase both while it is being picked
-  (`TargetingConditions#test` calls it) and while it is running.** Any "this mob must stop
-  attacking X" rule belongs there, not in a target goal's predicate. Corollary: vanilla's
-  `NeutralMob#stopBeingAngry` already clears `lastHurtByMob`, the persistent anger target
-  AND `setTarget(null)` -- so "the anger was cleared but the target wasn't" is almost never
-  the real diagnosis; "it was cleared and re-installed two ticks later" usually is.
-  (`verified: 2026-08-15`)
-- **`LivingEntity.hurt` returns early -- before it records `lastHurtByMob` -- when
-  `invulnerableTime > 10 && amount <= lastHurt`, but fires `LivingIncomingDamageEvent`
-  *above* that return.** So a follow-up hit no bigger than the previous one still provokes
-  everything hooked to the damage event while recording no grudge, no knockback and no
-  actual damage. This bites GameTests specifically: `helper.spawn` drops a mob far enough
-  to deal 1.0 fall damage, so a 1.0F test swing a few ticks later is a silent no-op that
-  *looks* like it landed. Hit for meaningfully more (6.0F works) whenever the test depends
-  on `hurt` returning true. (`verified: 2026-08-15`)
-- **`HurtByTargetGoal.canUse` compares `mob.getLastHurtByMobTimestamp()` against its own
-  `timestamp` field, which starts at `0`** -- so damage dealt on the mob's spawn tick
-  (`tickCount == 0`) is invisible to the goal permanently, since the two match. A test that
-  needs a mob to acquire a target through personal retaliation must let a tick or two pass
-  before landing the hit. (`verified: 2026-08-15`)
-- **A structure template can carry ENTITIES, and a jigsaw piece always places them.**
-  `SinglePoolElement.getSettings` calls `setIgnoreEntities(false)` and
-  `setFinalizeEntities(true)` unconditionally, so template entities are spawned the instant
-  the piece generates and get `finalizeSpawn(..., MobSpawnType.STRUCTURE, null)`. NBT layout
-  (read out of `StructureTemplate.load`, not recalled): `entities` LIST&lt;COMPOUND&gt; of
-  `{pos: LIST<DOUBLE>[3], blockPos: LIST<INT>[3], nbt: COMPOUND}`, where `nbt` needs only
-  `id` -- `addEntitiesToWorld` overwrites `Pos` itself before calling
-  `EntityType.create(CompoundTag, Level)`, but `Motion` and `Rotation` are read from what
-  you wrote. **`blockPos` is the silent one:** it is tested against
-  `placementIn.getBoundingBox()` and an entity outside the template footprint is dropped
-  with no log line. `assets-src/structures.py` writes them. (`verified: 2026-08-15`)
-- **`MobCategory.CREATURE` barely spawns at runtime, and in a dimension whose mobs never
-  despawn it does not spawn at all.** Two independent gates, both verified in the 1.21
-  sources: `CREATURE.isPersistent()` is `true` and `NaturalSpawner.spawnForChunk` skips a
-  persistent category unless `forcedDespawn` is set, which `ServerChunkCache.tickChunks`
-  only passes on `gameTime % 400 == 0`; and `SpawnState.canSpawnForCategory` caps CREATUREs
-  at `10 * spawnableChunkCount / 289` (about ten per player), counting every mob that is not
-  `isPersistenceRequired()`. Any mob overriding `removeWhenFarAway` to `false` therefore
-  occupies that cap forever. Design consequence for this mod: the colony's population is
-  whatever `spawnOriginalMobs` seeds, permanently. (`verified: 2026-08-15`)
-- **A headless tool on the mod's classpath must not touch a class whose static initialiser
-  reaches `BuiltInRegistries`.** `NoiseProbe` runs without `Bootstrap.bootStrap()`, so
-  merely *referencing* a static method on `ColonyChunkGenerator` loads its superclass
-  `ChunkGenerator`, whose `<clinit>` builds a registry codec and dies with
-  `IllegalArgumentException: Not bootstrapped`. Shared arithmetic the probe needs belongs in
-  a registry-free class -- `ColonyGeneratorTunables` is the one here. (`verified: 2026-08-15`)
-- **`TamableAnimal`'s ancestor `Animal` overrides `getBaseExperienceReward()` to a flat
-  `1 + random.nextInt(3)`, ignoring `Mob#xpReward` completely.** Setting `this.xpReward` in
-  a `TamableAnimal` subclass's constructor -- the pattern that works for every
-  `PathfinderMob`-direct entity, where `Mob.getBaseExperienceReward()` reads the field --
-  compiles clean and silently does nothing. A tamed caste that needs a specific XP reward
-  must override `getBaseExperienceReward()` itself. Verified in the decompiled `Animal.java`
-  and caught by a GameTest asserting an orb value outside `Animal`'s 1-3 fallback range.
-  (`verified: 2026-08-15`)
-- **`DropExperienceBlock` decouples a block's XP from its loot table entirely.** Its
-  `getExpDrop()` is read by a NeoForge `BlockDropsEvent`, fired from
-  `CommonHooks.handleBlockDrops` on every `Block.dropResources` call, independently of
-  whatever the loot table drops as items -- so a block can have an empty (or silk-touch-
-  only) loot table and still pop XP on every break. Silk Touch forfeits that XP
-  unconditionally regardless of the block's own data: `Enchantments.java`'s `SILK_TOUCH`
-  registration attaches a `BLOCK_EXPERIENCE` effect of
-  `SetValue(LevelBasedValue.constant(0.0F))` to every silk-touched break in the game.
-  `UniformInt.of(3, 7)` is the exact range vanilla constructs diamond/emerald ore with.
-  (`verified: 2026-08-15`)
-- **`GameTestHelper.destroyBlock(pos)` hardcodes `dropBlock=false`** (`this.getLevel()
-  .destroyBlock(this.absolutePos(pos), false, null)`) -- it skips `Block.dropResources`
-  entirely, so neither the loot table nor a `DropExperienceBlock`'s `BlockDropsEvent` XP
-  fires. A test asserting on break drops needs the real pipeline: `level.destroyBlock(pos,
-  true)` (the `LevelWriter` default overload, `dropBlock=true`), not the helper's shortcut.
-  (`verified: 2026-08-15`)
+- **runData floods "Missing loottable" for vanilla blocks/mobs**; a custom loot condition
+  fails datagen validation; "Pattern references symbol '#' but it's not defined in the
+  key"; `RecipeProvider` ctor/override shape + output folders; custom advancement
+  `CriterionTrigger` registration or the codec rejecting empty criteria -> `datagen.md`
+- **Writing or debugging ANY GameTest** (open it FIRST -- several traps fail silently):
+  structure-template NBT authoring, arena floor off-by-one (`absolutePos` is the structure
+  block), BARRIER roof killing light-dependent asserts (`skyAccess`), mock-player limits
+  (no advancements, invisible to `getNearestPlayer`), custom dimension absent on
+  GameTestServer, replant tests flaking ~9% on wheat seeds, `helper.destroyBlock` dropping
+  nothing and popping no XP (it hardcodes `dropBlock=false`) -> `gametest.md`.
+  A test swing that lands no damage and leaves no grudge is the `hurt` invulnerability
+  window -- that one is in `entity-ai.md`.
+- **Server dies at JSON parse loading a dimension**; biome bands land at 1/4 height; mobs
+  spawn only in the top band or inside solid blocks; a neighbour read wraps to the same
+  chunk (`& 15`); jigsaw/structure/template-pool JSON shapes; a template stamps terrain
+  without clearing air; a mob that spawned during generation vanishes from a
+  `getChunk`-generated chunk; an entity baked into a template silently never appears (its
+  `blockPos` fell outside the piece bounds); `MobCategory.CREATURE` mobs never spawn at
+  runtime at all; a headless tool dies with `IllegalArgumentException: Not bootstrapped`
+  -> `worldgen.md`
+- **Mob AI / taming / boss**: `mobInteract` access compile error, sit/stay vs guard mode,
+  goals only ticking every other tick, boss-bar plumbing, "weaker access privileges" on
+  `getVoicePitch`, `canBeLeashed` signature, mob forgets its `restrictTo` post on relog,
+  owner-aware goals for non-`TamableAnimal` allies, a cleared target that comes back two
+  ticks later (or a mob that will not stop attacking something -- the seam is `canAttack`),
+  a hit that provokes damage handlers but records no grudge/knockback/damage (the
+  `invulnerableTime` early return -- bites 1.0F GameTest swings), retaliation invisible
+  when the hit lands on the mob's spawn tick, `xpReward` set on a `TamableAnimal` but the
+  mob still drops 1-3 XP -> `entity-ai.md`
+- **Any entity model/render work**: held item invisible, `renderToBuffer` signature,
+  UV/texture-resolution mismatch, `setupAnim` drift; full art pipeline -> `entity-models.md`
+- **Which 1.21 event replaced `LivingHurtEvent` / `PlayerTickEvent`**; `javap` can't find
+  `EventBusSubscriber`; a cancelled pearl keeps flying after `ProjectileImpactEvent`;
+  cross-dimension teleport no-ops (`DimensionTransition`) -> `events-portals.md`
+- **Armor materials / layer textures**; data attachments (`getData` stores the default,
+  `copyOnDeath` throws, respawn loss); two containers sharing one `ItemStack`; "Cannot get
+  property ... does not exist in Block" (CropBlock AGE); crop growth-speed retune; a block
+  that pops XP with an empty loot table, or Silk Touch zeroing that XP
+  -> `items-blocks.md`
+- **A class is missing from `reference/`** -> it's a partial extraction, not a missing
+  API; re-extract recipe + per-milestone log -> `reference-extraction.md`
 
 ## Workflow
 
