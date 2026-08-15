@@ -42,6 +42,8 @@ STRUCTURE_DIR = REPO_ROOT / "src/main/resources/data/formicary/structure"
 DATA_VERSION = 3953
 
 TAG_END = 0
+TAG_FLOAT = 5
+TAG_DOUBLE = 6
 TAG_INT = 3
 TAG_STRING = 8
 TAG_LIST = 9
@@ -61,6 +63,16 @@ def _int(value):
 
 def _int_list(values):
     return bytes([TAG_INT]) + _int(len(values)) + b"".join(_int(v) for v in values)
+
+
+def _double_list(values):
+    return bytes([TAG_DOUBLE]) + _int(len(values)) + b"".join(
+        struct.pack(">d", v) for v in values)
+
+
+def _float_list(values):
+    return bytes([TAG_FLOAT]) + _int(len(values)) + b"".join(
+        struct.pack(">f", v) for v in values)
 
 
 def _compound(entries):
@@ -105,12 +117,43 @@ def build_platform(width, height, depth):
     return bytes([TAG_COMPOUND]) + _string("") + root
 
 
-def build_from_layers(layers, legend):
+def _entity(entity_id, x, y, z, yaw=0.0):
+    """One entry of a template's `entities` list.
+
+    Layout read back out of decompiled `StructureTemplate.load` (1.21):
+
+        entities LIST<COMPOUND> of
+          pos       LIST<DOUBLE>[3]   exact spawn position, template-relative
+          blockPos  LIST<INT>[3]      the block it belongs to
+          nbt       COMPOUND          entity data; only `id` is required
+
+    Two details are load-bearing. `blockPos` is what `addEntitiesToWorld` tests
+    against the placement bounding box, so an entity whose blockPos falls outside
+    the template footprint is silently dropped. And `nbt` is passed to
+    `EntityType.create(CompoundTag, Level)`, which resolves `id` and then calls
+    `Entity#load` -- `Pos` is overwritten by the placer, but `Motion` and
+    `Rotation` are read straight out of what is written here.
+    """
+    return _compound([
+        (TAG_LIST, "pos", _double_list([x, y, z])),
+        (TAG_LIST, "blockPos", _int_list([int(x), int(y), int(z)])),
+        (TAG_COMPOUND, "nbt", _compound([
+            (TAG_STRING, "id", _string(entity_id)),
+            (TAG_LIST, "Pos", _double_list([x, y, z])),
+            (TAG_LIST, "Motion", _double_list([0.0, 0.0, 0.0])),
+            (TAG_LIST, "Rotation", _float_list([yaw, 0.0])),
+        ])),
+    ])
+
+
+def build_from_layers(layers, legend, entities=()):
     """A template painted from a list of character grids, one per Y level.
 
     `layers[y][z][x]` is the legend key at (x, y, z); '.' means "no entry", i.e.
     leave whatever the world already has there. `legend` maps the remaining
     characters to block ids. Every layer must be the same rectangle.
+
+    `entities` is a list of (entity_id, x, y, z) placed with the template.
     """
     depth = len(layers[0])
     width = len(layers[0][0])
@@ -137,10 +180,12 @@ def build_from_layers(layers, legend):
                 ]))
 
     palette = [_compound([(TAG_STRING, "Name", _string(n))]) for n in palette_names]
+    entity_tags = [_entity(*spec) for spec in entities]
 
     root = _compound([
         (TAG_LIST, "size", _int_list([width, len(layers), depth])),
-        (TAG_LIST, "entities", _empty_list()),
+        (TAG_LIST, "entities",
+         _compound_list(entity_tags) if entity_tags else _empty_list()),
         (TAG_LIST, "blocks", _compound_list(blocks)),
         (TAG_LIST, "palette", _compound_list(palette)),
         (TAG_INT, "DataVersion", _int(DATA_VERSION)),
@@ -253,8 +298,37 @@ ANTHILL_LAYERS = [
     ],
 ]
 
+# Play-test round 1: "there should be worker ants around the anthills".
+#
+# Baked into the template rather than driven by `spawn_overrides` or a biome
+# modifier, and the reason is the acceptance criterion -- a FRESHLY GENERATED
+# anthill has to have workers visibly next to it. `spawn_overrides` only
+# redirects vanilla's natural spawner inside the structure's bounding box, and
+# that spawner runs one attempt per chunk per 400 ticks for MobCategory.CREATURE
+# and refuses to place anything within 24 blocks of a player -- so an anthill the
+# player is standing at would be empty, which is precisely the case that matters.
+# A biome modifier is the wrong shape entirely: it would put workers across the
+# whole savanna rather than around the anthills.
+#
+# Template entities are placed the moment the structure generates.
+# `SinglePoolElement.getSettings` calls `setIgnoreEntities(false)` and
+# `setFinalizeEntities(true)` unconditionally (checked in the decompiled 1.21
+# sources), so a jigsaw piece places them and calls finalizeSpawn with
+# MobSpawnType.STRUCTURE.
+#
+# Positions: y=1 is the first layer standing proud of the ground and the mound
+# occupies x,z in [1,5] there, so the four sides of the 7x7 footprint are open
+# air with the y=0 excavated-soil ring underneath -- ants stand on the ring,
+# outside the mound, on three different sides of it. Workers override
+# removeWhenFarAway to false, so they are still there when the player arrives.
+ANTHILL_ENTITIES = [
+    ("formicary:worker_ant", 0.5, 1.0, 3.5, 90.0),
+    ("formicary:worker_ant", 6.5, 1.0, 2.5, 270.0),
+    ("formicary:worker_ant", 3.5, 1.0, 6.5, 0.0),
+]
+
 LAYERED_TEMPLATES = {
-    "anthill": (ANTHILL_LAYERS, ANTHILL_LEGEND),
+    "anthill": (ANTHILL_LAYERS, ANTHILL_LEGEND, ANTHILL_ENTITIES),
 }
 
 
@@ -265,13 +339,14 @@ def main():
         out.write_bytes(gzip.compress(build_platform(w, h, d), mtime=0))
         print(f"wrote {out.relative_to(REPO_ROOT)}  ({w}x{h}x{d})")
 
-    for name, (layers, legend) in LAYERED_TEMPLATES.items():
+    for name, (layers, legend, entities) in LAYERED_TEMPLATES.items():
         out = STRUCTURE_DIR / f"{name}.nbt"
-        out.write_bytes(gzip.compress(build_from_layers(layers, legend), mtime=0))
+        out.write_bytes(gzip.compress(build_from_layers(layers, legend, entities), mtime=0))
         placed = sum(row.count(ch) for layer in layers for row in layer
                      for ch in set(row) if ch != ".")
         w, h, d = len(layers[0][0]), len(layers), len(layers[0])
-        print(f"wrote {out.relative_to(REPO_ROOT)}  ({w}x{h}x{d}, {placed} blocks)")
+        print(f"wrote {out.relative_to(REPO_ROOT)}  "
+              f"({w}x{h}x{d}, {placed} blocks, {len(entities)} entities)")
 
 
 if __name__ == "__main__":
