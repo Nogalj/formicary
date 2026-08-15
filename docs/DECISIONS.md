@@ -1213,3 +1213,87 @@ Owner feedback, five items.
     self-resolves on any full rebuild and is not a code defect this package can fix.
     Recorded here rather than silently skipped so the "fix" is legible: this item was
     diagnosed, not ignored.
+
+### Tamed-ant QoL: state feedback on every cycle, and ground pickup in harvest state
+
+Owner feedback, two items, both on the two tamed castes (`TamedWorkerAntEntity`,
+`TamedSoldierAntEntity`).
+
+- **"Appear in the chat" was deliberately read as "the actionbar", not literal chat.**
+  Both castes already have a precedent in this repo for exactly this shape of feedback --
+  `TrailPheromoneItem.use` calls `serverPlayer.displayClientMessage(Component.translatable
+  (...), true)` for its own transient "nothing to retrace" notice -- and vanilla's own
+  overlay conventions (XP-level-up text, "Can't sleep now", subtitle-style status) use the
+  actionbar for exactly this "you just changed something, here's the new state" shape
+  rather than chat, which is for a conversation log. A one-line flip to
+  `displayClientMessage(..., false)` reverses this if the owner prefers real chat after
+  trying it. Every send sits inside the branch of `mobInteract` that already read
+  `!this.level().isClientSide` for its sound-effect call (both castes had one already) --
+  `mobInteract` genuinely runs on both the client and the server copy of the entity for a
+  single right-click, and `Player.displayClientMessage` is a no-op on the base `Player`
+  class, only doing anything on the real `ServerPlayer` override (`Player.java` line 1516
+  vs `ServerPlayer.java` line 1395, both read out of `reference/` directly) -- so the guard
+  is about not depending on that no-op by accident, not about a crash risk.
+- **Two castes, two different "cycles", four keys.** The worker's state is not toggled by
+  one handler: `TamedWorkerAntEntity.mobInteract`'s sneak branch only ever *unbinds*
+  (`state.following`); binding happens from the chest-click side,
+  `TamedWorkerAntEntity.bindNearestFollower`, called from `TamedAntEvents`
+  (`state.harvesting`). Both call sites already had a distinct-outcome guard for their own
+  reasons (an `isBound()` check, an "already unbound, nothing to bind" implicit filter via
+  `!ant.isBound()` in the entity stream predicate) so no new state-tracking was needed to
+  avoid sending a message on a click that changed nothing. The soldier's
+  `toggleStationed()` is a real two-way flip, so its one call site sends whichever of
+  `state.escort` / `state.guard_post` the toggle just landed on. Named `entity.formicary.
+  tamed_worker_ant.state.*` / `entity.formicary.tamed_soldier_ant.state.*` rather than a
+  shared key set, since "Harvesting" and "Escort" are not swappable words for the same
+  concept across the two castes.
+- **Ground pickup ranked below the crop harvest, verified against `WrappedGoal`, not
+  assumed.** `WrappedGoal.canBeReplacedBy` (`GoalSelector.java` / `WrappedGoal.java` in
+  `reference/`) is `this.isInterruptable() && other.getPriority() < this.getPriority()` --
+  a running goal can only be preempted by a *strictly lower* priority number. So
+  `CollectDroppedItemsGoal` is registered at priority 3, one below `HarvestCropsGoal`'s 2:
+  whichever of the two locks the `MOVE`/`LOOK` flags first in a given tick, the priority
+  check in `canBeReplacedBy` means harvest can always take the flags away from a running
+  pickup (2 < 3), while pickup can never take them from a running harvest (3 is not < 2) --
+  so a crop always wins the field regardless of which goal's `canUse` happened to be
+  evaluated first that tick, and a crop that becomes harvestable *while* the worker is
+  mid-walk to a ground item preempts the walk outright rather than the two goals fighting
+  over the flags. Exactly the brief's "does not fight the crop-harvest goal", not just
+  "runs at a different time by luck". `DepositToChestGoal` stays at 1, so a full pack still
+  wins over either. Every
+  goal below pickup (`FollowOwnerGoal` through `RandomLookAroundGoal`) shifted from
+  3-7 to 4-8 to make room; none of their own `canUse` guards depend on the literal number,
+  only on `isBound()`, so the renumbering changes nothing about when they run.
+- **Pickup reuses `store()`, not a new inventory path -- and deliberately does not reset
+  `idleHarvestTicks`.** `TamedWorkerAntEntity.pickUpGroundItem` mirrors `WorkerAntEntity
+  .pickUpCarriedItem`'s vanilla bookkeeping (`onItemPickup` + `take` + `discard`, the same
+  shape that already existed for the wild worker's `RelocateItemGoal`) and then hands the
+  stack to the pack through the existing `store()`, so the "nothing it picks up is ever
+  destroyed" contract (overflow pops back to the floor) covers ground pickup for free with
+  no new logic. `idleHarvestTicks` is left untouched by a pickup on purpose: it is the
+  *harvest* idle clock that decides when `DepositToChestGoal` starts a trip regardless of a
+  full pack, and letting a pickup reset it would let a worker stall a deposit trip
+  indefinitely by continuously grazing nearby drops while never actually harvesting. The
+  clock still starts at 0 from `bindTo`, so the trip-after-idle path in the new GameTest
+  needs no crop at all to exercise the deposit half.
+- **Search radius 10 blocks, centred on the worker itself, not the bound chest.** The spec
+  said "~8-12 blocks"; 10 is the midpoint and matches the shape of `RelocateItemGoal`'s own
+  search box (`ant.getBoundingBox().inflate(radius, 4.0, radius)`), which this goal copies
+  almost verbatim rather than re-deriving a different area from the anchor -- a harvesting
+  worker roams the whole patrol field over time (via `CropScanner`'s cursor and
+  `MoveTowardsRestrictionGoal`), so "near the ant" already sweeps the field the same way
+  "near the anchor" would, without a second coordinate system to keep in sync with
+  `PATROL_RADIUS`.
+- **A player's fresh drop is read via vanilla's own pickup-delay field, no new cooldown
+  invented.** `ItemEntity`'s 5-arg convenience constructor (verified in `reference/`,
+  `ItemEntity.java` line 63) leaves `pickupDelay` at Java's default `0` -- only
+  `setDefaultPickUpDelay()` (10 ticks) or an explicit call sets it -- so "ignore
+  `hasPickUpDelay()`" is exactly "ignore anything within its first half-second on the
+  ground", covering both a player's own toss and a mob's death drop (both vanilla paths
+  call `setDefaultPickUpDelay()`), while a drop that has been sitting for a while is fair
+  game. Same filter `RelocateItemGoal` already applies for the wild worker's ambient
+  tidying, so tamed and wild worker read "is this actually up for grabs" identically.
+  Covered by its own GameTest (`a_freshly_dropped_item_under_pickup_delay_is_left_alone`)
+  asserting `canUse()` directly, rather than folding the negative case into the polling
+  positive test, since a `succeedWhen` that polls for "nothing happened" cannot
+  distinguish "correctly ignored" from "hasn't gotten around to it yet".
