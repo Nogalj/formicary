@@ -404,6 +404,32 @@ is a known-correct 1.21 entity model reference.
   (`tickCount == 0`) is invisible to the goal permanently, since the two match. A test that
   needs a mob to acquire a target through personal retaliation must let a tick or two pass
   before landing the hit. (`verified: 2026-08-15`)
+- **A structure template can carry ENTITIES, and a jigsaw piece always places them.**
+  `SinglePoolElement.getSettings` calls `setIgnoreEntities(false)` and
+  `setFinalizeEntities(true)` unconditionally, so template entities are spawned the instant
+  the piece generates and get `finalizeSpawn(..., MobSpawnType.STRUCTURE, null)`. NBT layout
+  (read out of `StructureTemplate.load`, not recalled): `entities` LIST&lt;COMPOUND&gt; of
+  `{pos: LIST<DOUBLE>[3], blockPos: LIST<INT>[3], nbt: COMPOUND}`, where `nbt` needs only
+  `id` -- `addEntitiesToWorld` overwrites `Pos` itself before calling
+  `EntityType.create(CompoundTag, Level)`, but `Motion` and `Rotation` are read from what
+  you wrote. **`blockPos` is the silent one:** it is tested against
+  `placementIn.getBoundingBox()` and an entity outside the template footprint is dropped
+  with no log line. `assets-src/structures.py` writes them. (`verified: 2026-08-15`)
+- **`MobCategory.CREATURE` barely spawns at runtime, and in a dimension whose mobs never
+  despawn it does not spawn at all.** Two independent gates, both verified in the 1.21
+  sources: `CREATURE.isPersistent()` is `true` and `NaturalSpawner.spawnForChunk` skips a
+  persistent category unless `forcedDespawn` is set, which `ServerChunkCache.tickChunks`
+  only passes on `gameTime % 400 == 0`; and `SpawnState.canSpawnForCategory` caps CREATUREs
+  at `10 * spawnableChunkCount / 289` (about ten per player), counting every mob that is not
+  `isPersistenceRequired()`. Any mob overriding `removeWhenFarAway` to `false` therefore
+  occupies that cap forever. Design consequence for this mod: the colony's population is
+  whatever `spawnOriginalMobs` seeds, permanently. (`verified: 2026-08-15`)
+- **A headless tool on the mod's classpath must not touch a class whose static initialiser
+  reaches `BuiltInRegistries`.** `NoiseProbe` runs without `Bootstrap.bootStrap()`, so
+  merely *referencing* a static method on `ColonyChunkGenerator` loads its superclass
+  `ChunkGenerator`, whose `<clinit>` builds a registry codec and dies with
+  `IllegalArgumentException: Not bootstrapped`. Shared arithmetic the probe needs belongs in
+  a registry-free class -- `ColonyGeneratorTunables` is the one here. (`verified: 2026-08-15`)
 
 ## Workflow
 

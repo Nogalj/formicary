@@ -775,3 +775,160 @@ meaningfully change gameplay go to Logan instead of here.
   stored `timestamp`, which starts at `0`** -- so a hit landed on the spawn tick is
   invisible to the goal forever, because the timestamps match. Any test that needs a mob
   to actually acquire through personal retaliation has to let a tick or two pass first.
+
+### Worldgen and spawning: the colony felt empty and the deep tiers looked alike
+
+Six owner items, one package, because four of them turned out to be the same complaint
+seen from different angles: everything interesting was spread thin and evenly, so
+nothing was anywhere in particular. Comb was a per-block chance on every wall, brood
+was a per-block chance on every floor, ants arrived in ones and twos, and the two
+deepest tiers shared a fabric block. The fix in every case is concentration -- fewer
+places, more in them.
+
+- **Nursery chambers are built exactly like the throne room, and that is the decision.**
+  A carved room can be placed at a free XZ and left to the noise to connect, or it can
+  be hung off the connectivity ramp at a fixed offset with its floor set to the exact Y
+  that ramp's walkway reaches at the approach bearing -- which makes it reachable by
+  construction. M7 chose the second for the queen because a sealed boss is
+  unrecoverable. The same argument holds here for a different reason: after item 2,
+  nursery chambers are the *only* larva source in the game, so a sealed one is a
+  quantity of unreachable content, not a curiosity. Copying the construction wholesale
+  also meant the probe's throne walkability check generalised into `chamberWalk` and
+  covers both.
+
+- **The cell is 96 blocks because 48 measurably failed.** The first pass tied the
+  nursery grid to `SHAFT_SPACING`, one chamber per ramp, which reads beautifully as a
+  rule ("every ramp has a brood room off it") and produced 21x the throne count. The
+  probe then found two chambers 5.8 blocks apart: with a 48-block cell and a 24-block
+  approach in a free direction, two neighbours can point at each other and meet. One
+  chamber's forced-solid shell had sealed the other's corridor with its brood inside --
+  113 standable floor blocks, 0 reachable. Considered and rejected: an air-wins-over-
+  solid merge rule in `nurseryState`, which un-seals the room but leaves two rooms at
+  different floor heights joined by an unannounced drop, and a lower-hash suppression
+  rule between neighbouring cells, which works but costs 81 chamber evaluations per
+  chunk and is a lot of machinery to make a bad spacing survivable. 96 is simply the
+  smallest cell at which the overlap cannot happen: centres land within 56 blocks of
+  their cell centre and no nearer than 8, so neighbours are at least 32 apart against
+  the 16 their shells need. Density is 5.4x the throne chambers, at a fifth of the size.
+
+- **`NURSERY_FLOOR_MIN_Y` clears the ramp's landing chamber, and that is a bug fix, not
+  a margin.** The first version allowed floors from y=52. `shaftState` outranks every
+  chamber in `isAir`, and a landing chamber is carved around each ramp axis at every
+  tier boundary -- radius 11, y in [48, 54) here. A corridor whose forced-solid walkway
+  fell inside that band had its floor deleted for the 1-2 blocks where the landing disc
+  overhangs the ramp's annulus, so the doorway opened onto a five-block drop into the
+  landing and the room scored 0 reachable. Raising the minimum by `LANDING_HEIGHT` fixes
+  it at the source; all 27 chambers across three seeds now pass.
+
+- **The nursery corridor's floor is forced solid; the throne's is not.** Deliberate
+  asymmetry. The throne's 34-block approach sits in the Royal Depths (17% air) and the
+  probe has always shown it landing on ground; a nursery hangs 24 blocks out in the
+  Nurseries, the airiest band in the dimension (24%), where leaving the floor to the
+  noise would eventually produce a doorway over a void. The forced floor cannot conflict
+  with the ramp, which is checked first and agrees with it by construction: the
+  chamber's floor Y *is* the ramp's walkway height at that bearing.
+
+- **Larvae and egg clusters both become chamber-only, and it is the same argument.** The
+  larva row is gone from the Nurseries biome; `EGG_CLUSTER_CHANCE_BY_TIER` is deleted
+  outright rather than zeroed, so nothing can quietly turn it back on. A block that
+  appears on 6% of a whole tier's floors is scenery; the same block appearing only where
+  the brood is makes the brood room worth walking into. Chamber-seeded larvae get
+  `setPersistenceRequired`, which is also what keeps them out of the CREATURE cap the
+  ambient ants have to share.
+
+- **Generation-time seeding stops reading the biome spawn lists.** This is the only way
+  to get a mixed party: a `WeightedRandomList` draws one `SpawnerData` per group, so a
+  vanilla spawn group is one caste by construction and no set of weights changes that.
+  Composition moves to `ColonyGeneratorTunables` as an explicit 3-4 workers plus one
+  soldier, with soldiers placed first so the escort ends up at the seed position. Density
+  is stated as clusters per chunk rather than as vanilla's geometric probability, whose
+  expectation is `p/(1-p)` -- the old knob could not be reasoned about without doing that
+  algebra first. Measured by simulating both schemes against the same air field with the
+  same floor-search loss: 3.95-4.47 ants per chunk against 1.66-1.88, i.e. 2.3-2.7x.
+
+- **Runtime respawn: checked, effectively absent, left alone.** The item asked what the
+  dimension actually has, and the answer is close to nothing. `MobCategory.CREATURE` is
+  a *persistent* category, and `NaturalSpawner.spawnForChunk` skips a persistent category
+  unless its `forcedDespawn` flag is set, which `ServerChunkCache.tickChunks` only passes
+  on `gameTime % 400 == 0` -- one attempt per loaded chunk per 20 seconds at best. The
+  cap then closes the door: `SpawnState.canSpawnForCategory` allows
+  `10 * spawnableChunkCount / 289` CREATUREs, about ten for one player, counting every
+  mob that is not persistence-required -- and every colony ant overrides
+  `removeWhenFarAway` to false (M2's deliberate choice: a resident that evaporates at 128
+  blocks looks broken), so the cap is permanently full. The population is therefore fixed
+  at generation. Left that way on purpose: ants that vanish behind you would be a far
+  worse dimension than one that does not repopulate, and topping the cap up by marking
+  the ambient ants persistent would let the trickle add ants forever with nothing to
+  remove them. The biome lists are kept, minus the larva, so what little does get through
+  spawns the right castes in the right tiers.
+
+- **The Royal Depths' threshold goes negative rather than the palette gaining a block.**
+  `HARDENED_ACCENT_THRESHOLD_BY_TIER[0]` was 0.10, which made the tier 36% Hardened Soil
+  and 64% Deep Loam -- the same Deep Loam that is 88% of the Nurseries directly above, so
+  the two deepest tiers genuinely were the same colour. Setting it to -0.26 inverts the
+  tier to 80-83% hardened, with the remainder Deep Loam mottling and resin veins (raised
+  from -0.42 to -0.46 to carry the amber accent now that they are not sitting in a field
+  of loam). No new block types, per the brief; the numbers came from the probe's own
+  measured distribution of the accent field rather than from guessing.
+
+- **Comb is gated by a field before its chance, not by a lower chance.** A flat 17% on
+  every roomy Nurseries surface is a speckle generator -- what makes a patch read as one
+  thing is a low-frequency field deciding *where*, with a high per-block chance inside
+  deciding *how solid*. Position-pure rather than a chunk-local flood fill from a lucky
+  roll, so a patch stays whole across a chunk boundary. `COMB_PATCH_XZ_SCALE` sets patch
+  size and was chosen by measurement: 0.11 gave the Nurseries patches averaging 13 blocks
+  with a 133-block monster in a 96x96 sample (the blobs had begun to percolate into
+  sheets), 0.18 gives 6.6-8.2. Totals over three seeds: 124-143 comb per 1000 roomy
+  surfaces against the old 178, and 10-13 against 14 in the Royal Depths.
+
+  The probe measures patches with 26-connectivity, not 6. That was a deliberate change
+  after the first measurement: comb clings to a jagged noise wall where two blocks
+  sharing only an edge still read as one patch, and face connectivity was reporting the
+  same geometry at a third of its size (mean 2.5 against 7.8).
+
+  Chamber comb keeps flat chances and skips the patch gate. A 12-block room whose walls
+  are a third comb is already the patch; running a field designed to break up a gallery
+  wall inside it would have deleted roughly nine tenths of the rooms' comb for no gain.
+
+- **Overworld workers are baked into the anthill template's `entities` list.** Three
+  mechanisms were available and only one satisfies the acceptance criterion, which is
+  about a *freshly generated* anthill. `spawn_overrides` only redirects vanilla's natural
+  spawner inside the structure's bounding box, and that spawner is the same 1-in-400-tick
+  CREATURE path described above -- with a 24-block minimum distance from any player, so
+  the anthill someone is standing at is exactly the case it will not fill. A biome
+  modifier is the wrong shape: it would put workers across the whole savanna rather than
+  around the anthills. Template entities are placed the instant the piece generates;
+  `SinglePoolElement.getSettings` sets `ignoreEntities` false and `finalizeEntities` true
+  unconditionally, verified in the decompiled sources. `assets-src/structures.py` grows a
+  TAG_DOUBLE/TAG_FLOAT writer and the entity-entry layout read back out of
+  `StructureTemplate.load`. Two details that would have failed silently: `blockPos` is
+  what `addEntitiesToWorld` tests against the placement bounding box (an entity outside
+  the footprint is dropped with no log), and the three workers sit on the y=0 excavated
+  ring outside the 5-wide mound, where the y=1 layer places nothing, so they stand on
+  solid ground in open air.
+
+- **The probe grew four sections because every one of these items is a claim about a
+  distribution.** `palette`, `nurseries`, `comb` and `spawns`, plus a simulation of the
+  *pre-round* spawning scheme so the density multiplier is measured against the old code
+  rather than derived on paper. `rollCount` and `between` live in `ColonyGeneratorTunables`
+  rather than in `ColonyChunkGenerator` for a mechanical reason worth knowing: the probe
+  runs without the game bootstrapped, and merely touching `ColonyChunkGenerator` loads
+  `ChunkGenerator`, whose static initialiser reaches `BuiltInRegistries` and throws "Not
+  bootstrapped".
+
+### Probe results (seeds 1234567 / 42 / 987654321)
+
+```
+solid palette, Royal Depths   : 83.1 / 80.5 / 80.1 % Hardened Soil, 3.7 / 5.0 / 5.3 % Resin
+solid palette, Nurseries      : 88.6 / 88.0 / 89.2 % Deep Loam   (was: both tiers loam-dominant)
+nursery chambers              : 108.5 per 1000x1000 blocks = 5.4x the throne chambers
+                                289 sampled, floor y in [54, 78], all wholly inside y[48,96)
+                                27 of 27 chambers around the origin walkable from their ramp
+comb, Nurseries               : 141.7 / 124.4 / 143.4 per 1000 roomy surfaces (old flat: 178.0)
+                                patches averaging 7.8 / 6.6 / 8.2 blocks, max 56 / 74 / 52
+comb, Royal Depths            : 10.1 / 13.1 / 13.4 per 1000 (old flat: 14.0)
+spawn density                 : 3.95 / 4.47 / 4.31 ants per chunk against the old scheme's
+                                1.66 / 1.68 / 1.88  =  2.38x / 2.67x / 2.30x
+walkable connectivity          : PASS on all three (Royal Depths reachable on foot, and back)
+throne chamber                : PASS on all three (the queen's dais joins the ramp)
+```
