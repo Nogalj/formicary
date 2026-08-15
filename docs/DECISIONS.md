@@ -1100,3 +1100,116 @@ models/renderers/`ModEntities`.
   so what's left actually reads as faint rather than as a highlight. Verified by
   regenerating and re-reading the upscaled atlas: the side view went from two solid orange
   bars to a barely-there warm tint at each segment boundary.
+
+### Items/effects: trail full-path retrace, potion in the tab, Fungal Bloom tuning, tab icon, Queen spawn egg
+
+Owner feedback, five items.
+
+- **Trail Pheromone: the root cause was `TRAIL_POINTS`, not the ring buffer, the item, or
+  the event hook.** `TrailPath.record` already stores every sample up to `CAPACITY` (512),
+  and `PortalEvents.drawTrail` already loops over whatever `litTrail()` hands it -- the bug
+  was entirely in `light()`, which called `newestFirst(TRAIL_POINTS)` with a hardcoded
+  `TRAIL_POINTS = 30`. At `MIN_SAMPLE_DISTANCE = 2.0` that is ~60 blocks retraced out of
+  however far the player actually walked, which is exactly "stopped about a quarter of the
+  way" for any walk longer than ~240 blocks. Fix is one line: `light()` now calls
+  `newestFirst(size())` -- `size()` already means "the total, capped at `CAPACITY`" per its
+  own doc comment, so this is "retrace everything recorded" with no new concept introduced.
+  `TRAIL_POINTS` is deleted rather than left unused.
+- **Particle volume: halved per-point count, doubled the refresh interval, banked the
+  arithmetic in both places that use it.** Before: 30 points x 2 particles, every 20 ticks
+  -> 60 particles/s, constant regardless of walk length. After the full-buffer retrace
+  alone: up to 512 points x 2 particles, every 20 ticks -> up to 1024 particles in a single
+  tick, once a second -- a ~17x jump driven purely by the bug fix. Chose to bring that back
+  down with the two levers the brief named rather than picking one: `PortalEvents`'s
+  per-point particle count drops from a bare `2` literal to a named
+  `TRAIL_PARTICLES_PER_POINT = 1`, and `TrailPath.TRAIL_REFRESH_TICKS` doubles from 20 to
+  40 (once every two seconds). Worst case is now 512 sends per 2 seconds -- roughly a 4x
+  *reduction* in steady-state particle rate relative to the pre-fix trail, even though the
+  trail itself can now be ~17x longer (30 points vs up to 512). `TRAIL_DURATION_TICKS`
+  drops from 2400 (2 minutes) to 1000 (50 seconds) per the owner's explicit ask, now that
+  the trail covers the whole walk and doesn't need as long a window to be followed.
+  `PortalGameTests` gained a new headless test (`trail_light_retraces_every_recorded_
+  sample_not_just_the_newest_thirty`) that records 40 samples -- comfortably past the old
+  30-point cap, comfortably under the 512 buffer -- and asserts the lit trail is all 40, not
+  30; it fails against the pre-fix `light()` and passes against the fix. The two existing
+  trail GameTests needed no changes: `trail_buffer_spaces_samples_and_caps_at_capacity`
+  never calls `light()`, and `trail_lights_only_from_a_recorded_route_and_then_freezes_it`
+  only ever records 2 points, so `newestFirst(TRAIL_POINTS)` and `newestFirst(size())` were
+  already indistinguishable there -- both read `TrailPath.TRAIL_DURATION_TICKS` live rather
+  than a hardcoded 2400, so the duration change also needed no test edit.
+- **Pheromonal Disguise potion: added to the Formicary tab with the same helper vanilla
+  uses for its own potion rows.** `PotionContents.createItemStack(Item, Holder<Potion>)`
+  (`net/minecraft/world/item/alchemy/PotionContents.java`) is exactly what
+  `CreativeModeTabs.generatePotionEffectTypes` calls for every registered potion in the
+  vanilla Food & Drinks / Combat tabs -- verified by reading `CreativeModeTabs.java` in
+  `reference/` directly rather than guessing the 1.21 helper name. `ModCreativeModeTabs`
+  now builds the same three container variants (`Items.POTION`, `Items.SPLASH_POTION`,
+  `Items.LINGERING_POTION`) carrying `ModPotions.PHEROMONAL_DISGUISE` -- real, drinkable
+  stacks via `DataComponents.POTION_CONTENTS`, not decorative icons. (The potion was
+  already automatically appearing in vanilla's own Food & Drinks/Combat tabs all along,
+  since those iterate every registered `Potion` -- this item was specifically about making
+  it discoverable in the mod's *own* tab alongside everything else the mod adds.)
+- **Fungal Bloom: 600 ticks -> 200 ticks (30s -> 10s) of Night Vision, a single named
+  constant.** `NIGHT_VISION` duration was an inline literal in the `MobEffectInstance`
+  supplier; pulled out to `FUNGAL_BLOOM_NIGHT_VISION_TICKS` alongside the other food items'
+  documented-constant style used elsewhere in this file (`XP_REWARD`, `DURATION_TICKS`,
+  etc.). No GameTest pins the old value, so no test needed retargeting.
+- **Queen spawn egg: reverses the M7-era "deliberately no spawn egg" call, on the owner's
+  explicit ask.** The original reasoning (`ModEntities` javadoc, M7) was sound at the time
+  -- "the only queen in a world is the one the chamber generated" -- but play-test round 1
+  asks for a way to summon her directly (creative testing, showing her off, a second fight
+  without regenerating a world), so this round's brief overrides that call rather than
+  agreeing with it. Registered with the exact shape the three existing castes already use:
+  `DeferredItem<DeferredSpawnEggItem>` via `ModItems.ITEMS.registerItem`, colours read
+  straight from her own palette in `assets-src/models.py`
+  (`Q_PLUM_BASE = (70, 28, 48)` -> `0x461C30` background, `Q_GOLD_BRIGHT = (244, 202, 104)`
+  -> `0xF4CA68` highlight) -- the same "shell colour + its brightest accent" pairing
+  `SOLDIER_ANT_SPAWN_EGG` uses, not a fresh design. Wired into every surface the other three
+  eggs use: `Formicary.addCreative` (vanilla Spawn Eggs tab), `ModCreativeModeTabs`
+  (Formicary's own tab), `ModLanguageProvider` (lang entry, plus removing the now-false "no
+  spawn egg" comment on `QUEEN_ANT` itself), and `ModItemModelProvider`
+  (`withExistingParent(..., "item/template_spawn_egg")`, regenerated via `runData`). One
+  behavioural note worth stating because it is not obvious from the registration alone: an
+  egg-spawned queen has no `throneHome` -- only `ColonyChunkGenerator` calls
+  `setThroneHome` after placing her in a chamber -- so she is not leashed to a 16-block
+  radius or teleported home past 24 blocks the way the naturally-generated boss is. She
+  simply roams. That is accepted as correct for a creative-mode summon rather than patched
+  around (giving her a fabricated home at the summon point would be inventing behaviour the
+  brief never asked for), and is called out explicitly in the class javadoc so it is not
+  mistaken for a bug later.
+- **Tab icon: investigated end to end, found no source-level defect, made no texture/model
+  change.** The brief named three candidate causes -- stale/duplicate texture, an
+  unregenerated item model, block-model-vs-item-model divergence -- and all three came back
+  negative:
+  - *Texture*: exactly one `anthill_core.png` exists in the tree
+    (`src/main/resources/assets/formicary/textures/block/`); its content matches the
+    "magma-vein core" rework from `317cb69` (`git log --follow` on the file shows two
+    commits total, `bdf9c1e`'s original M1 pass and `317cb69`'s rework; the later
+    `802eb34` "pellet anthill" pass touched `anthill_soil.png` and five other soil blocks
+    but not this file, by scope -- that commit's own message is about tiling repeats on
+    flat/walkable surfaces, which a single one-per-structure block was never a case of).
+    `build/resources/main`'s copy is byte-identical to the source (`md5sum` match) and
+    newer, i.e. a normal build already has the current texture.
+  - *Item model*: `ModItemModelProvider.blockItem("anthill_core")` parents
+    `formicary:block/anthill_core` -- the checked-in generated JSON
+    (`src/generated/resources/assets/formicary/models/item/anthill_core.json`) matches
+    exactly, and re-running `runData` this round reproduced it byte-for-byte (see the
+    accompanying commit -- only the new Queen spawn egg's model/lang entries appeared in
+    the diff, nothing under `anthill_core`).
+  - *Divergence*: `ModBlockStateProvider.simpleBlock(ANTHILL_CORE.get())` and the item
+    model both resolve to the identical `formicary:block/anthill_core` model and the
+    identical texture reference; the blockstate has one non-randomized variant. There is no
+    path in the registration/model chain for the GUI icon and the in-world block to render
+    different pixels -- they are the same baked model.
+  - The block's own properties (`ModBlocks.ANTHILL_CORE`: `.lightLevel(state -> 7)`,
+    `MapColor.TERRACOTTA_BLACK`, `SoundType.STONE`, ore-tier `strength(1.5F, 6.0F)`) are
+    all consistent with, and clearly built around, the current magma-vein texture's "hot
+    heart" -- reinforcing that this is the intended, currently-live design rather than an
+    orphaned leftover.
+  - Conclusion: nothing in the source tree is stale. The most likely explanation for what
+    the owner saw is the live-iteration gotcha already banked in this file's own "Banked
+    rules" section -- a dev client's resource cache predating the M1 art-rework commits,
+    needing `processResources` + F3+T (or a restart) to pick up the new texture -- which
+    self-resolves on any full rebuild and is not a code defect this package can fix.
+    Recorded here rather than silently skipped so the "fix" is legible: this item was
+    diagnosed, not ignored.
