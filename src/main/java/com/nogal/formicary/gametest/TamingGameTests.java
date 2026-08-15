@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.nogal.formicary.Formicary;
+import com.nogal.formicary.entity.CollectDroppedItemsGoal;
 import com.nogal.formicary.entity.CropHarvest;
 import com.nogal.formicary.entity.CropScanner;
 import com.nogal.formicary.entity.GuardPostTargetGoal;
@@ -25,6 +26,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.Container;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -246,6 +248,81 @@ public class TamingGameTests {
             helper.assertTrue(container.countItem(Items.CARROT) > 0,
                     "the worker should have deposited its carrots in the bound chest");
         });
+    }
+
+    /**
+     * Play-test round 1, spec item 2: a harvesting worker also collects loose item drops on
+     * the ground, not just ripe crops, and delivers them home through the same chest trip.
+     *
+     * <p>Same harness shape as {@link #bound_worker_harvests_replants_and_deposits}: a bound
+     * worker on the farm-sized platform, {@code succeedWhen} polling for the eventual
+     * deposit rather than ticking a fixed number of times, so the test is not coupled to
+     * exactly how many alternating-cadence {@code canUse} calls the pickup goal takes to
+     * notice the drop (see CLAUDE.md: {@code Mob.serverAiStep} only calls a non-running
+     * goal's {@code canUse} every other tick).
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "farm_platform", timeoutTicks = 600)
+    public static void bound_worker_collects_a_ground_item_and_deposits_it(GameTestHelper helper) {
+        BlockPos chest = new BlockPos(2, STAND_Y, 4);
+        BlockPos dropPos = new BlockPos(6, STAND_Y, 4);
+
+        helper.setBlock(chest, Blocks.CHEST);
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(4, STAND_Y, 4));
+        worker.tame(keeper);
+        worker.bindTo(helper.absolutePos(chest));
+
+        BlockPos absoluteDrop = helper.absolutePos(dropPos);
+        ItemEntity drop = new ItemEntity(helper.getLevel(), absoluteDrop.getX() + 0.5,
+                absoluteDrop.getY(), absoluteDrop.getZ() + 0.5, new ItemStack(Items.STICK, 4));
+        // No vanilla pickup-delay on this one -- it stands in for a drop that has been on
+        // the ground a while, not something a player just tossed (see the class javadoc on
+        // CollectDroppedItemsGoal for why a fresh drop is deliberately left alone).
+        drop.setPickUpDelay(0);
+        helper.getLevel().addFreshEntity(drop);
+
+        helper.succeedWhen(() -> {
+            Container container = HopperBlockEntity.getContainerAt(helper.getLevel(), helper.absolutePos(chest));
+            helper.assertTrue(container != null, "the bound chest should still be a container");
+            helper.assertTrue(container.countItem(Items.STICK) > 0,
+                    "the worker should have deposited the collected ground item in the bound chest");
+            helper.assertTrue(
+                    helper.getLevel().getEntitiesOfClass(ItemEntity.class, helper.getBounds()).isEmpty(),
+                    "the picked-up item entity should be gone from the world once collected");
+        });
+    }
+
+    /**
+     * The pickup-delay decision (spec item 2: "respect items a player just dropped"): a
+     * drop still inside its vanilla pickup-delay window is left alone, exactly the filter
+     * {@link RelocateItemGoal} already applies for the wild worker.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "farm_platform")
+    public static void a_freshly_dropped_item_under_pickup_delay_is_left_alone(GameTestHelper helper) {
+        BlockPos chest = new BlockPos(2, STAND_Y, 4);
+        BlockPos dropPos = new BlockPos(6, STAND_Y, 4);
+
+        helper.setBlock(chest, Blocks.CHEST);
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(4, STAND_Y, 4));
+        worker.tame(keeper);
+        worker.bindTo(helper.absolutePos(chest));
+
+        BlockPos absoluteDrop = helper.absolutePos(dropPos);
+        ItemEntity fresh = new ItemEntity(helper.getLevel(), absoluteDrop.getX() + 0.5,
+                absoluteDrop.getY(), absoluteDrop.getZ() + 0.5, new ItemStack(Items.STICK, 4));
+        fresh.setDefaultPickUpDelay();
+        helper.getLevel().addFreshEntity(fresh);
+
+        CollectDroppedItemsGoal pickup = new CollectDroppedItemsGoal(worker, 1.0);
+        helper.assertFalse(pickup.canUse(), "a drop still under its pickup delay must not be targeted");
+        helper.succeed();
     }
 
     /**
