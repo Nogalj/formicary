@@ -10,6 +10,7 @@ import com.nogal.formicary.block.ModBlockTags;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -33,6 +34,7 @@ import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.MoveTowardsRestrictionGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -83,6 +85,12 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
     public static final double BIND_RANGE = 8.0;
 
     /**
+     * Play-test round 1, spec item 2: how far a harvesting worker looks for a loose item
+     * drop lying on the ground. Spec asks for "~8-12 blocks"; 10 sits in the middle.
+     */
+    public static final double GROUND_PICKUP_RADIUS = 10.0;
+
+    /**
      * How long the worker may go without harvesting before it takes what it has back to
      * the chest. Covers both of the spec's non-full deposit triggers at once: an empty
      * field never resets the counter, and a field that still has crops resets it on every
@@ -127,11 +135,19 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        // Deposit outranks harvest: a full pack has to be emptied before more is cut.
+        // Deposit outranks harvest and pickup: a full pack has to be emptied before more
+        // is cut or collected.
         this.goalSelector.addGoal(1, new DepositToChestGoal(this, 1.0));
         this.goalSelector.addGoal(2, new HarvestCropsGoal(this, 1.0));
+        // Play-test round 1, spec item 2: ground pickup ranks below the crop harvest
+        // (a strictly higher priority NUMBER) so it can never hold the MOVE/LOOK flags
+        // against a harvest that wants them -- WrappedGoal.canBeReplacedBy only lets a
+        // *lower*-numbered goal preempt a running one (verified in GoalSelector.java /
+        // WrappedGoal.java), so a crop always wins a tick where both are available, and a
+        // harvest that becomes possible mid-approach to a drop preempts this goal outright.
+        this.goalSelector.addGoal(3, new CollectDroppedItemsGoal(this, 1.0));
         // Follow only applies in follow mode -- a bound worker has a job.
-        this.goalSelector.addGoal(3, new FollowOwnerGoal(this, 1.1, 10.0F, 2.0F) {
+        this.goalSelector.addGoal(4, new FollowOwnerGoal(this, 1.1, 10.0F, 2.0F) {
             @Override
             public boolean canUse() {
                 return !TamedWorkerAntEntity.this.isBound() && super.canUse();
@@ -144,10 +160,10 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
         });
         // In work mode the restriction is the chest, so this is what keeps idle wandering
         // from drifting the worker out of its own field.
-        this.goalSelector.addGoal(4, new MoveTowardsRestrictionGoal(this, 0.9));
-        this.goalSelector.addGoal(5, new WaterAvoidingRandomStrollGoal(this, 0.8));
-        this.goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 6.0F, 0.1F));
-        this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
+        this.goalSelector.addGoal(5, new MoveTowardsRestrictionGoal(this, 0.9));
+        this.goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 0.8));
+        this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 6.0F, 0.1F));
+        this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
     }
 
     // ------------------------------------------------------------- binding --
@@ -207,6 +223,11 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
         if (best != null) {
             best.bindTo(chest);
             level.playSound(null, chest, SoundEvents.BEEHIVE_WORK, SoundSource.NEUTRAL, 0.7F, 1.3F);
+            // Play-test round 1, spec item 1: tell the owner the new state. This call site
+            // is already server-only (TamedAntEvents only reaches here from a ServerLevel),
+            // and a no-op on the bare Player a GameTest drives this through directly.
+            owner.displayClientMessage(Component.translatable("entity.formicary.tamed_worker_ant.state.harvesting"),
+                    true);
         }
         return best;
     }
@@ -279,6 +300,27 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
         return true;
     }
 
+    /**
+     * Play-test round 1, spec item 2: takes an item entity's whole stack off the ground and
+     * pockets it through {@link #store} -- the same "nothing it picks up is ever destroyed"
+     * contract the crop harvest already keeps, so an overflow pops back onto the floor
+     * rather than vanishing. Mirrors {@code WorkerAntEntity.pickUpCarriedItem}'s vanilla
+     * bookkeeping ({@code onItemPickup} + {@code take} + {@code discard}) so the pickup
+     * animation and pickup statistics behave the same way the wild worker's do.
+     */
+    public void pickUpGroundItem(ServerLevel level, ItemEntity itemEntity) {
+        if (itemEntity.getItem().isEmpty()) {
+            return;
+        }
+        ItemStack stack = itemEntity.getItem().copy();
+        this.onItemPickup(itemEntity);
+        this.store(level, stack);
+        this.take(itemEntity, stack.getCount());
+        itemEntity.discard();
+        this.syncCarriedItem();
+        this.playSound(SoundEvents.ITEM_PICKUP, 0.25F, 1.6F);
+    }
+
     /** Pockets {@code stack}; anything that will not fit is popped on the floor, never voided. */
     public void store(ServerLevel level, ItemStack stack) {
         if (stack.isEmpty()) {
@@ -346,6 +388,13 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
             if (this.isBound()) {
                 this.unbind();
                 this.playSound(SoundEvents.BEEHIVE_EXIT, 0.7F, 1.2F);
+                // Play-test round 1, spec item 1: "you cannot tell what state they are" --
+                // actionbar overlay (not chat) matches vanilla's own way of surfacing
+                // transient state. Guarded to the server-side branch above so the
+                // client-side call of this same method (mobInteract runs on both sides)
+                // never double-sends it.
+                player.displayClientMessage(
+                        Component.translatable("entity.formicary.tamed_worker_ant.state.following"), true);
             } else {
                 // Already following: nothing to unbind, but answer so the click is not
                 // passed on to the held item.

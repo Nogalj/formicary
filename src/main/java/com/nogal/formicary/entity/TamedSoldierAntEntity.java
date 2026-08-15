@@ -4,6 +4,7 @@ import javax.annotation.Nullable;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
@@ -153,6 +154,14 @@ public class TamedSoldierAntEntity extends TamableAnimal implements TamedAnt {
         if (!this.level().isClientSide) {
             this.toggleStationed();
             this.playSound(this.stationed ? SoundEvents.BEEHIVE_ENTER : SoundEvents.BEEHIVE_EXIT, 0.7F, 1.1F);
+            // Play-test round 1, spec item 1: "you cannot tell what state they are" --
+            // actionbar overlay (not chat) matches vanilla's own way of surfacing
+            // transient state without spamming chat. Guarded to the server-side branch
+            // above so the client-side call of this same method (mobInteract runs on
+            // both sides) never double-sends it.
+            player.displayClientMessage(Component.translatable(this.stationed
+                    ? "entity.formicary.tamed_soldier_ant.state.guard_post"
+                    : "entity.formicary.tamed_soldier_ant.state.escort"), true);
         }
         return InteractionResult.sidedSuccess(this.level().isClientSide);
     }

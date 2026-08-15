@@ -68,6 +68,12 @@ public class ModLanguageProvider extends LanguageProvider {
         addEntityType(ModEntities.TAMED_WORKER_ANT, "Tamed Worker Ant");
         addEntityType(ModEntities.TAMED_SOLDIER_ANT, "Tamed Soldier Ant");
 
+        // Play-test round 1, spec item 1: actionbar feedback on every command-state cycle.
+        add("entity.formicary.tamed_worker_ant.state.following", "Following");
+        add("entity.formicary.tamed_worker_ant.state.harvesting", "Harvesting");
+        add("entity.formicary.tamed_soldier_ant.state.escort", "Escort");
+        add("entity.formicary.tamed_soldier_ant.state.guard_post", "Guard Post");
+
         // This name is also what the boss bar reads (ServerBossEvent takes getDisplayName()).
         addEntityType(ModEntities.QUEEN_ANT, "The Queen");
         // Play-test round 1, spec item 5: reverses the M7-era "no spawn egg" call.
