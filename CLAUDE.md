@@ -69,6 +69,13 @@ recipe + the log of what each milestone added: `docs/gotchas/reference-extractio
   and flag it for review.
 - Prefer **data-driven content** (JSON via datagen / `runData`) over hardcoded Java.
 - Item data uses the **1.21 Data Components** system, not pre-1.21 NBT.
+- **Tear the input rig down before handing Logan the client.** The screenshot-driving rig
+  rebinds attack/use to G/H in `run/options.txt`; leaving it bound ships him a client that
+  cannot break blocks (2026-08-14 -- his first play session, one flat bug report). Any rig
+  that mutates shared state (options, configs, the dev world) needs its teardown written at
+  the same time as its setup, and the audit question is "what persistent files did my
+  instrumentation touch?", not "did my tests pass?". Live in-game verification can be fully
+  green and the first human contact still broken.
 
 ## Entity models -- art pipeline
 
