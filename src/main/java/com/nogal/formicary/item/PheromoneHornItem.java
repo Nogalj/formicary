@@ -7,6 +7,7 @@ import com.nogal.formicary.entity.ModEntities;
 import com.nogal.formicary.entity.SoldierAntEntity;
 
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -62,6 +63,12 @@ public class PheromoneHornItem extends Item {
 
         List<SoldierAntEntity> summoned = summon(serverLevel, player);
         if (summoned.isEmpty()) {
+            // Ep2: a blast in a space too tight to fit an ant costs nothing, which read in
+            // play as the horn being broken. Say so -- actionbar overlay, not chat, matching
+            // how the tamed ants surface their own transient state. Server side only, so the
+            // client copy of use() above never double-sends it.
+            player.displayClientMessage(
+                    Component.translatable("item.formicary.pheromone_horn.no_room"), true);
             return InteractionResultHolder.fail(stack);
         }
 

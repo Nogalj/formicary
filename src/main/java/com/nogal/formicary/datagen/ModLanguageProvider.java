@@ -50,6 +50,9 @@ public class ModLanguageProvider extends LanguageProvider {
 
         addItem(ModItems.ROYAL_PHEROMONE_GLAND, "Royal Pheromone Gland");
         addItem(ModItems.PHEROMONE_HORN, "Pheromone Horn");
+        // Ep2: a blast with nowhere to put an ally charges no cooldown, so without this the
+        // horn just looks broken.
+        add("item.formicary.pheromone_horn.no_room", "The colony has no room to answer");
 
         addItem(ModItems.HONEYED_COMB, "Honeyed Comb");
         addItem(ModItems.FUNGAL_STEW, "Fungal Stew");

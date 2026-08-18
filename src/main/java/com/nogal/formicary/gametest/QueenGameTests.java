@@ -30,6 +30,7 @@ import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -65,6 +66,9 @@ public class QueenGameTests {
     private static final BlockPos SMALL_ARENA_A = new BlockPos(1, 2, 1);
     private static final BlockPos SMALL_ARENA_B = new BlockPos(3, 2, 3);
     private static final BlockPos SMALL_ARENA_C = new BlockPos(1, 2, 3);
+
+    /** Centre of the 5x3x5 arena -- the horn's summon ring reaches its edges from here. */
+    private static final BlockPos SMALL_ARENA_CENTRE = new BlockPos(2, 2, 2);
 
     // ------------------------------------------------------------ the fight --
 
@@ -372,6 +376,46 @@ public class QueenGameTests {
             helper.assertTrue(ally.getSummonExpiry() > helper.getLevel().getGameTime(),
                     "a summoned soldier should have a future expiry");
         }
+        helper.succeed();
+    }
+
+    /**
+     * Ep2: the horn tells you why nothing happened. The <em>message</em> itself is not
+     * assertable headlessly -- {@code displayClientMessage} is a no-op on the bare
+     * {@code Player} that {@code makeMockPlayer} returns, which has no connection to send it
+     * down -- so what this pins is the behaviour the new line describes and the invariant it
+     * must not disturb: a blast with nowhere to place an ally summons nothing, fails, and
+     * charges no cooldown. The wording was checked in-game against the generated lang file.
+     *
+     * <p>The arena is packed solid rather than the summoner being parked in a corner, because
+     * {@code findSpot} falls back to the summoner's own footprint -- "somewhere a body already
+     * stands" -- so blocking only the ring would still succeed.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void a_blast_with_no_room_summons_nothing_and_charges_no_cooldown(GameTestHelper helper) {
+        for (int x = 0; x <= 4; x++) {
+            for (int z = 0; z <= 4; z++) {
+                for (int y = 2; y <= 3; y++) {
+                    helper.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+                }
+            }
+        }
+
+        Player summoner = mockPlayerAt(helper, SMALL_ARENA_CENTRE);
+        summoner.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.PHEROMONE_HORN.get()));
+
+        helper.assertTrue(PheromoneHornItem.summon(helper.getLevel(), summoner).isEmpty(),
+                "setup: a packed arena must leave nowhere at all to place an ally");
+
+        InteractionResultHolder<ItemStack> result = ModItems.PHEROMONE_HORN.get()
+                .use(helper.getLevel(), summoner, InteractionHand.MAIN_HAND);
+
+        helper.assertValueEqual(result.getResult(), InteractionResult.FAIL, "the horn's use result");
+        helper.assertFalse(summoner.getCooldowns().isOnCooldown(ModItems.PHEROMONE_HORN.get()),
+                "a blast that summoned nothing must not charge the cooldown");
+        helper.assertValueEqual(alliesOf(helper, summoner).size(), 0,
+                "allies left behind by a failed blast");
         helper.succeed();
     }
 
