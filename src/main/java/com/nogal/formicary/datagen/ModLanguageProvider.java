@@ -65,6 +65,13 @@ public class ModLanguageProvider extends LanguageProvider {
         addItem(ModItems.CHITIN_LEGGINGS, "Chitin Leggings");
         addItem(ModItems.CHITIN_BOOTS, "Chitin Boots");
 
+        // Ep2 task H1.
+        addItem(ModItems.CHITIN_SWORD, "Chitin Sword");
+        addItem(ModItems.CHITIN_PICKAXE, "Chitin Pickaxe");
+        addItem(ModItems.CHITIN_AXE, "Chitin Axe");
+        addItem(ModItems.CHITIN_SHOVEL, "Chitin Shovel");
+        addItem(ModItems.CHITIN_HOE, "Chitin Hoe");
+
         addEntityType(ModEntities.WORKER_ANT, "Worker Ant");
         addItem(ModEntities.WORKER_ANT_SPAWN_EGG, "Worker Ant Spawn Egg");
         addEntityType(ModEntities.SOLDIER_ANT, "Soldier Ant");

@@ -13,6 +13,7 @@ import net.minecraft.data.recipes.RecipeProvider;
 import net.minecraft.data.recipes.ShapedRecipeBuilder;
 import net.minecraft.data.recipes.ShapelessRecipeBuilder;
 import net.minecraft.data.recipes.SimpleCookingRecipeBuilder;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
 
 /**
@@ -79,6 +80,64 @@ public class ModRecipeProvider extends RecipeProvider {
         resinStorageRecipes(recipeOutput);
         amberGlassRecipe(recipeOutput);
         decorativeRecipes(recipeOutput);
+
+        // Ep2 task H1: the chitin tool set, standard vanilla shapes (heads + stick handle).
+        chitinToolRecipes(recipeOutput);
+    }
+
+    /**
+     * Ep2 task H1: chitin heads + vanilla {@code Items.STICK} handles, in exactly the
+     * shapes vanilla uses for its own tool tiers (a shaped recipe's placement matching is
+     * mirror-symmetric at the engine level, so the single asymmetric axe/hoe pattern below
+     * crafts from either handedness in-game).
+     */
+    private void chitinToolRecipes(RecipeOutput recipeOutput) {
+        String hasChitin = getHasName(ModItems.CHITIN.get());
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.COMBAT, ModItems.CHITIN_SWORD.get())
+                .pattern("X")
+                .pattern("X")
+                .pattern("Y")
+                .define('X', ModItems.CHITIN.get())
+                .define('Y', Items.STICK)
+                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
+                .save(recipeOutput);
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.TOOLS, ModItems.CHITIN_PICKAXE.get())
+                .pattern("XXX")
+                .pattern(" Y ")
+                .pattern(" Y ")
+                .define('X', ModItems.CHITIN.get())
+                .define('Y', Items.STICK)
+                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
+                .save(recipeOutput);
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.TOOLS, ModItems.CHITIN_AXE.get())
+                .pattern("XX")
+                .pattern("XY")
+                .pattern(" Y")
+                .define('X', ModItems.CHITIN.get())
+                .define('Y', Items.STICK)
+                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
+                .save(recipeOutput);
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.TOOLS, ModItems.CHITIN_SHOVEL.get())
+                .pattern("X")
+                .pattern("Y")
+                .pattern("Y")
+                .define('X', ModItems.CHITIN.get())
+                .define('Y', Items.STICK)
+                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
+                .save(recipeOutput);
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.TOOLS, ModItems.CHITIN_HOE.get())
+                .pattern("XX")
+                .pattern(" Y")
+                .pattern(" Y")
+                .define('X', ModItems.CHITIN.get())
+                .define('Y', Items.STICK)
+                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
+                .save(recipeOutput);
     }
 
     /** The four standard armor-shape recipes, deferred to M8 per the spec. */

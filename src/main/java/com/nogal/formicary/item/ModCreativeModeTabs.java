@@ -45,6 +45,12 @@ public class ModCreativeModeTabs {
                         output.accept(ModItems.CHITIN_CHESTPLATE.get());
                         output.accept(ModItems.CHITIN_LEGGINGS.get());
                         output.accept(ModItems.CHITIN_BOOTS.get());
+                        // Ep2 task H1.
+                        output.accept(ModItems.CHITIN_SWORD.get());
+                        output.accept(ModItems.CHITIN_PICKAXE.get());
+                        output.accept(ModItems.CHITIN_AXE.get());
+                        output.accept(ModItems.CHITIN_SHOVEL.get());
+                        output.accept(ModItems.CHITIN_HOE.get());
                         // Play-test round 1: the Pheromonal Disguise potion was brewable but
                         // absent from this tab -- PotionContents.createItemStack(Item, Holder
                         // <Potion>) is the same helper vanilla's own CreativeModeTabs uses to

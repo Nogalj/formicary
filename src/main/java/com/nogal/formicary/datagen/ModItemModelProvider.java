@@ -63,6 +63,16 @@ public class ModItemModelProvider extends ItemModelProvider {
         basicItem(ModItems.CHITIN_LEGGINGS.get());
         basicItem(ModItems.CHITIN_BOOTS.get());
 
+        // Ep2 task H1: tools use the vanilla item/handheld parent (a flat sprite held at
+        // an angle in-hand), not item/generated -- the same template every vanilla tool
+        // (sword/pickaxe/axe/shovel/hoe) uses, verified against the client-extra jar's
+        // assets/minecraft/models/item/*_sword.json shape.
+        handheldItem("chitin_sword");
+        handheldItem("chitin_pickaxe");
+        handheldItem("chitin_axe");
+        handheldItem("chitin_shovel");
+        handheldItem("chitin_hoe");
+
         // Spawn eggs reuse the vanilla two-layer template; the shell/spot colours come
         // from DeferredSpawnEggItem's tint handler, not from a texture of our own.
         withExistingParent("worker_ant_spawn_egg", "item/template_spawn_egg");
@@ -74,5 +84,9 @@ public class ModItemModelProvider extends ItemModelProvider {
 
     private void blockItem(String name) {
         getBuilder(name).parent(new ModelFile.UncheckedModelFile(modLoc("block/" + name)));
+    }
+
+    private void handheldItem(String name) {
+        withExistingParent(name, "item/handheld").texture("layer0", modLoc("item/" + name));
     }
 }

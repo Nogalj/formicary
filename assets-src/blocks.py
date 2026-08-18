@@ -1133,6 +1133,107 @@ def chitin_boots_item():
 
 
 # ---------------------------------------------------------------------------
+# Chitin tool set (Ep2 task H1) -- diagonal tool icons, vanilla's own layout:
+# tip at the top-right corner, stick handle running down to the bottom-left.
+# ---------------------------------------------------------------------------
+
+TOOL_STICK_LIGHT = (178, 140, 92, 255)
+TOOL_STICK_DARK = (140, 104, 62, 255)
+
+# Where the chitin head begins along the diagonal (see _tool_icon) -- everything
+# below this is bare stick handle, everything at/above it is the head profile.
+TOOL_HEAD_T_MIN = -3
+
+
+def _tool_icon(head_width_fn):
+    """Diagonal tool icon shared by all five tools: a rotated coordinate frame
+    where `t` runs along the antidiagonal (-15 at the bottom-left corner, +15 at
+    the top-right tip) and `s` is the perpendicular offset from it. Below
+    TOOL_HEAD_T_MIN the icon is a 1px stick handle; at/above it, head_width_fn(t)
+    gives the chitin head's half-width in `s` units, so each tool is just a
+    different profile function over one shared diagonal frame (the same
+    head-shape-as-a-function idea the crop age models already use for stage
+    interpolation)."""
+    img = blank()
+    px = img.load()
+    for y in range(SIZE):
+        for x in range(SIZE):
+            s = x + y - (SIZE - 1)
+            t = x - y
+            if t < TOOL_HEAD_T_MIN:
+                if s == 0:
+                    px[x, y] = TOOL_STICK_DARK if (x // 2) % 2 else TOOL_STICK_LIGHT
+                continue
+            half = head_width_fn(t)
+            if half <= 0 or abs(s) >= half:
+                continue
+            if s <= -half + 1:
+                px[x, y] = CHITIN_RIM
+            elif s >= half - 1:
+                px[x, y] = CHITIN_DARK
+            else:
+                px[x, y] = CHITIN_MID
+    return outline(img, CHITIN_OUTLINE)
+
+
+def chitin_sword_item():
+    """Thin constant-width blade tapering to a single-pixel point at the tip."""
+    def profile(t):
+        return 0 if t >= 15 else 1
+    return _tool_icon(profile)
+
+
+def chitin_pickaxe_item():
+    """A head that bulges to a peak near the tip then narrows back in --
+    reads as a pick head rather than a flat blade."""
+    def profile(t):
+        if t >= 15:
+            return 0
+        if t <= 4:
+            return 1
+        if t <= 9:
+            return 1 + (t - 4) * 0.4
+        if t <= 14:
+            return 3 - (t - 9) * 0.4
+        return 1
+    return _tool_icon(profile)
+
+
+def chitin_axe_item():
+    """A wedge that flares from the handle up to a broad, flat-cut edge."""
+    def profile(t):
+        if t >= 15:
+            return 0
+        if t <= 12:
+            return 1 + (t - TOOL_HEAD_T_MIN) * 0.2
+        return 4
+    return _tool_icon(profile)
+
+
+def chitin_shovel_item():
+    """A narrow blade widening into a flat paddle just below the tip."""
+    def profile(t):
+        if t >= 15:
+            return 0
+        if t <= 10:
+            return 1
+        return 2
+    return _tool_icon(profile)
+
+
+def chitin_hoe_item():
+    """A thin shaft that stays narrow almost to the top, then opens into a
+    flat blade only in the last few pixels -- vanilla's own hoe silhouette."""
+    def profile(t):
+        if t >= 15:
+            return 0
+        if t <= 9:
+            return 1
+        return 3
+    return _tool_icon(profile)
+
+
+# ---------------------------------------------------------------------------
 # Provisions (Ep2 D1) -- the three colony foods (spec section 8)
 # ---------------------------------------------------------------------------
 
@@ -1438,6 +1539,11 @@ ITEM_TEXTURES = {
     "chitin_chestplate": chitin_chestplate_item,
     "chitin_leggings": chitin_leggings_item,
     "chitin_boots": chitin_boots_item,
+    "chitin_sword": chitin_sword_item,
+    "chitin_pickaxe": chitin_pickaxe_item,
+    "chitin_axe": chitin_axe_item,
+    "chitin_shovel": chitin_shovel_item,
+    "chitin_hoe": chitin_hoe_item,
     "honeyed_comb": honeyed_comb_item,
     "fungal_stew": fungal_stew_item,
     "royal_jelly_treat": royal_jelly_treat_item,
