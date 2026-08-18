@@ -1,5 +1,9 @@
 package com.nogal.formicary.command;
 
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CEILING_BOTTOM;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_ELIGIBILITY_MIN_F;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FLOOR_TOP;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SPAWN_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_DAIS_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierIndex;
 
@@ -37,9 +41,10 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
  * {@code /formicary dev ...} -- the maintainer's tooling for looking at this mod.
  *
  * <p>Everything the colony is worth seeing is buried in a 192-block-deep dimension behind a
- * thrown ender pearl, a descent, and (for a throne chamber) a 224-block search grid. Without
- * this, every visual check costs a play session; with it a screenshot of the queen's chamber
- * is two commands. Task A2's shot-list autopilot drives these same seams from a JSON file.
+ * thrown ender pearl and a descent -- and since the Ep2 colony field, inside one of the
+ * cores on a 384-block grid rather than spread evenly through it. Without this, every visual
+ * check costs a play session; with it a screenshot of the queen's chamber is two commands.
+ * Task A2's shot-list autopilot drives these same seams from a JSON file.
  *
  * <p>Registered on the GAME bus by annotation, which is how every other game-bus handler in
  * this mod is wired ({@code PortalEvents}, {@code ColonyAngerEvents},
@@ -70,6 +75,8 @@ public final class FormicaryDevCommands {
                 .then(Commands.literal("dev")
                         .requires(source -> source.hasPermission(2))
                         .then(Commands.literal("locate")
+                                .then(Commands.literal("colony")
+                                        .executes(context -> locate(context.getSource(), Chamber.COLONY)))
                                 .then(Commands.literal("throne")
                                         .executes(context -> locate(context.getSource(), Chamber.THRONE)))
                                 .then(Commands.literal("nursery")
@@ -79,6 +86,8 @@ public final class FormicaryDevCommands {
                                 .then(Commands.literal("larder")
                                         .executes(context -> locate(context.getSource(), Chamber.LARDER))))
                         .then(Commands.literal("tp")
+                                .then(Commands.literal("colony")
+                                        .executes(context -> teleport(context.getSource(), Chamber.COLONY)))
                                 .then(Commands.literal("throne")
                                         .executes(context -> teleport(context.getSource(), Chamber.THRONE)))
                                 .then(Commands.literal("nursery")
@@ -99,8 +108,16 @@ public final class FormicaryDevCommands {
     // locate / tp
     // ------------------------------------------------------------------
 
-    /** The four chamber kinds the cell math can answer for. */
+    /**
+     * The destinations the cell math can answer for.
+     *
+     * <p>{@link #COLONY} is the odd one out and deliberately so: it is not a room, it is the
+     * centre of a colony's density field (Ep2). Everything else in this list exists because
+     * of it -- one throne per colony, chambers only inside one -- so "where is the nearest
+     * nest" is the first question a visual pass now asks.
+     */
     private enum Chamber {
+        COLONY("colony centre"),
         THRONE("throne chamber"),
         NURSERY("nursery chamber"),
         GARDEN("fungus garden chamber"),
@@ -137,12 +154,17 @@ public final class FormicaryDevCommands {
         if (colony == null || found == null) {
             return 0;
         }
-        BlockPos stand = found.stand();
+        BlockPos nominal = found.stand();
         // Force the destination chunk through generation before the move. teleportTo does
         // add a POST_TELEPORT ticket, but an ungenerated chunk reads as air all the way down
         // (banked in docs/gotchas/events-portals.md), and a dev command that drops you into
         // an unbuilt column looks exactly like a broken chamber.
-        colony.getChunk(SectionPos.blockToSectionCoord(stand.getX()), SectionPos.blockToSectionCoord(stand.getZ()));
+        colony.getChunk(SectionPos.blockToSectionCoord(nominal.getX()),
+                SectionPos.blockToSectionCoord(nominal.getZ()));
+        // Only a colony centre needs the column read. Every other destination is a chamber
+        // floor the generator forces solid, so its Y is known without looking; a colony
+        // centre is just an XZ, and whatever the carve left there is usually solid fabric.
+        BlockPos stand = found.chamber() == Chamber.COLONY ? standableY(colony, nominal) : nominal;
         // The Set<RelativeMovement> overload is the only entry point that can change
         // dimension (verified in reference/net/minecraft/server/level/ServerPlayer.java:1517
         // -- the plain teleportTo(double,double,double) cannot). An empty set means every
@@ -171,6 +193,15 @@ public final class FormicaryDevCommands {
         int x = player.blockPosition().getX();
         int z = player.blockPosition().getZ();
         return switch (chamber) {
+            case COLONY -> {
+                // A colony centre is a point in a scalar field, not a carved room, so there
+                // is no floor to derive: SPAWN_HEIGHT is a nominal Y that teleport() then
+                // refines against the real column (see standableY).
+                ColonyNoise.Colony colony = noise.nearestColony(x, z);
+                BlockPos stand = new BlockPos((int) Math.round(colony.centreX()), SPAWN_HEIGHT,
+                        (int) Math.round(colony.centreZ()));
+                yield new Found(chamber, stand, Math.hypot(x - colony.centreX(), z - colony.centreZ()));
+            }
             case THRONE -> {
                 ColonyNoise.Throne throne = noise.nearestThrone(x, z);
                 // The chamber's centre column IS the dais, so its floor is the plinth's
@@ -209,6 +240,16 @@ public final class FormicaryDevCommands {
     // state
     // ------------------------------------------------------------------
 
+    /**
+     * Everything the generator knows about where you are standing, as text.
+     *
+     * <p>The colony field line is the one that earns this command since Ep2. {@code f} is
+     * the single number the whole layer reduces to -- what fraction of full colony density
+     * this XZ carves at -- and it is otherwise completely invisible in game: a player (or a
+     * maintainer taking a screenshot) cannot tell "sparse wilds, working as designed" from
+     * "the carve broke" by looking. Printing it, the distance to the centre it came from,
+     * and the two thresholds it is read against turns that into a readout.
+     */
     private static int state(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         BlockPos pos = player.blockPosition();
@@ -219,6 +260,17 @@ public final class FormicaryDevCommands {
         source.sendSuccess(() -> Component.literal(String.format("tier %d (%s)%s",
                 tierIndex(pos.getY()), TIER_NAMES[tierIndex(pos.getY())],
                 inColony ? "" : " -- band for this Y, you are not in the colony")), true);
+
+        ColonyNoise noise = colonyNoise(source);
+        if (noise == null) {
+            return 0;
+        }
+        ColonyNoise.Colony centre = noise.nearestColony(pos.getX(), pos.getZ());
+        double field = noise.colonyField(pos.getX(), pos.getZ());
+        double toCentre = Math.hypot(pos.getX() - centre.centreX(), pos.getZ() - centre.centreZ());
+        source.sendSuccess(() -> Component.literal(String.format(
+                "colony f %.3f at %.0f blocks from the centre %d %d (%s)", field, toCentre,
+                Math.round(centre.centreX()), Math.round(centre.centreZ()), zone(field))), true);
 
         Found throne = find(source, Chamber.THRONE, player);
         Found nursery = find(source, Chamber.NURSERY, player);
@@ -232,6 +284,20 @@ public final class FormicaryDevCommands {
                 "nearest nursery %.0f blocks at %d %d %d", nursery.distance(),
                 nursery.stand().getX(), nursery.stand().getY(), nursery.stand().getZ())), true);
         return Command.SINGLE_SUCCESS;
+    }
+
+    /** Which side of the two field thresholds this {@code f} falls on, in words. */
+    private static String zone(double field) {
+        if (field >= 1.0) {
+            return "colony core";
+        }
+        if (field > CHAMBER_ELIGIBILITY_MIN_F) {
+            return "colony ring -- chambers still generate here";
+        }
+        if (field > 0.0) {
+            return "outer falloff -- no chambers, thinning decoration";
+        }
+        return "wilds -- worm tunnels and ramps only";
     }
 
     // ------------------------------------------------------------------
@@ -305,6 +371,32 @@ public final class FormicaryDevCommands {
     // ------------------------------------------------------------------
     // Plumbing
     // ------------------------------------------------------------------
+
+    /**
+     * The nearest spot in {@code nominal}'s column a player can stand, searching down from
+     * the preferred Y and then up.
+     *
+     * <p>Reads real blocks rather than {@link ColonyNoise}, and that is the point: by the
+     * time this runs the destination chunk has been generated, so the blocks are the ground
+     * truth including anything the decoration pass wrote. If the column holds nothing
+     * standable at all (a colony centre can land inside a solid pillar) the nominal Y comes
+     * back unchanged -- the teleport is a dev command, and landing in fabric is a legible
+     * failure, unlike silently landing somewhere else.
+     */
+    private static BlockPos standableY(ServerLevel colony, BlockPos nominal) {
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        int best = Integer.MIN_VALUE;
+        for (int y = FLOOR_TOP + 1; y <= CEILING_BOTTOM - 2; y++) {
+            if (colony.getBlockState(cursor.set(nominal.getX(), y, nominal.getZ())).isAir()
+                    && colony.getBlockState(cursor.set(nominal.getX(), y + 1, nominal.getZ())).isAir()
+                    && !colony.getBlockState(cursor.set(nominal.getX(), y - 1, nominal.getZ())).isAir()
+                    && (best == Integer.MIN_VALUE
+                            || Math.abs(y - nominal.getY()) < Math.abs(best - nominal.getY()))) {
+                best = y;
+            }
+        }
+        return best == Integer.MIN_VALUE ? nominal : new BlockPos(nominal.getX(), best, nominal.getZ());
+    }
 
     @Nullable
     private static ServerLevel colonyLevel(CommandSourceStack source) {

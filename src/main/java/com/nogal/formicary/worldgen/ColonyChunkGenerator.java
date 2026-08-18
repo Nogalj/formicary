@@ -1020,5 +1020,10 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         info.add(String.format("chamber s/l %.3f / %.3f",
                 noise.probeChamberSmall(pos.getX(), pos.getY(), pos.getZ()),
                 noise.probeChamberLarge(pos.getX(), pos.getY(), pos.getZ())));
+        ColonyNoise.Colony colony = noise.nearestColony(pos.getX(), pos.getZ());
+        info.add(String.format("colony f %.3f, centre %d %d (%.0f blocks)",
+                noise.colonyField(pos.getX(), pos.getZ()),
+                Math.round(colony.centreX()), Math.round(colony.centreZ()),
+                Math.hypot(pos.getX() - colony.centreX(), pos.getZ() - colony.centreZ())));
     }
 }

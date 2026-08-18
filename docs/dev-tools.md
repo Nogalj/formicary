@@ -2,8 +2,9 @@
 
 Two tools, both aimed at the same problem: **looking at this mod is expensive.** The
 interesting content is buried 192 blocks down a custom dimension behind a thrown ender
-pearl, and a throne chamber sits on a 224-block grid. Before these, every visual check cost
-a play session.
+pearl, and since the Ep2 colony field it is not even spread evenly: colonies sit on a
+384-block grid with sparse wilds between them, and every chamber (and the one throne) lives
+inside one. Before these, every visual check cost a play session.
 
 - `/formicary dev ...` -- jump to, summon and inspect the things worth looking at.
   (`src/main/java/com/nogal/formicary/command/FormicaryDevCommands.java`)
@@ -24,14 +25,13 @@ in a dev client they just work.
 
 | Subcommand | What it does |
 |---|---|
-| `locate throne` / `locate nursery` | Prints the nearest chamber of that kind: the block you would stand on, and the horizontal distance to it. |
-| `tp throne` / `tp nursery` | Same lookup, then teleports you there -- into the Formicary dimension from wherever you are. |
-| `state` | Your position and dimension, the tier band your Y falls in, and the distance to the nearest throne and nursery. |
+| `locate colony` | Prints the nearest **colony centre** -- the middle of the density field, not a room. The first question worth asking since Ep2: everything else is inside one. |
+| `locate throne` / `locate nursery` / `locate garden` / `locate larder` | Prints the nearest chamber of that kind: the block you would stand on, and the horizontal distance to it. |
+| `tp colony` | Same lookup, then teleports you to the nearest standable spot in that column (a colony centre is an XZ, not a floor, so this one reads the real blocks). |
+| `tp throne` / `tp nursery` / `tp garden` / `tp larder` | Same lookup, then teleports you there -- into the Formicary dimension from wherever you are. |
+| `state` | Your position and dimension, the tier band your Y falls in, **the colony field `f` where you stand** with the distance to the centre it came from and which zone that puts you in, and the distance to the nearest throne and nursery. |
 | `kit` | Full Chitin Armor set, 8 Trail Pheromone, 4 ender pearls, 16 Fungal Bloom. |
 | `queenfight` | Summons a Queen Ant 6 blocks in front of you, with her throne home set where she lands (so her leash and arena behaviour actually run). |
-
-`locate` and `tp` for the fungal garden and the larder arrive with those blocks, in a later
-task.
 
 ### Things worth knowing
 
@@ -42,10 +42,21 @@ task.
 - **The coordinates come from the live world's own generator**, not from a re-derivation of
   the seed. `FormicaryDevCommands` pulls `ColonyChunkGenerator#noise` off the loaded
   dimension, and the nearest-chamber search
-  (`ColonyNoise#nearestThrone` / `#nearestNursery`) is the same cell arithmetic that carved
-  the room. If the numbers are wrong, the terrain is wrong -- they cannot drift apart.
+  (`ColonyNoise#nearestThrone` / `#nearestNursery` / ...) is the same cell arithmetic that
+  carved the room. If the numbers are wrong, the terrain is wrong -- they cannot drift apart.
+- **`state`'s `f` is the only way to see the colony field.** It is what decides whether the
+  ground around you carries chambers, comb and ants at all, and it is completely invisible
+  in game: "sparse wilds, working as designed" and "the carve broke" look identical from
+  inside. The line names the zone as well as the number -- core, ring (chambers still
+  generate), outer falloff, or wilds.
+- **`locate nursery` / `garden` / `larder` skip chambers the colony field gated out.** Since
+  Ep2 most 96-block cells produce no room, so an unfiltered "nearest" would name a set of
+  coordinates that is solid soil. The search widens to 6 cell rings to guarantee it can
+  always reach an eligible one.
 - **The throne's stand position is the top of the dais**, the same block the generator seats
-  the queen on. A nursery's is the floor slab plus one.
+  the queen on. A nursery's, a garden's and a larder's is the floor slab plus one -- all
+  three floors are forced solid by the same pure function that carved the room, so no block
+  read is needed. `tp colony` is the exception and says so above.
 - `tp` forces the destination chunk through generation before moving you, so you never land
   in an ungenerated column (which reads as air all the way down and looks exactly like a
   broken chamber).
