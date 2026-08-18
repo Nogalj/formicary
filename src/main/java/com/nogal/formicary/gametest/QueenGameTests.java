@@ -18,6 +18,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
@@ -271,6 +272,73 @@ public class QueenGameTests {
         helper.assertTrue(stillAngry.getTarget() == null,
                 "the untouched guard was never hunting anyone, and must not have gained a target");
         helper.succeed();
+    }
+
+    // ------------------------------------------------------------- boss bar --
+
+    /**
+     * Ep2: the bar belongs to the fight, not to the network. It appears inside
+     * {@link QueenAntEntity#BOSS_BAR_RADIUS} (20) and only goes away past
+     * {@link QueenAntEntity#BOSS_BAR_RADIUS_EXIT} (28); the band between the two is the
+     * hysteresis that stops it flickering for a player standing on the boundary. Before
+     * this the bar was hung on {@code startSeenByPlayer}, i.e. on her 16-chunk client
+     * tracking range, so it came up about 256 blocks out.
+     *
+     * <p>The audience is a set of {@code ServerPlayer}s, which is the one thing
+     * {@code makeMockPlayer} cannot produce -- it returns a bare {@code Player}, and
+     * {@code ServerBossEvent#addPlayer} needs a live {@code connection} to send the bar
+     * packet down. So this uses {@code makeMockServerPlayerInLevel} for the connection and
+     * then <em>immediately removes the player from the player list again</em>: a real
+     * player left standing in the shared test level would be visible to every other test's
+     * {@code NearestAttackableTargetGoal}, which is exactly the kind of cross-test coupling
+     * the mock player exists to avoid. The object outlives the removal, keeps its
+     * connection, and the rule is driven through the {@code refreshBossBarAudience} seam --
+     * the same list-taking shape {@code pheromoneBurst} and {@code grantDeathGrace} use,
+     * and for the same reason.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform", timeoutTicks = 200)
+    @SuppressWarnings("deprecation")
+    public static void the_boss_bar_shows_only_inside_twenty_blocks_and_hides_past_twenty_eight(
+            GameTestHelper helper) {
+        QueenAntEntity queen = helper.spawn(ModEntities.QUEEN_ANT.get(), ARENA_CENTRE);
+        ServerPlayer viewer = helper.makeMockServerPlayerInLevel();
+        helper.getLevel().getServer().getPlayerList().remove(viewer);
+
+        helper.assertFalse(queen.getBossBarAudience().contains(viewer),
+                "nobody should see the bar before the queen has ticked");
+
+        // 30 blocks out: past the entry radius, so the bar must not appear.
+        putAtDistance(viewer, queen, 30.0);
+        queen.refreshBossBarAudience(List.of(viewer));
+        helper.assertFalse(queen.getBossBarAudience().contains(viewer),
+                "a player 30 blocks away must not have the bar");
+
+        // 15 blocks: inside the entry radius.
+        putAtDistance(viewer, queen, 15.0);
+        queen.refreshBossBarAudience(List.of(viewer));
+        helper.assertTrue(queen.getBossBarAudience().contains(viewer),
+                "a player 15 blocks away must have the bar");
+
+        // 25 blocks: past the entry radius but inside the exit radius -- the hysteresis
+        // band. Someone who already has the bar keeps it here; that is the whole point of
+        // the two numbers, and a single-radius implementation fails exactly this line.
+        putAtDistance(viewer, queen, 25.0);
+        queen.refreshBossBarAudience(List.of(viewer));
+        helper.assertTrue(queen.getBossBarAudience().contains(viewer),
+                "a player who already has the bar must keep it inside the hysteresis band");
+
+        // 40 blocks: past the exit radius.
+        putAtDistance(viewer, queen, 40.0);
+        queen.refreshBossBarAudience(List.of(viewer));
+        helper.assertFalse(queen.getBossBarAudience().contains(viewer),
+                "a player 40 blocks away must have lost the bar");
+        helper.succeed();
+    }
+
+    /** Parks {@code player} exactly {@code distance} blocks from the queen, along +X. */
+    private static void putAtDistance(ServerPlayer player, QueenAntEntity queen, double distance) {
+        player.setPos(queen.getX() + distance, queen.getY(), queen.getZ());
     }
 
     // -------------------------------------------------------- pheromone horn --

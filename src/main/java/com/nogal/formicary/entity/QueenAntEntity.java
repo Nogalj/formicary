@@ -1,6 +1,7 @@
 package com.nogal.formicary.entity;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import javax.annotation.Nullable;
@@ -50,9 +51,11 @@ import net.minecraft.world.phys.Vec3;
  *
  * <p>Three things make her a boss rather than a big soldier:
  * <ul>
- *   <li>a {@link ServerBossEvent} health bar, wired through
- *       {@link #startSeenByPlayer}/{@link #stopSeenByPlayer} the way {@code WitherBoss}
- *       does it;</li>
+ *   <li>a {@link ServerBossEvent} health bar, brought up by proximity
+ *       ({@link #refreshBossBarAudience}, {@link #BOSS_BAR_RADIUS}) and torn down both by
+ *       distance and by {@link #stopSeenByPlayer} -- {@code WitherBoss}'s plumbing minus
+ *       its add-on-track half, which for a 16-chunk tracking range meant a bar 256 blocks
+ *       from a chamber nobody had found;</li>
  *   <li>{@link #PHASE_THRESHOLDS}: crossing 75%, 50% and 25% health fires a pheromone
  *       burst once each -- soldier reinforcements plus Slowness on everyone close;</li>
  *   <li>{@link #die}: killing her grants every player nearby the Pheromonal Disguise and
@@ -107,6 +110,34 @@ public class QueenAntEntity extends PathfinderMob {
 
     /** How far her death grace reaches, in blocks. Tunable. */
     public static final double GRACE_RADIUS = 24.0;
+
+    /**
+     * How close a player must be for her health bar to appear at all.
+     *
+     * <p>Her {@code clientTrackingRange} is 16 chunks, so before this the bar came up
+     * roughly 256 blocks away -- a boss bar hanging over a player who is four tiers up,
+     * has never seen the chamber, and cannot tell what it belongs to. 20 is a little
+     * inside her 32-block {@code FOLLOW_RANGE}: by the time the bar exists she can see
+     * you, which is the thing the bar is actually reporting.
+     */
+    public static final double BOSS_BAR_RADIUS = 20.0;
+
+    /**
+     * How far a player who already has the bar must retreat before it goes away.
+     *
+     * <p>The hysteresis half. Without it, standing on the boundary flickers the bar on and
+     * off every refresh, which is worse than either state -- and 20/28 is wide enough that
+     * a fight fought at the edge of her leash ({@link #LEASH_SNAP_DISTANCE}, 24) never
+     * loses the bar mid-swing.
+     */
+    public static final double BOSS_BAR_RADIUS_EXIT = 28.0;
+
+    /**
+     * Ticks between audience refreshes. Ten: a player crossing the boundary at sprint speed
+     * (~5.6 blocks/s) moves under 3 blocks in that window, and the 8-block hysteresis band
+     * absorbs it, so the bar never appears late enough to notice.
+     */
+    private static final int BOSS_BAR_REFRESH_TICKS = 10;
 
     /** Pheromonal Disguise granted on her death: 3600 ticks = 3 minutes. Tunable. */
     public static final int GRACE_DISGUISE_TICKS = 3600;
@@ -192,6 +223,9 @@ public class QueenAntEntity extends PathfinderMob {
             return;
         }
         this.bossEvent.setProgress(this.getHealth() / this.getMaxHealth());
+        if (this.tickCount % BOSS_BAR_REFRESH_TICKS == 0) {
+            this.refreshBossBarAudience(level.players());
+        }
 
         // The leash's failsafe. MoveTowardsRestrictionGoal is the polite version and does
         // the work in practice; this catches the cases pathfinding cannot -- knocked
@@ -294,6 +328,9 @@ public class QueenAntEntity extends PathfinderMob {
         if (!(this.level() instanceof ServerLevel level)) {
             return;
         }
+        // Emptied rather than left to drain: the bar itself is torn down when she is
+        // actually removed a death animation later (removal -> broadcastRemoved ->
+        // stopSeenByPlayer), so this is only what it reads in the meantime.
         this.bossEvent.setProgress(0.0F);
         Vec3 origin = this.position();
         List<Player> caught = playersInRange(level, origin, GRACE_RADIUS);
@@ -407,10 +444,44 @@ public class QueenAntEntity extends PathfinderMob {
 
     // ------------------------------------------------------------- boss bar --
 
-    @Override
-    public void startSeenByPlayer(ServerPlayer player) {
-        super.startSeenByPlayer(player);
-        this.bossEvent.addPlayer(player);
+    /**
+     * Brings the bar up for players inside {@link #BOSS_BAR_RADIUS} and drops it for those
+     * past {@link #BOSS_BAR_RADIUS_EXIT}, leaving everyone in between exactly as they were.
+     *
+     * <p>This replaces the {@code WitherBoss} plumbing on the <em>adding</em> side.
+     * {@code startSeenByPlayer} fires at the entity's client tracking range -- 16 chunks for
+     * her, so the bar used to appear about 256 blocks out, four tiers above a chamber the
+     * player has not found, attached to nothing they can see. Tracking range is a
+     * networking decision and had no business being the UI one.
+     *
+     * <p>Public and list-taking for the same reason {@link #pheromoneBurst} and
+     * {@link #grantDeathGrace} are: a {@code GameTestHelper} mock player is never added to
+     * the level, so a test cannot reach this rule through {@code level.players()}.
+     *
+     * <p>Removal is deliberately <b>not</b> only here. This loop can only see players in the
+     * level, so everything that takes a player out of it -- disconnect, dimension change,
+     * the chunk unloading, and her own death -- is covered by {@link #stopSeenByPlayer}
+     * instead: entity removal runs {@code ChunkMap.TrackedEntity#broadcastRemoved} ->
+     * {@code ServerEntity#removePairing} -> {@code stopSeenByPlayer}, and a player leaving
+     * runs the same path through {@code TrackedEntity#removePlayer} (verified in the
+     * decompiled {@code ChunkMap} / {@code ServerEntity}).
+     */
+    public void refreshBossBarAudience(List<? extends ServerPlayer> candidates) {
+        for (ServerPlayer player : candidates) {
+            double distanceSq = player.distanceToSqr(this.position());
+            if (this.bossEvent.getPlayers().contains(player)) {
+                if (distanceSq > BOSS_BAR_RADIUS_EXIT * BOSS_BAR_RADIUS_EXIT) {
+                    this.bossEvent.removePlayer(player);
+                }
+            } else if (distanceSq <= BOSS_BAR_RADIUS * BOSS_BAR_RADIUS) {
+                this.bossEvent.addPlayer(player);
+            }
+        }
+    }
+
+    /** Who can currently see her bar. Unmodifiable; a test seam and a readout. */
+    public Collection<ServerPlayer> getBossBarAudience() {
+        return this.bossEvent.getPlayers();
     }
 
     @Override
