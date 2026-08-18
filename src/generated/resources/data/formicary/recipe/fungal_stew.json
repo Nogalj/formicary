@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "minecraft:bowl"
+    },
+    {
+      "item": "formicary:fungal_bloom"
+    },
+    {
+      "item": "formicary:fungal_bloom"
+    },
+    {
+      "item": "formicary:fungal_spores"
+    }
+  ],
+  "result": {
+    "count": 1,
+    "id": "formicary:fungal_stew"
+  }
+}

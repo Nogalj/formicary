@@ -86,6 +86,36 @@ public class ModRecipeProvider extends RecipeProvider {
 
         // Ep2 task H3: decorative families.
         decorativeFamilyRecipes(recipeOutput);
+
+        // Ep2 task H4: the three colony foods, craftable.
+        colonyFoodRecipes(recipeOutput);
+    }
+
+    /**
+     * Ep2 task H4: the three D1 colony foods (already registered in {@link ModItems},
+     * see that class's javadoc) become craftable. All three are shapeless -- nothing
+     * about the arrangement should matter, the same reasoning {@code buildRecipes}
+     * already gives for the Trail Pheromone and Pheromone Horn recipes above.
+     */
+    private void colonyFoodRecipes(RecipeOutput recipeOutput) {
+        ShapelessRecipeBuilder.shapeless(RecipeCategory.FOOD, ModItems.HONEYED_COMB.get())
+                .requires(ModItems.BROOD_COMB.get())
+                .requires(Items.SUGAR)
+                .unlockedBy(getHasName(ModItems.BROOD_COMB.get()), has(ModItems.BROOD_COMB.get()))
+                .save(recipeOutput);
+
+        ShapelessRecipeBuilder.shapeless(RecipeCategory.FOOD, ModItems.FUNGAL_STEW.get())
+                .requires(Items.BOWL)
+                .requires(ModItems.FUNGAL_BLOOM.get(), 2)
+                .requires(ModItems.FUNGAL_SPORES.get())
+                .unlockedBy(getHasName(ModItems.FUNGAL_BLOOM.get()), has(ModItems.FUNGAL_BLOOM.get()))
+                .save(recipeOutput);
+
+        ShapelessRecipeBuilder.shapeless(RecipeCategory.FOOD, ModItems.ROYAL_JELLY_TREAT.get())
+                .requires(ModItems.ROYAL_JELLY.get())
+                .requires(ModItems.HONEYED_COMB.get())
+                .unlockedBy(getHasName(ModItems.ROYAL_JELLY.get()), has(ModItems.ROYAL_JELLY.get()))
+                .save(recipeOutput);
     }
 
     /**

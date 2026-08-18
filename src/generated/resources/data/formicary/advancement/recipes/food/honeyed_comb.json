@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_brood_comb": {
+      "conditions": {
+        "items": [
+          {
+            "items": "formicary:brood_comb"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "formicary:honeyed_comb"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_brood_comb"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "formicary:honeyed_comb"
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "formicary:royal_jelly"
+    },
+    {
+      "item": "formicary:honeyed_comb"
+    }
+  ],
+  "result": {
+    "count": 1,
+    "id": "formicary:royal_jelly_treat"
+  }
+}
