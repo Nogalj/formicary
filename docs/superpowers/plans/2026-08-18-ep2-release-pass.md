@@ -60,7 +60,7 @@
 - Modify: `src/main/java/com/nogal/formicary/worldgen/NoiseProbe.java` (membrane section)
 
 - [ ] **Step 1: Drop the noise-threshold guard, keep the cap-band and isAir-beneath guards** (verified separable at ColonyNoise.java:730-739). Every ceiling column with air directly beneath the cap now returns membrane for the `MEMBRANE_THICKNESS` layers.
-- [ ] **Step 2: NoiseProbe:** replace the membrane-distance measurement with the new invariant — assert over the sample area: `exposedCeilingColumn ⇒ membrane present` (zero violations) and report the membrane fraction of total ceiling (informational).
+- [ ] **Step 2: NoiseProbe:** delete the now-dead `MEMBRANE_THRESHOLD_LADDER` sweep (NoiseProbe.java:113-163) and replace the membrane-distance measurement with the new invariant — assert over the sample area: `exposedCeilingColumn ⇒ membrane present` (zero violations) and report the membrane fraction of total ceiling (informational).
 - [ ] **Step 3: Run probe** on the three standard seeds (1234567, 42, 987654321): invariant holds on all three. Run full GameTest suite: 53/53 (no test pins membrane scarcity — verify by grep before assuming).
 - [ ] **Step 4: Commit** `feat(worldgen): membrane on every exposed ceiling column — visible roof = exit`
 
@@ -129,7 +129,7 @@ public static final double ENDER_SPAWN_MAX_F = 0.35;
 - Modify: `src/main/java/com/nogal/formicary/worldgen/ColonyNoise.java` (`throneForCell` at :302-323, corridor construction at :388-389)
 - Modify: `src/main/java/com/nogal/formicary/worldgen/ColonyGeneratorTunables.java` (retire `THRONE_SPACING` in favor of the colony cell; keep the name pointing at `COLONY_SPACING` or update references — grep all uses)
 
-- [ ] **Step 1:** Throne cell becomes the colony cell: `throneForCell` keys off `COLONY_SPACING` and hangs the chamber off the ramp nearest the *colony center* (floor-Y arithmetic is ramp-relative and unchanged — verified). Exactly one throne per colony by construction.
+- [ ] **Step 1:** Throne cell becomes the colony cell: `throneForCell` keys off `COLONY_SPACING` and hangs the chamber off the ramp nearest the *colony center* (floor-Y arithmetic is ramp-relative and unchanged — verified). Exactly one throne per colony by construction. Update every `THRONE_SPACING` reader: ColonyNoise cell math (:286-337) AND NoiseProbe's per-throne density arithmetic (:423, :644).
 - [ ] **Step 2:** Corridor floor forced-solid at height 0 exactly like the nursery corridor (ColonyNoise.java:573-574 pattern), subordinate to shaftState. Update the asymmetry comment at :561-565 — the 17% justification is invalidated by the field (cite spec §1).
 - [ ] **Step 3:** Build green. **Commit** `feat(worldgen): one throne per colony; corridor floor forced solid`
 
@@ -274,7 +274,7 @@ public static final double ENDER_SPAWN_MAX_F = 0.35;
 
 **Files:** Modify: `HarvestCropsGoal.java`, `DepositToChestGoal.java`, `CropScanner.java` (replace cursor with nearest-mature search), `TamedWorkerAntEntity.java` (harvest/replant at :277-293).
 
-- [ ] **Step 1: One-crop:** after a successful harvest, the worker's next act is the deposit trip (deposit goal precondition becomes `!pack.isEmpty()`), then back out. Remove the pack-full/idle-lull triggers **deliberately** (`DEPOSIT_AFTER_IDLE_TICKS`, `isPackFull` gating — delete or repurpose, no dead constants; the ferry goal keeps its own deposit path — verify `CollectDroppedItemsGoal`'s deposit route is independent before deleting anything it uses).
+- [ ] **Step 1: One-crop:** after a successful harvest, the worker's next act is the deposit trip (deposit goal precondition becomes `!pack.isEmpty()`), then back out. Remove the pack-full/idle-lull triggers **deliberately**: `DEPOSIT_AFTER_IDLE_TICKS` (used only at TamedWorkerAntEntity:99 + DepositToChestGoal:65) goes; **`isPackFull` itself STAYS** — the ferry goal depends on it (CollectDroppedItemsGoal:63,95) — only its deposit-goal/harvest-goal gating changes.
 - [ ] **Step 2: Nearest-mature:** scanner returns the nearest mature crop within `PATROL_RADIUS` of the bound chest (full scan is fine at the deposit-trip cadence; keep a per-tick budget if profiling says so — don't pre-optimize).
 - [ ] **Step 3: Replant guarantee:** in `harvest`, when `takeSeed` returns EMPTY (the ~9% wheat zero-roll — CropHarvest.java:65-84), replant the age-0 state anyway (the seed conceptually never left the ground). Delete the "left bare" branch.
 - [ ] **Step 4: Tests:** retarget `the_crop_scan_is_tick_budgeted_and_incremental` (TamingGameTests.java:339-368) to pin nearest-mature selection instead (name the retarget in the commit body). New tests: (a) two mature crops, one harvest → next act is chest deposit, second crop untouched until after; (b) forced zero-seed context (assert replant happened across N harvests — the existing ~9%-flake mitigation pattern in that file shows how); (c) nearest of two mature crops is chosen. `bound_worker_harvests_replants_and_deposits` must pass unchanged.
