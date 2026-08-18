@@ -3,6 +3,7 @@ package com.nogal.formicary.worldgen;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ACCENT_XZ_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ACCENT_Y_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CEILING_BOTTOM;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_ELIGIBILITY_MIN_F;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_LARGE_THRESHOLD_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COMB_PATCH_THRESHOLD_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COMB_PATCH_XZ_SCALE;
@@ -12,6 +13,8 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_LARGE
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SMALL_THRESHOLD_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SMALL_XZ_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SMALL_Y_SCALE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COLONY_JITTER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COLONY_SPACING;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FLOOR_TOP;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_APPROACH_DISTANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_CORRIDOR_END;
@@ -45,6 +48,7 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_WALL_H
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_THICKNESS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_XZ_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MIN_Y;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NEVER_THRESHOLD;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_APPROACH_DISTANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_CORRIDOR_END;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_CORRIDOR_HALF_WIDTH;
@@ -87,10 +91,12 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.TUNNEL_XZ_SCA
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.TUNNEL_Y_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.WALL_JITTER_AMOUNT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.WALL_JITTER_SCALE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.colonyFalloff;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierIndex;
 
 import java.util.List;
 
+import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.levelgen.PositionalRandomFactory;
 import net.minecraft.world.level.levelgen.synth.PerlinNoise;
@@ -282,6 +288,119 @@ public final class ColonyNoise {
     private double jitter(int x, int z) {
         double n = this.wallJitter.getValue(x * WALL_JITTER_SCALE, 0.0, z * WALL_JITTER_SCALE);
         return WALL_JITTER_AMOUNT * (0.5 + 0.5 * Math.max(-1.0, Math.min(1.0, n)));
+    }
+
+    // ------------------------------------------------------------------
+    // The colony field (Ep2 D1) -- dense cores, sparse wilds between
+    //
+    // Deliberately NOT a noise field. A colony has to be findable ("walk 400 blocks and you
+    // will hit one"), a throne has to be one per colony, and the boss-bar separation
+    // invariant has to be provable -- all three are statements about a MINIMUM spacing,
+    // which a Perlin field cannot make. So it is the same jittered grid the connectivity
+    // shafts use, and the density falloff is a closed-form function of distance to the
+    // nearest centre. See ColonyGeneratorTunables' colony section for the constants and for
+    // what f does and does not modulate.
+    // ------------------------------------------------------------------
+
+    /** One colony's centre. There is no radius here: the falloff is a pure function of it. */
+    public record Colony(double centreX, double centreZ) {
+    }
+
+    /**
+     * The colony belonging to one {@link ColonyGeneratorTunables#COLONY_SPACING} cell.
+     *
+     * <p>Identical construction to {@link #shaftForCell}: the cell centre plus a seeded
+     * offset of up to {@code COLONY_JITTER / 2} on each axis. That bound is the whole point
+     * -- it is what makes the minimum separation between two centres
+     * {@code COLONY_SPACING - COLONY_JITTER} = 288 blocks rather than "whatever the noise
+     * did", and 288 is the number the boss-bar invariant rests on.
+     */
+    public Colony colonyCenterForCell(int cellX, int cellZ) {
+        // y = 5: a sixth independent stream, so this never draws the same numbers as
+        // shaftForCell (0), throneForCell (1), nurseryForCell (2), gardenForCell (3) or
+        // larderForCell (4) for the same cell.
+        RandomSource random = this.factory.at(cellX, 5, cellZ);
+        double half = COLONY_JITTER * 0.5;
+        double x = (double) cellX * COLONY_SPACING + COLONY_SPACING * 0.5 + (random.nextDouble() * 2.0 - 1.0) * half;
+        double z = (double) cellZ * COLONY_SPACING + COLONY_SPACING * 0.5 + (random.nextDouble() * 2.0 - 1.0) * half;
+        return new Colony(x, z);
+    }
+
+    /**
+     * The 3x3 cell neighbourhood around a point, which is provably every colony whose field
+     * can reach it.
+     *
+     * <p>A centre lands within 48 blocks of its cell centre, so from any point in cell
+     * {@code C} the own-cell centre is at most {@code 192*sqrt(2) + 48} = 320 blocks away
+     * while a centre two cells out is at least {@code 2*384 - 192 - 48} = 528. The nearest
+     * centre is therefore always inside the ring, and since
+     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} is 150 no colony outside it can
+     * contribute anything but zero.
+     */
+    public Colony[] coloniesNear(int blockX, int blockZ) {
+        int cellX = Math.floorDiv(blockX, COLONY_SPACING);
+        int cellZ = Math.floorDiv(blockZ, COLONY_SPACING);
+        Colony[] out = new Colony[9];
+        int i = 0;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                out[i++] = colonyCenterForCell(cellX + dx, cellZ + dz);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The colony density at (x, z) given a candidate set: {@code 1.0} inside a core,
+     * smoothstepped to {@code 0.0} by the outer radius.
+     *
+     * <p>The overload taking the candidates is the one generation uses -- {@code coloniesNear}
+     * is nine seeded draws, and a whole chunk shares one answer to "which colonies are
+     * around here", so resolving them per column (let alone per block) would be nine
+     * {@code RandomSource} allocations for a number that cannot have changed.
+     */
+    public double colonyField(Colony[] colonies, double x, double z) {
+        double bestSq = Double.MAX_VALUE;
+        for (Colony colony : colonies) {
+            double dx = x - colony.centreX();
+            double dz = z - colony.centreZ();
+            bestSq = Math.min(bestSq, dx * dx + dz * dz);
+        }
+        return colonyFalloff(Math.sqrt(bestSq));
+    }
+
+    /** The colony density at (x, z), resolving the 3x3 neighbourhood itself. */
+    public double colonyField(double x, double z) {
+        return colonyField(coloniesNear(Mth.floor(x), Mth.floor(z)), x, z);
+    }
+
+    /** The colony whose centre is horizontally nearest (x, z). */
+    public Colony nearestColony(double x, double z) {
+        Colony[] colonies = coloniesNear(Mth.floor(x), Mth.floor(z));
+        Colony best = colonies[0];
+        double bestSq = Double.MAX_VALUE;
+        for (Colony colony : colonies) {
+            double dx = x - colony.centreX();
+            double dz = z - colony.centreZ();
+            double distanceSq = dx * dx + dz * dz;
+            if (distanceSq < bestSq) {
+                bestSq = distanceSq;
+                best = colony;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Whether a chamber centred at (x, z) is inside a colony at all.
+     *
+     * <p>Evaluated once per chamber, at construction, and carried on the chamber record --
+     * not re-derived per block. The test is on the chamber's own centre rather than on its
+     * cell's, because the room is what the player walks into: a cell whose centre is in the
+     * ring but whose chamber jittered out into the wilds is a room in the wilds.
+     */
+    public boolean isChamberEligible(double x, double z) {
+        return colonyField(x, z) > CHAMBER_ELIGIBILITY_MIN_F;
     }
 
     // ------------------------------------------------------------------
@@ -485,9 +604,15 @@ public final class ColonyNoise {
      * {@link Throne} -- centred at ({@code centreX}, {@code centreZ}) with its floor at
      * {@code floorY}, joined to the connectivity ramp at ({@code axisX}, {@code axisZ}) by a
      * straight corridor along the unit vector ({@code dirX}, {@code dirZ}).
+     *
+     * <p>{@code inColony} is the Ep2 colony-field gate, evaluated once here rather than per
+     * block: false means this cell's chamber fell in the wilds and does not generate at all.
+     * It rides on the record so that {@link #nurseriesNear} can keep returning a fixed 3x3
+     * in cell order (the probe and the GameTests index into it) while every consumer still
+     * gets the gate for free.
      */
     public record Nursery(double centreX, double centreZ, double axisX, double axisZ,
-            double dirX, double dirZ, int floorY) {
+            double dirX, double dirZ, int floorY, boolean inColony) {
     }
 
     /** {@link #nurseryState} verdicts. */
@@ -527,9 +652,10 @@ public final class ColonyNoise {
         int turn = (int) Math.ceil((NURSERY_FLOOR_MIN_Y - base) / RAMP_PERIOD);
         int floorY = (int) Math.floor(base + turn * RAMP_PERIOD);
 
-        return new Nursery(shaft.axisX() + NURSERY_APPROACH_DISTANCE * dirX,
-                shaft.axisZ() + NURSERY_APPROACH_DISTANCE * dirZ,
-                shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY);
+        double centreXd = shaft.axisX() + NURSERY_APPROACH_DISTANCE * dirX;
+        double centreZd = shaft.axisZ() + NURSERY_APPROACH_DISTANCE * dirZ;
+        return new Nursery(centreXd, centreZd, shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY,
+                isChamberEligible(centreXd, centreZd));
     }
 
     /**
@@ -559,11 +685,18 @@ public final class ColonyNoise {
         return out;
     }
 
-    /** Chambers from {@code candidates} whose carve can reach the column at (x, z). */
+    /**
+     * Chambers from {@code candidates} whose carve can reach the column at (x, z), skipping
+     * the ones the colony field gated out -- they carve nothing, so keeping them would only
+     * make every consumer re-ask the same question per block.
+     */
     public Nursery[] nurseriesForColumn(Nursery[] candidates, int x, int z) {
         int count = 0;
         Nursery[] scratch = new Nursery[candidates.length];
         for (Nursery nursery : candidates) {
+            if (!nursery.inColony()) {
+                continue;
+            }
             double dx = x - nursery.centreX();
             double dz = z - nursery.centreZ();
             if (dx * dx + dz * dz <= NURSERY_MAX_REACH * NURSERY_MAX_REACH) {
@@ -587,10 +720,11 @@ public final class ColonyNoise {
      * One farm chamber: a small domed room in the Fungal Gardens tier, built exactly like
      * {@link Nursery} -- centred at ({@code centreX}, {@code centreZ}) with its floor at
      * {@code floorY}, joined to the connectivity ramp at ({@code axisX}, {@code axisZ}) by a
-     * straight corridor along the unit vector ({@code dirX}, {@code dirZ}).
+     * straight corridor along the unit vector ({@code dirX}, {@code dirZ}), and gated by the
+     * same {@code inColony} colony-field test.
      */
     public record Garden(double centreX, double centreZ, double axisX, double axisZ,
-            double dirX, double dirZ, int floorY) {
+            double dirX, double dirZ, int floorY, boolean inColony) {
     }
 
     /** {@link #gardenState} verdicts. */
@@ -631,9 +765,10 @@ public final class ColonyNoise {
         int turn = (int) Math.ceil((GARDEN_FLOOR_MIN_Y - base) / RAMP_PERIOD);
         int floorY = (int) Math.floor(base + turn * RAMP_PERIOD);
 
-        return new Garden(shaft.axisX() + GARDEN_APPROACH_DISTANCE * dirX,
-                shaft.axisZ() + GARDEN_APPROACH_DISTANCE * dirZ,
-                shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY);
+        double centreXd = shaft.axisX() + GARDEN_APPROACH_DISTANCE * dirX;
+        double centreZd = shaft.axisZ() + GARDEN_APPROACH_DISTANCE * dirZ;
+        return new Garden(centreXd, centreZd, shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY,
+                isChamberEligible(centreXd, centreZd));
     }
 
     /**
@@ -656,11 +791,14 @@ public final class ColonyNoise {
         return out;
     }
 
-    /** Chambers from {@code candidates} whose carve can reach the column at (x, z). */
+    /** As {@link #nurseriesForColumn}: within reach, and not gated out by the colony field. */
     public Garden[] gardensForColumn(Garden[] candidates, int x, int z) {
         int count = 0;
         Garden[] scratch = new Garden[candidates.length];
         for (Garden garden : candidates) {
+            if (!garden.inColony()) {
+                continue;
+            }
             double dx = x - garden.centreX();
             double dz = z - garden.centreZ();
             if (dx * dx + dz * dz <= GARDEN_MAX_REACH * GARDEN_MAX_REACH) {
@@ -704,7 +842,8 @@ public final class ColonyNoise {
      * cylindrical wall, clear of the dome's curve).
      */
     public record Larder(double centreX, double centreZ, double axisX, double axisZ,
-            double dirX, double dirZ, int floorY, int combX1, int combZ1, int combX2, int combZ2, int combY) {
+            double dirX, double dirZ, int floorY, int combX1, int combZ1, int combX2, int combZ2, int combY,
+            boolean inColony) {
     }
 
     /** {@link #larderState} verdicts. */
@@ -771,7 +910,8 @@ public final class ColonyNoise {
         int combZ2 = (int) Math.round(centreZd + LARDER_COMB_RADIUS * Math.sin(combAngle2));
 
         return new Larder(centreXd, centreZd, shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY,
-                combX1, combZ1, combX2, combZ2, floorY + LARDER_COMB_HEIGHT);
+                combX1, combZ1, combX2, combZ2, floorY + LARDER_COMB_HEIGHT,
+                isChamberEligible(centreXd, centreZd));
     }
 
     /**
@@ -794,11 +934,14 @@ public final class ColonyNoise {
         return out;
     }
 
-    /** Chambers from {@code candidates} whose carve can reach the column at (x, z). */
+    /** As {@link #nurseriesForColumn}: within reach, and not gated out by the colony field. */
     public Larder[] lardersForColumn(Larder[] candidates, int x, int z) {
         int count = 0;
         Larder[] scratch = new Larder[candidates.length];
         for (Larder larder : candidates) {
+            if (!larder.inColony()) {
+                continue;
+            }
             double dx = x - larder.centreX();
             double dz = z - larder.centreZ();
             if (dx * dx + dz * dz <= LARDER_MAX_REACH * LARDER_MAX_REACH) {
@@ -821,19 +964,32 @@ public final class ColonyNoise {
     // ------------------------------------------------------------------
 
     /**
-     * Cell rings searched by {@link #nearestThrone} / {@link #nearestNursery}.
+     * Cell rings searched by {@link #nearestThrone}.
      *
-     * <p>Two, not the one that {@link #thronesNear} and {@link #nurseriesNear} use, because
-     * this is a different question. Those ask "whose carve can touch this chunk", which the
-     * 3x3 ring provably answers. "Whose centre is closest to this point" has to look
-     * further: a nursery centre lands anywhere within 56 blocks of its 96-block cell centre,
-     * so the nearest of the 3x3 can be up to {@code 48*sqrt(2) + 56} = 124 blocks away while
-     * a chamber two cells out can sit as close as {@code 2*96 + 48 - 56 - 96} = 88. Two
-     * rings settle it in both directions -- three cells out is at least 184 blocks for a
-     * nursery and 494 for a throne, both beyond any candidate the search can already see --
-     * and 25 cells of closed-form arithmetic is nothing for a command that runs on demand.
+     * <p>Two, not the one that {@link #thronesNear} uses, because this is a different
+     * question. That one asks "whose carve can touch this chunk", which the 3x3 ring
+     * provably answers. "Whose centre is closest to this point" has to look further: a
+     * throne centre lands anywhere within 66 blocks of its 224-block cell centre, so the
+     * nearest of the 3x3 can be up to {@code 112*sqrt(2) + 66} = 224 blocks away while a
+     * chamber two cells out can sit as close as {@code 2*224 + 112 - 66 - 224} = 270.
+     * Two rings settle it in both directions.
      */
     private static final int NEAREST_QUERY_CELL_RADIUS = 2;
+
+    /**
+     * Cell rings searched by {@link #nearestNursery} / {@link #nearestGarden} /
+     * {@link #nearestLarder}, whose 96-block cells now have to be filtered for colony
+     * eligibility before the answer means anything.
+     *
+     * <p>Six, and the number is derived rather than generous. From an arbitrary point the
+     * nearest colony centre is at most {@code 192*sqrt(2) + 48} = 320 blocks away, and a
+     * chamber inside that colony is eligible out to about 134 blocks from its centre
+     * (solving the falloff for {@link ColonyGeneratorTunables#CHAMBER_ELIGIBILITY_MIN_F}),
+     * so an eligible chamber always exists within {@code 320 + 134} = 454 blocks. Six rings
+     * of 96 reach 576, which covers it with margin. 169 cells of closed-form arithmetic is
+     * nothing for a command that runs on demand.
+     */
+    private static final int NEAREST_ELIGIBLE_CELL_RADIUS = 6;
 
     /** The throne chamber whose centre is horizontally nearest (x, z). */
     public Throne nearestThrone(int x, int z) {
@@ -854,15 +1010,27 @@ public final class ColonyNoise {
         return best;
     }
 
-    /** The nursery chamber whose centre is horizontally nearest (x, z). */
+    /**
+     * The nursery chamber whose centre is horizontally nearest (x, z) and which actually
+     * generates -- i.e. one that passed the colony-eligibility gate.
+     *
+     * <p>Filtering matters here in a way it does not for the throne: since Ep2 the majority
+     * of 96-block cells produce no room at all, so an unfiltered "nearest" would name a set
+     * of coordinates that is solid soil. The fallback to the unfiltered nearest exists only
+     * so the dev command reports something rather than nothing if the derivation above ever
+     * stops holding; {@link NoiseProbe}'s colony section is what would catch that.
+     */
     public Nursery nearestNursery(int x, int z) {
         int cellX = Math.floorDiv(x, NURSERY_SPACING);
         int cellZ = Math.floorDiv(z, NURSERY_SPACING);
-        Nursery best = nurseryForCell(cellX, cellZ);
-        double bestDistanceSq = distanceSq(x, z, best.centreX(), best.centreZ());
-        for (int dx = -NEAREST_QUERY_CELL_RADIUS; dx <= NEAREST_QUERY_CELL_RADIUS; dx++) {
-            for (int dz = -NEAREST_QUERY_CELL_RADIUS; dz <= NEAREST_QUERY_CELL_RADIUS; dz++) {
+        Nursery best = null;
+        double bestDistanceSq = Double.MAX_VALUE;
+        for (int dx = -NEAREST_ELIGIBLE_CELL_RADIUS; dx <= NEAREST_ELIGIBLE_CELL_RADIUS; dx++) {
+            for (int dz = -NEAREST_ELIGIBLE_CELL_RADIUS; dz <= NEAREST_ELIGIBLE_CELL_RADIUS; dz++) {
                 Nursery candidate = nurseryForCell(cellX + dx, cellZ + dz);
+                if (!candidate.inColony()) {
+                    continue;
+                }
                 double distanceSq = distanceSq(x, z, candidate.centreX(), candidate.centreZ());
                 if (distanceSq < bestDistanceSq) {
                     bestDistanceSq = distanceSq;
@@ -870,18 +1038,21 @@ public final class ColonyNoise {
                 }
             }
         }
-        return best;
+        return best != null ? best : nurseryForCell(cellX, cellZ);
     }
 
-    /** The garden chamber whose centre is horizontally nearest (x, z). */
+    /** The garden chamber whose centre is horizontally nearest (x, z), gated as above. */
     public Garden nearestGarden(int x, int z) {
         int cellX = Math.floorDiv(x, GARDEN_SPACING);
         int cellZ = Math.floorDiv(z, GARDEN_SPACING);
-        Garden best = gardenForCell(cellX, cellZ);
-        double bestDistanceSq = distanceSq(x, z, best.centreX(), best.centreZ());
-        for (int dx = -NEAREST_QUERY_CELL_RADIUS; dx <= NEAREST_QUERY_CELL_RADIUS; dx++) {
-            for (int dz = -NEAREST_QUERY_CELL_RADIUS; dz <= NEAREST_QUERY_CELL_RADIUS; dz++) {
+        Garden best = null;
+        double bestDistanceSq = Double.MAX_VALUE;
+        for (int dx = -NEAREST_ELIGIBLE_CELL_RADIUS; dx <= NEAREST_ELIGIBLE_CELL_RADIUS; dx++) {
+            for (int dz = -NEAREST_ELIGIBLE_CELL_RADIUS; dz <= NEAREST_ELIGIBLE_CELL_RADIUS; dz++) {
                 Garden candidate = gardenForCell(cellX + dx, cellZ + dz);
+                if (!candidate.inColony()) {
+                    continue;
+                }
                 double distanceSq = distanceSq(x, z, candidate.centreX(), candidate.centreZ());
                 if (distanceSq < bestDistanceSq) {
                     bestDistanceSq = distanceSq;
@@ -889,18 +1060,21 @@ public final class ColonyNoise {
                 }
             }
         }
-        return best;
+        return best != null ? best : gardenForCell(cellX, cellZ);
     }
 
-    /** The larder chamber whose centre is horizontally nearest (x, z). */
+    /** The larder chamber whose centre is horizontally nearest (x, z), gated as above. */
     public Larder nearestLarder(int x, int z) {
         int cellX = Math.floorDiv(x, LARDER_SPACING);
         int cellZ = Math.floorDiv(z, LARDER_SPACING);
-        Larder best = larderForCell(cellX, cellZ);
-        double bestDistanceSq = distanceSq(x, z, best.centreX(), best.centreZ());
-        for (int dx = -NEAREST_QUERY_CELL_RADIUS; dx <= NEAREST_QUERY_CELL_RADIUS; dx++) {
-            for (int dz = -NEAREST_QUERY_CELL_RADIUS; dz <= NEAREST_QUERY_CELL_RADIUS; dz++) {
+        Larder best = null;
+        double bestDistanceSq = Double.MAX_VALUE;
+        for (int dx = -NEAREST_ELIGIBLE_CELL_RADIUS; dx <= NEAREST_ELIGIBLE_CELL_RADIUS; dx++) {
+            for (int dz = -NEAREST_ELIGIBLE_CELL_RADIUS; dz <= NEAREST_ELIGIBLE_CELL_RADIUS; dz++) {
                 Larder candidate = larderForCell(cellX + dx, cellZ + dz);
+                if (!candidate.inColony()) {
+                    continue;
+                }
                 double distanceSq = distanceSq(x, z, candidate.centreX(), candidate.centreZ());
                 if (distanceSq < bestDistanceSq) {
                     bestDistanceSq = distanceSq;
@@ -908,7 +1082,7 @@ public final class ColonyNoise {
                 }
             }
         }
-        return best;
+        return best != null ? best : larderForCell(cellX, cellZ);
     }
 
     private static double distanceSq(int x, int z, double centreX, double centreZ) {
@@ -926,9 +1100,15 @@ public final class ColonyNoise {
      * under a 34-block approach; a nursery hangs 24 blocks out in the Nurseries tier, which
      * is the airiest band in the dimension (24% air), so leaving the floor to the noise
      * would eventually produce a doorway opening onto a drop.
+     *
+     * <p>Chambers whose {@link Nursery#inColony()} is false are skipped outright: outside a
+     * colony the room does not generate, so it says nothing about any position.
      */
     public int nurseryState(Nursery[] nurseries, int x, int y, int z) {
         for (Nursery nursery : nurseries) {
+            if (!nursery.inColony()) {
+                continue;
+            }
             double dx = x - nursery.centreX();
             double dz = z - nursery.centreZ();
             double distance = Math.sqrt(dx * dx + dz * dz);
@@ -975,6 +1155,9 @@ public final class ColonyNoise {
     /** Whether (x, y, z) is inside a nursery chamber's hollow (used to pick decoration). */
     public boolean isInNurseryRoom(Nursery[] nurseries, int x, int y, int z) {
         for (Nursery nursery : nurseries) {
+            if (!nursery.inColony()) {
+                continue;
+            }
             double dx = x - nursery.centreX();
             double dz = z - nursery.centreZ();
             double distance = Math.sqrt(dx * dx + dz * dz);
@@ -992,10 +1175,13 @@ public final class ColonyNoise {
      * {@link #nurseryState}: the corridor's own floor is forced solid -- a 24-block
      * approach through the Fungal Gardens tier (the second-airiest band after the
      * Nurseries) cannot be trusted to leave a floor under it any more than the nursery's
-     * own approach could.
+     * own approach could. Ineligible chambers are skipped for the same reason as there.
      */
     public int gardenState(Garden[] gardens, int x, int y, int z) {
         for (Garden garden : gardens) {
+            if (!garden.inColony()) {
+                continue;
+            }
             double dx = x - garden.centreX();
             double dz = z - garden.centreZ();
             double distance = Math.sqrt(dx * dx + dz * dz);
@@ -1042,6 +1228,9 @@ public final class ColonyNoise {
     /** Whether (x, y, z) is inside a garden chamber's hollow (used to pick decoration). */
     public boolean isInGardenRoom(Garden[] gardens, int x, int y, int z) {
         for (Garden garden : gardens) {
+            if (!garden.inColony()) {
+                continue;
+            }
             double dx = x - garden.centreX();
             double dz = z - garden.centreZ();
             double distance = Math.sqrt(dx * dx + dz * dz);
@@ -1056,10 +1245,14 @@ public final class ColonyNoise {
     /**
      * What a larder chamber says about (x, y, z): the hollow interior, the approach
      * corridor and its walkway, the shell, or nothing. Same precedence as
-     * {@link #gardenState}/{@link #nurseryState}: the corridor's own floor is forced solid.
+     * {@link #gardenState}/{@link #nurseryState}: the corridor's own floor is forced solid,
+     * and an ineligible chamber says nothing.
      */
     public int larderState(Larder[] larders, int x, int y, int z) {
         for (Larder larder : larders) {
+            if (!larder.inColony()) {
+                continue;
+            }
             double dx = x - larder.centreX();
             double dz = z - larder.centreZ();
             double distance = Math.sqrt(dx * dx + dz * dz);
@@ -1106,6 +1299,9 @@ public final class ColonyNoise {
     /** Whether (x, y, z) is inside a larder chamber's hollow (used to pick decoration). */
     public boolean isInLarderRoom(Larder[] larders, int x, int y, int z) {
         for (Larder larder : larders) {
+            if (!larder.inColony()) {
+                continue;
+            }
             double dx = x - larder.centreX();
             double dz = z - larder.centreZ();
             double distance = Math.sqrt(dx * dx + dz * dz);
@@ -1132,17 +1328,33 @@ public final class ColonyNoise {
         return Math.abs(b) < halfWidth;
     }
 
-    /** True where a blob chamber carves. */
-    public boolean isChamberCarved(int x, int y, int z) {
+    /**
+     * True where a blob chamber carves, at colony density {@code field}.
+     *
+     * <p>The one place the colony field changes the <em>shape</em> of the world rather than
+     * its dressing. Both thresholds are lerped from
+     * {@link ColonyGeneratorTunables#NEVER_THRESHOLD} at {@code field = 0} to their tuned
+     * per-tier value at {@code field = 1}, so a core carves exactly what it always did, the
+     * ring thins out continuously, and the wilds are worm tunnels and ramps only. Raising a
+     * threshold rather than post-multiplying an "is carved" chance is what keeps the result
+     * a contiguous blob field instead of a spray of holes: the blobs shrink toward their own
+     * peaks as f drops.
+     */
+    public boolean isChamberCarved(double field, int x, int y, int z) {
+        // At f = 0 both thresholds are NEVER_THRESHOLD, which no Perlin value reaches, so
+        // this is not just an optimisation -- it is the same answer, two lookups cheaper.
+        if (field <= 0.0) {
+            return false;
+        }
         int tier = tierIndex(y);
         double small = this.chamberSmall.getValue(
                 x * CHAMBER_SMALL_XZ_SCALE, y * CHAMBER_SMALL_Y_SCALE, z * CHAMBER_SMALL_XZ_SCALE);
-        if (small > CHAMBER_SMALL_THRESHOLD_BY_TIER[tier]) {
+        if (small > Mth.lerp(field, NEVER_THRESHOLD, CHAMBER_SMALL_THRESHOLD_BY_TIER[tier])) {
             return true;
         }
         double large = this.chamberLarge.getValue(
                 x * CHAMBER_LARGE_XZ_SCALE, y * CHAMBER_LARGE_Y_SCALE, z * CHAMBER_LARGE_XZ_SCALE);
-        return large > CHAMBER_LARGE_THRESHOLD_BY_TIER[tier];
+        return large > Mth.lerp(field, NEVER_THRESHOLD, CHAMBER_LARGE_THRESHOLD_BY_TIER[tier]);
     }
 
     /**
@@ -1156,6 +1368,11 @@ public final class ColonyNoise {
      * walkway wherever a big room crosses it and the descent becomes a one-way drop, which
      * is a soft-lock: mining the fabric is gated behind a full set of Chitin Armor.
      *
+     * <p>{@code field} is the colony density at this column (a pure function of X/Z, so one
+     * value serves the whole column). It is threaded in rather than looked up here because
+     * resolving it costs nine seeded draws and cannot change with Y -- see
+     * {@link #colonyField(Colony[], double, double)}.
+     *
      * <p>The throne chamber (M7), the nursery chambers, and (Ep2) the garden and larder
      * chambers sit <em>below</em> the spine in that order, deliberately: they may carve
      * through the noise and force their own shells solid, but never override a ramp floor
@@ -1165,7 +1382,7 @@ public final class ColonyNoise {
      * {@code [102, 126)}, {@code [150, 174)}), so their order relative to each other is
      * arbitrary.
      */
-    public boolean isAir(Shaft[] columnShafts, Throne[] columnThrones, Nursery[] columnNurseries,
+    public boolean isAir(double field, Shaft[] columnShafts, Throne[] columnThrones, Nursery[] columnNurseries,
             Garden[] columnGardens, Larder[] columnLarders, int x, int y, int z) {
         if (y < FLOOR_TOP || y >= CEILING_BOTTOM) {
             return false;
@@ -1215,7 +1432,7 @@ public final class ColonyNoise {
                 return false;
             }
         }
-        return isTunnelCarved(x, y, z) || isChamberCarved(x, y, z);
+        return isTunnelCarved(x, y, z) || isChamberCarved(field, x, y, z);
     }
 
     // ------------------------------------------------------------------
@@ -1245,17 +1462,24 @@ public final class ColonyNoise {
      * measurement was the wrong target. Visible ceiling is scarce enough on its own -- it is
      * the mask, not the field, that was ever doing the rationing.
      *
+     * <p><b>The colony field does not modulate this rule</b> (spec section 1 lists the
+     * membrane among the unmodulated globals). It reaches the answer only through
+     * {@link #isAir}: a sparse-zone ceiling has less air under it, so it carries fewer
+     * exits, but "visible roof = way out" holds identically at every value of {@code field}.
+     * An exit rule that thinned out with density would be one that can strand a player in
+     * exactly the part of the world they are least equipped for.
+     *
      * <p>The visibility test reads {@link #isAir} at a fixed Y rather than the chunk, so it
      * stays a pure function of world position -- the same property that lets
      * {@code ColonyChunkGenerator#getBaseColumn} and the chunk fill agree without either
      * looking at the other's output.
      */
-    public boolean isDaylightMembrane(Shaft[] columnShafts, Throne[] columnThrones,
+    public boolean isDaylightMembrane(double field, Shaft[] columnShafts, Throne[] columnThrones,
             Nursery[] columnNurseries, Garden[] columnGardens, Larder[] columnLarders, int x, int y, int z) {
         if (y < CEILING_BOTTOM || y >= CEILING_BOTTOM + MEMBRANE_THICKNESS) {
             return false;
         }
-        return isAir(columnShafts, columnThrones, columnNurseries, columnGardens, columnLarders,
+        return isAir(field, columnShafts, columnThrones, columnNurseries, columnGardens, columnLarders,
                 x, CEILING_BOTTOM - 1, z);
     }
 
@@ -1272,9 +1496,20 @@ public final class ColonyNoise {
      * only decides how solid that blob is and how ragged its edge. Being a pure function of
      * position (rather than, say, a flood fill seeded at a lucky roll) is what keeps a patch
      * whole across a chunk boundary.
+     *
+     * <p>The threshold is modulated by the colony field the same way the blob chambers' are
+     * -- lerped from {@link ColonyGeneratorTunables#NEVER_THRESHOLD} at {@code field = 0} --
+     * so comb is a thing colonies grow, and the wilds have none of it. Raising the threshold
+     * (rather than scaling the per-block chance) is again what keeps the surviving patches
+     * whole: at half density you get the same patches, smaller, not the same patches full of
+     * holes.
      */
-    public boolean isCombPatch(int x, int y, int z) {
-        return probeCombPatch(x, y, z) > COMB_PATCH_THRESHOLD_BY_TIER[tierIndex(y)];
+    public boolean isCombPatch(double field, int x, int y, int z) {
+        if (field <= 0.0) {
+            return false;
+        }
+        return probeCombPatch(x, y, z)
+                > Mth.lerp(field, NEVER_THRESHOLD, COMB_PATCH_THRESHOLD_BY_TIER[tierIndex(y)]);
     }
 
     // ------------------------------------------------------------------

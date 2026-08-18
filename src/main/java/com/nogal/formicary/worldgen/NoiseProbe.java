@@ -33,6 +33,11 @@ import net.minecraft.world.level.levelgen.XoroshiroRandomSource;
  *   .\gradlew --init-script docs\noise-probe.init.gradle formicaryProbe
  *   .\gradlew --init-script docs\noise-probe.init.gradle formicaryProbe -PprobeSeed=42 -PprobeWhat=slices
  * </pre>
+ *
+ * <p>Since Ep2 the sections whose subject only exists inside a nest ({@link #nurseries},
+ * {@link #gardens}, {@link #larders}, {@link #combPatches}, {@link #spawnDensity}) sample
+ * around the colony nearest the origin rather than around the origin itself -- see
+ * {@link #anchor}.
  */
 public final class NoiseProbe {
 
@@ -154,8 +159,8 @@ public final class NoiseProbe {
                 boolean exposed = air(noise, col, x, CEILING_BOTTOM - 1, z);
                 boolean stacked = true;
                 for (int layer = 0; layer < MEMBRANE_THICKNESS; layer++) {
-                    stacked &= noise.isDaylightMembrane(col.shafts(), col.thrones(), col.nurseries(), col.gardens(),
-                            col.larders(), x, CEILING_BOTTOM + layer, z);
+                    stacked &= noise.isDaylightMembrane(col.field(), col.shafts(), col.thrones(), col.nurseries(),
+                            col.gardens(), col.larders(), x, CEILING_BOTTOM + layer, z);
                 }
                 if (exposed) {
                     exposedCount++;
@@ -574,15 +579,20 @@ public final class NoiseProbe {
     // Play-test round 1 sections
     // ------------------------------------------------------------------
 
-    /** The five per-column feature arrays {@link ColonyNoise#isAir} needs, resolved once. */
-    private record Col(ColonyNoise.Shaft[] shafts, ColonyNoise.Throne[] thrones,
+    /**
+     * Everything {@link ColonyNoise#isAir} needs about one column, resolved once: the five
+     * feature arrays plus the colony field, which is XZ-only and so is a per-column constant
+     * exactly like they are.
+     */
+    private record Col(double field, ColonyNoise.Shaft[] shafts, ColonyNoise.Throne[] thrones,
             ColonyNoise.Nursery[] nurseries, ColonyNoise.Garden[] gardens, ColonyNoise.Larder[] larders) {
     }
 
     private static Col col(ColonyNoise noise, int x, int z) {
         int chunkX = x - Math.floorMod(x, 16);
         int chunkZ = z - Math.floorMod(z, 16);
-        return new Col(noise.shaftsForColumn(noise.shaftsNear(chunkX, chunkZ), x, z),
+        return new Col(noise.colonyField(x, z),
+                noise.shaftsForColumn(noise.shaftsNear(chunkX, chunkZ), x, z),
                 noise.thronesForColumn(noise.thronesNear(chunkX, chunkZ), x, z),
                 noise.nurseriesForColumn(noise.nurseriesNear(chunkX, chunkZ), x, z),
                 noise.gardensForColumn(noise.gardensNear(chunkX, chunkZ), x, z),
@@ -590,7 +600,23 @@ public final class NoiseProbe {
     }
 
     private static boolean air(ColonyNoise noise, Col col, int x, int y, int z) {
-        return noise.isAir(col.shafts(), col.thrones(), col.nurseries(), col.gardens(), col.larders(), x, y, z);
+        return noise.isAir(col.field(), col.shafts(), col.thrones(), col.nurseries(), col.gardens(), col.larders(),
+                x, y, z);
+    }
+
+    /**
+     * The colony centre nearest the origin -- the probe's anchor for every section whose
+     * subject only exists inside a nest.
+     *
+     * <p>Sampling at (0, 0) used to be arbitrary-but-fine, because the dimension was uniform.
+     * Since the colony field it is a specific and misleading choice: on a 384-block grid the
+     * origin is over 200 blocks from the nearest centre on essentially every seed, i.e. out
+     * in the wilds, where there are no chambers, no comb and few ants by design. A section
+     * that reported "0 of 9 chambers walkable" from there would be measuring the gate rather
+     * than the thing it was written to check.
+     */
+    private static ColonyNoise.Colony anchor(ColonyNoise noise) {
+        return noise.nearestColony(0.0, 0.0);
     }
 
     /**
@@ -609,13 +635,16 @@ public final class NoiseProbe {
 
         double perThrone = Math.pow((double) ColonyGeneratorTunables.THRONE_SPACING
                 / ColonyGeneratorTunables.NURSERY_SPACING, 2.0);
-        System.out.printf(Locale.ROOT, "  density: %.2f per 1000x1000 blocks, i.e. %.1fx the throne chambers%n",
+        System.out.printf(Locale.ROOT,
+                "  grid density: %.2f cells per 1000x1000 blocks, i.e. %.1f cells per throne chamber"
+                        + " (before the colony gate)%n",
                 1.0e6 / Math.pow(ColonyGeneratorTunables.NURSERY_SPACING, 2.0), perThrone);
 
         // Every chamber in a wide sample, checked against the band it must stay inside.
         int cells = 8;
         int inBand = 0;
         int total = 0;
+        int generated = 0;
         int minFloor = Integer.MAX_VALUE;
         int maxTop = Integer.MIN_VALUE;
         int shell = (int) Math.ceil(ColonyGeneratorTunables.NURSERY_SHELL_THICKNESS);
@@ -627,6 +656,9 @@ public final class NoiseProbe {
                 int top = nursery.floorY() + ColonyGeneratorTunables.NURSERY_WALL_HEIGHT
                         + ColonyGeneratorTunables.NURSERY_DOME_HEIGHT + shell;
                 total++;
+                if (nursery.inColony()) {
+                    generated++;
+                }
                 minFloor = Math.min(minFloor, nursery.floorY());
                 maxTop = Math.max(maxTop, top);
                 if (nursery.floorY() - shell >= tierMinY(1) && top < tierMaxY(1)) {
@@ -634,6 +666,11 @@ public final class NoiseProbe {
                 }
             }
         }
+        System.out.printf(Locale.ROOT,
+                "  colony gate: %d of %d sampled cells actually generate a chamber (%.1f%%), so the real density"
+                        + " is %.2f per 1000x1000 blocks%n",
+                generated, total, 100.0 * generated / total,
+                1.0e6 / Math.pow(ColonyGeneratorTunables.NURSERY_SPACING, 2.0) * generated / total);
         System.out.printf(Locale.ROOT,
                 "  %d chambers sampled: floor y in [%d, %d], highest shell top y=%d; %d of %d wholly inside "
                         + "the Nurseries band y[%d,%d)%n",
@@ -644,21 +681,31 @@ public final class NoiseProbe {
                 ? "  PASS: every sampled chamber sits wholly inside the Nurseries tier."
                 : "  FAIL: a chamber crosses a tier boundary.");
 
-        ColonyNoise.Nursery[] near = noise.nurseriesNear(0, 0);
-        ColonyNoise.Nursery closest = near[0];
+        // Anchored on a colony, not the origin: since Ep2 a chamber outside one does not
+        // generate at all, so the 3x3 around (0, 0) would be nine rooms that are not there.
+        ColonyNoise.Colony anchor = anchor(noise);
+        int anchorX = (int) Math.round(anchor.centreX());
+        int anchorZ = (int) Math.round(anchor.centreZ());
+        ColonyNoise.Nursery[] near = noise.nurseriesNear(anchorX, anchorZ);
+        int eligible = 0;
         for (ColonyNoise.Nursery nursery : near) {
-            double distance = Math.hypot(nursery.centreX(), nursery.centreZ());
+            double distance = Math.hypot(nursery.centreX() - anchorX, nursery.centreZ() - anchorZ);
             System.out.printf(Locale.ROOT,
-                    "  centre (%7.1f, %7.1f)  floorY %3d  ramp axis (%7.1f, %7.1f)  %6.1f blocks from origin%n",
+                    "  centre (%7.1f, %7.1f)  floorY %3d  ramp axis (%7.1f, %7.1f)  %6.1f from the colony centre"
+                            + "  f=%.2f%s%n",
                     nursery.centreX(), nursery.centreZ(), nursery.floorY(), nursery.axisX(), nursery.axisZ(),
-                    distance);
-            if (distance < Math.hypot(closest.centreX(), closest.centreZ())) {
-                closest = nursery;
+                    distance, noise.colonyField(nursery.centreX(), nursery.centreZ()),
+                    nursery.inColony() ? "" : "  (gated out)");
+            if (nursery.inColony()) {
+                eligible++;
             }
         }
 
         int reached = 0;
         for (ColonyNoise.Nursery nursery : near) {
+            if (!nursery.inColony()) {
+                continue;
+            }
             if (chamberWalk(noise, "nursery", nursery.centreX(), nursery.centreZ(), nursery.axisX(),
                     nursery.axisZ(), nursery.floorY(), nursery.floorY() + 1, ColonyGeneratorTunables.NURSERY_RADIUS,
                     nursery.floorY() + ColonyGeneratorTunables.NURSERY_WALL_HEIGHT
@@ -667,8 +714,12 @@ public final class NoiseProbe {
                 reached++;
             }
         }
-        System.out.printf(Locale.ROOT, "  %d of %d chambers around the origin are walkable from their ramp%n",
-                reached, near.length);
+        System.out.printf(Locale.ROOT,
+                "  %d of %d in-colony chambers around the anchor colony are walkable from their ramp%n",
+                reached, eligible);
+        System.out.println(reached == eligible
+                ? "  PASS: every chamber that generates joins its ramp on foot."
+                : "  FAIL: " + (eligible - reached) + " generated chamber(s) do not join their ramp.");
     }
 
     /**
@@ -691,13 +742,16 @@ public final class NoiseProbe {
 
         double perNursery = Math.pow((double) ColonyGeneratorTunables.NURSERY_SPACING
                 / ColonyGeneratorTunables.GARDEN_SPACING, 2.0);
-        System.out.printf(Locale.ROOT, "  density: %.2f per 1000x1000 blocks, i.e. %.1fx the nursery chambers%n",
+        System.out.printf(Locale.ROOT,
+                "  grid density: %.2f cells per 1000x1000 blocks, i.e. %.1fx the nursery cells"
+                        + " (before the colony gate)%n",
                 1.0e6 / Math.pow(ColonyGeneratorTunables.GARDEN_SPACING, 2.0), perNursery);
 
         // Band containment, exactly like nurseries()'s own sweep.
         int cells = 8;
         int inBand = 0;
         int total = 0;
+        int generated = 0;
         int minFloor = Integer.MAX_VALUE;
         int maxTop = Integer.MIN_VALUE;
         int shell = (int) Math.ceil(ColonyGeneratorTunables.GARDEN_SHELL_THICKNESS);
@@ -709,6 +763,9 @@ public final class NoiseProbe {
                 int top = garden.floorY() + ColonyGeneratorTunables.GARDEN_WALL_HEIGHT
                         + ColonyGeneratorTunables.GARDEN_DOME_HEIGHT + shell;
                 total++;
+                if (garden.inColony()) {
+                    generated++;
+                }
                 minFloor = Math.min(minFloor, garden.floorY());
                 maxTop = Math.max(maxTop, top);
                 if (garden.floorY() - shell >= tierMinY(2) && top < tierMaxY(2)) {
@@ -716,6 +773,9 @@ public final class NoiseProbe {
                 }
             }
         }
+        System.out.printf(Locale.ROOT,
+                "  colony gate: %d of %d sampled cells actually generate a chamber (%.1f%%)%n",
+                generated, total, 100.0 * generated / total);
         System.out.printf(Locale.ROOT,
                 "  %d chambers sampled: floor y in [%d, %d], highest shell top y=%d; %d of %d wholly inside "
                         + "the Fungal Gardens band y[%d,%d)%n",
@@ -761,20 +821,29 @@ public final class NoiseProbe {
                 ? "  PASS: every sampled pair of garden chambers clears the required separation."
                 : "  FAIL: " + violations + " pair(s) came in closer than " + requiredSeparation + " blocks.");
 
-        ColonyNoise.Garden[] near = noise.gardensNear(0, 0);
-        ColonyNoise.Garden closest = near[0];
+        ColonyNoise.Colony anchor = anchor(noise);
+        int anchorX = (int) Math.round(anchor.centreX());
+        int anchorZ = (int) Math.round(anchor.centreZ());
+        ColonyNoise.Garden[] near = noise.gardensNear(anchorX, anchorZ);
+        int eligible = 0;
         for (ColonyNoise.Garden garden : near) {
-            double distance = Math.hypot(garden.centreX(), garden.centreZ());
+            double distance = Math.hypot(garden.centreX() - anchorX, garden.centreZ() - anchorZ);
             System.out.printf(Locale.ROOT,
-                    "  centre (%7.1f, %7.1f)  floorY %3d  ramp axis (%7.1f, %7.1f)  %6.1f blocks from origin%n",
-                    garden.centreX(), garden.centreZ(), garden.floorY(), garden.axisX(), garden.axisZ(), distance);
-            if (distance < Math.hypot(closest.centreX(), closest.centreZ())) {
-                closest = garden;
+                    "  centre (%7.1f, %7.1f)  floorY %3d  ramp axis (%7.1f, %7.1f)  %6.1f from the colony centre"
+                            + "  f=%.2f%s%n",
+                    garden.centreX(), garden.centreZ(), garden.floorY(), garden.axisX(), garden.axisZ(), distance,
+                    noise.colonyField(garden.centreX(), garden.centreZ()),
+                    garden.inColony() ? "" : "  (gated out)");
+            if (garden.inColony()) {
+                eligible++;
             }
         }
 
         int reached = 0;
         for (ColonyNoise.Garden garden : near) {
+            if (!garden.inColony()) {
+                continue;
+            }
             if (chamberWalk(noise, "garden", garden.centreX(), garden.centreZ(), garden.axisX(),
                     garden.axisZ(), garden.floorY(), garden.floorY() + 1, ColonyGeneratorTunables.GARDEN_RADIUS,
                     garden.floorY() + ColonyGeneratorTunables.GARDEN_WALL_HEIGHT
@@ -783,8 +852,12 @@ public final class NoiseProbe {
                 reached++;
             }
         }
-        System.out.printf(Locale.ROOT, "  %d of %d chambers around the origin are walkable from their ramp%n",
-                reached, near.length);
+        System.out.printf(Locale.ROOT,
+                "  %d of %d in-colony chambers around the anchor colony are walkable from their ramp%n",
+                reached, eligible);
+        System.out.println(reached == eligible
+                ? "  PASS: every chamber that generates joins its ramp on foot."
+                : "  FAIL: " + (eligible - reached) + " generated chamber(s) do not join their ramp.");
     }
 
     /**
@@ -815,7 +888,9 @@ public final class NoiseProbe {
 
         double perNursery = Math.pow((double) ColonyGeneratorTunables.NURSERY_SPACING
                 / ColonyGeneratorTunables.LARDER_SPACING, 2.0);
-        System.out.printf(Locale.ROOT, "  density: %.2f per 1000x1000 blocks, i.e. %.1fx the nursery chambers%n",
+        System.out.printf(Locale.ROOT,
+                "  grid density: %.2f cells per 1000x1000 blocks, i.e. %.1fx the nursery cells"
+                        + " (before the colony gate; the comb line below reports how many generate)%n",
                 1.0e6 / Math.pow(ColonyGeneratorTunables.LARDER_SPACING, 2.0), perNursery);
 
         // Band containment.
@@ -841,6 +916,12 @@ public final class NoiseProbe {
                     inBand++;
                 }
 
+                // Only chambers that generate: larderState answers NONE for a gated-out one,
+                // and ColonyChunkGenerator skips its force-write pass for the same reason,
+                // so counting them here would be a failure invented by the probe.
+                if (!larder.inColony()) {
+                    continue;
+                }
                 ColonyNoise.Larder[] justThis = {larder};
                 combChecked += 2;
                 combSolid += noise.larderState(justThis, larder.combX1(), larder.combY(), larder.combZ1())
@@ -860,8 +941,10 @@ public final class NoiseProbe {
                 : "  FAIL: a chamber crosses a tier boundary.");
 
         System.out.printf(Locale.ROOT,
-                "  guaranteed Provision Comb: %d of %d positions (%d chambers x %d each) land solid%n",
-                combSolid, combChecked, total, ColonyGeneratorTunables.LARDER_GUARANTEED_PROVISION_COMB);
+                "  guaranteed Provision Comb: %d of %d positions (%d in-colony chambers of %d sampled, x %d each)"
+                        + " land solid%n",
+                combSolid, combChecked, combChecked / 2, total,
+                ColonyGeneratorTunables.LARDER_GUARANTEED_PROVISION_COMB);
         System.out.println(combSolid == combChecked
                 ? "  PASS: every sampled larder's guaranteed comb positions are inside its own solid shell."
                 : "  FAIL: a guaranteed comb position missed the shell -- it would land in open air.");
@@ -902,20 +985,29 @@ public final class NoiseProbe {
                 ? "  PASS: no two sampled larder chambers overlap."
                 : "  FAIL: " + violations + " pair(s) overlap.");
 
-        ColonyNoise.Larder[] near = noise.lardersNear(0, 0);
-        ColonyNoise.Larder closest = near[0];
+        ColonyNoise.Colony anchor = anchor(noise);
+        int anchorX = (int) Math.round(anchor.centreX());
+        int anchorZ = (int) Math.round(anchor.centreZ());
+        ColonyNoise.Larder[] near = noise.lardersNear(anchorX, anchorZ);
+        int eligible = 0;
         for (ColonyNoise.Larder larder : near) {
-            double distance = Math.hypot(larder.centreX(), larder.centreZ());
+            double distance = Math.hypot(larder.centreX() - anchorX, larder.centreZ() - anchorZ);
             System.out.printf(Locale.ROOT,
-                    "  centre (%7.1f, %7.1f)  floorY %3d  ramp axis (%7.1f, %7.1f)  %6.1f blocks from origin%n",
-                    larder.centreX(), larder.centreZ(), larder.floorY(), larder.axisX(), larder.axisZ(), distance);
-            if (distance < Math.hypot(closest.centreX(), closest.centreZ())) {
-                closest = larder;
+                    "  centre (%7.1f, %7.1f)  floorY %3d  ramp axis (%7.1f, %7.1f)  %6.1f from the colony centre"
+                            + "  f=%.2f%s%n",
+                    larder.centreX(), larder.centreZ(), larder.floorY(), larder.axisX(), larder.axisZ(), distance,
+                    noise.colonyField(larder.centreX(), larder.centreZ()),
+                    larder.inColony() ? "" : "  (gated out)");
+            if (larder.inColony()) {
+                eligible++;
             }
         }
 
         int reached = 0;
         for (ColonyNoise.Larder larder : near) {
+            if (!larder.inColony()) {
+                continue;
+            }
             if (chamberWalk(noise, "larder", larder.centreX(), larder.centreZ(), larder.axisX(),
                     larder.axisZ(), larder.floorY(), larder.floorY() + 1, ColonyGeneratorTunables.LARDER_RADIUS,
                     larder.floorY() + ColonyGeneratorTunables.LARDER_WALL_HEIGHT
@@ -924,8 +1016,12 @@ public final class NoiseProbe {
                 reached++;
             }
         }
-        System.out.printf(Locale.ROOT, "  %d of %d chambers around the origin are walkable from their ramp%n",
-                reached, near.length);
+        System.out.printf(Locale.ROOT,
+                "  %d of %d in-colony chambers around the anchor colony are walkable from their ramp%n",
+                reached, eligible);
+        System.out.println(reached == eligible
+                ? "  PASS: every chamber that generates joins its ramp on foot."
+                : "  FAIL: " + (eligible - reached) + " generated chamber(s) do not join their ramp.");
     }
 
     /**
@@ -941,9 +1037,15 @@ public final class NoiseProbe {
     private static void combPatches(ColonyNoise noise) {
         int span = 96;
         int half = span / 2;
+        // Anchored on a colony core: comb's patch threshold is lerped to "never" as the
+        // colony field falls, so a window at the origin would report zero everywhere and
+        // say nothing at all about patch SIZE, which is what this section exists for.
+        ColonyNoise.Colony anchor = anchor(noise);
+        int anchorX = (int) Math.round(anchor.centreX());
+        int anchorZ = (int) Math.round(anchor.centreZ());
         System.out.printf(Locale.ROOT,
-                "%ncomb patches over %dx%d blocks (patch scale %.2f/%.2f):%n",
-                span, span, ColonyGeneratorTunables.COMB_PATCH_XZ_SCALE,
+                "%ncomb patches over %dx%d blocks centred on the colony at (%d, %d) (patch scale %.2f/%.2f):%n",
+                span, span, anchorX, anchorZ, ColonyGeneratorTunables.COMB_PATCH_XZ_SCALE,
                 ColonyGeneratorTunables.COMB_PATCH_Y_SCALE);
         // "seenSize" is the block-weighted mean: the size of the patch the average comb
         // block belongs to, which is what a player standing in front of a wall actually
@@ -958,11 +1060,13 @@ public final class NoiseProbe {
             int bandMax = Math.min(tierMaxY(tier), CEILING_BOTTOM);
             int bandHeight = bandMax - bandMin;
             boolean[] isAir = new boolean[span * span * bandHeight];
+            double[] fields = new double[span * span];
             for (int ix = 0; ix < span; ix++) {
-                int x = ix - half;
+                int x = anchorX + ix - half;
                 for (int iz = 0; iz < span; iz++) {
-                    int z = iz - half;
+                    int z = anchorZ + iz - half;
                     Col col = col(noise, x, z);
+                    fields[ix * span + iz] = col.field();
                     for (int y = bandMin; y < bandMax; y++) {
                         isAir[(ix * bandHeight + (y - bandMin)) * span + iz] = air(noise, col, x, y, z);
                     }
@@ -980,12 +1084,13 @@ public final class NoiseProbe {
                             continue;
                         }
                         roomySurface++;
-                        if (!noise.isCombPatch(ix - half, bandMin + y, iz - half)) {
+                        double field = fields[ix * span + iz];
+                        if (!noise.isCombPatch(field, anchorX + ix - half, bandMin + y, anchorZ + iz - half)) {
                             continue;
                         }
                         double roll = rolls.nextDouble();
-                        if (roll < ColonyGeneratorTunables.ROYAL_COMB_CHANCE_BY_TIER[tier]
-                                + ColonyGeneratorTunables.BROOD_COMB_CHANCE_BY_TIER[tier]) {
+                        if (roll < (ColonyGeneratorTunables.ROYAL_COMB_CHANCE_BY_TIER[tier]
+                                + ColonyGeneratorTunables.BROOD_COMB_CHANCE_BY_TIER[tier]) * field) {
                             comb[i] = true;
                             combCount++;
                         }
@@ -1091,11 +1196,24 @@ public final class NoiseProbe {
      * the real methods, not a copy -- against the pure air field, so the number is
      * placements rather than intentions: a member that cannot find a floor in
      * {@code SPAWN_FLOOR_ATTEMPTS} tries is counted as lost exactly as it would be in game.
+     *
+     * <p>Ep2 anchors the sampled box on a colony and runs it twice: once at full colony
+     * density ({@code f = 1}, which is the number the play-test-round-1 retune was tuned
+     * against and the one comparable to the legacy baseline below), and once with the real
+     * per-chunk field, which is what an explorer crossing a colony actually meets. The
+     * second is strictly the first scaled by the mean field over the box -- {@code rollCount}
+     * has expectation {@code expected * f} exactly -- so the pair also serves as a check
+     * that the modulation is doing arithmetic rather than something surprising.
      */
     private static void spawnDensity(ColonyNoise noise) {
         int chunks = 16;
+        ColonyNoise.Colony anchor = anchor(noise);
+        int baseX = ((int) Math.round(anchor.centreX()) - chunks * 8) & ~15;
+        int baseZ = ((int) Math.round(anchor.centreZ()) - chunks * 8) & ~15;
         RandomSource random = new XoroshiroRandomSource(20260815L);
-        System.out.printf(Locale.ROOT, "%nchunk-generation spawn density over %d chunks:%n", chunks * chunks);
+        System.out.printf(Locale.ROOT,
+                "%nchunk-generation spawn density over %d chunks centred on the colony at (%d, %d):%n",
+                chunks * chunks, Math.round(anchor.centreX()), Math.round(anchor.centreZ()));
         System.out.println("  tier  clusters/chunk  workers/chunk  soldiers/chunk  ants/chunk  lost%");
 
         double[] antsPerTier = new double[TIER_COUNT];
@@ -1108,8 +1226,8 @@ public final class NoiseProbe {
             long soldiers = 0;
             for (int cx = 0; cx < chunks; cx++) {
                 for (int cz = 0; cz < chunks; cz++) {
-                    int originX = cx * 16;
-                    int originZ = cz * 16;
+                    int originX = baseX + cx * 16;
+                    int originZ = baseZ + cz * 16;
                     for (int c = ColonyGeneratorTunables.rollCount(
                             ColonyGeneratorTunables.SPAWN_CLUSTERS_PER_CHUNK_BY_TIER[tier], random);
                             c > 0; c--) {
@@ -1152,10 +1270,22 @@ public final class NoiseProbe {
         for (double ants : antsPerTier) {
             total += ants;
         }
-        double legacy = legacySpawnDensity(noise, chunks);
+        double legacy = legacySpawnDensity(noise, chunks, baseX, baseZ);
         System.out.printf(Locale.ROOT,
-                "  all tiers: %.2f ants per chunk against the pre-round-1 scheme's %.2f  =  %.2fx%n",
+                "  all tiers at full colony density: %.2f ants per chunk against the pre-round-1 scheme's %.2f"
+                        + "  =  %.2fx%n",
                 total, legacy, total / legacy);
+
+        double fieldSum = 0.0;
+        for (int cx = 0; cx < chunks; cx++) {
+            for (int cz = 0; cz < chunks; cz++) {
+                fieldSum += noise.colonyField(baseX + cx * 16 + 8, baseZ + cz * 16 + 8);
+            }
+        }
+        double meanField = fieldSum / (chunks * chunks);
+        System.out.printf(Locale.ROOT,
+                "  colony field over the same box: mean f = %.3f, so %.2f ants per chunk field-weighted%n",
+                meanField, total * meanField);
     }
 
     // The pre-round-1 spawning parameters, read out of the four biome JSONs. Kept ONLY as
@@ -1174,9 +1304,11 @@ public final class NoiseProbe {
 
     /**
      * The same simulation run against the scheme this round replaced, so the multiplier is
-     * measured rather than derived. Same floor search, same loss model, same sample.
+     * measured rather than derived. Same floor search, same loss model, same sample -- which
+     * since Ep2 means the same colony-anchored box, so the two are still measured over
+     * identical terrain.
      */
-    private static double legacySpawnDensity(ColonyNoise noise, int chunks) {
+    private static double legacySpawnDensity(ColonyNoise noise, int chunks, int baseX, int baseZ) {
         RandomSource random = new XoroshiroRandomSource(20260815L);
         long ants = 0;
         for (int tier = 0; tier < TIER_COUNT; tier++) {
@@ -1188,8 +1320,8 @@ public final class NoiseProbe {
             }
             for (int cx = 0; cx < chunks; cx++) {
                 for (int cz = 0; cz < chunks; cz++) {
-                    int originX = cx * 16;
-                    int originZ = cz * 16;
+                    int originX = baseX + cx * 16;
+                    int originZ = baseZ + cz * 16;
                     while (random.nextFloat() < LEGACY_CREATURE_PROBABILITY[tier]) {
                         int pick = random.nextInt(totalWeight);
                         int row = 0;

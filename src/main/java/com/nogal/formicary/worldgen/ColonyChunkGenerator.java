@@ -200,6 +200,9 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         ColonyNoise.Nursery[] chunkNurseries = noise.nurseriesNear(minX, minZ);
         ColonyNoise.Garden[] chunkGardens = noise.gardensNear(minX, minZ);
         ColonyNoise.Larder[] chunkLarders = noise.lardersNear(minX, minZ);
+        // Resolved once per chunk, like the shafts: nine seeded draws that answer "which
+        // colonies are around here", after which the field itself is closed-form arithmetic.
+        ColonyNoise.Colony[] chunkColonies = noise.coloniesNear(minX, minZ);
         Heightmap oceanFloor = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.OCEAN_FLOOR_WG);
         Heightmap worldSurface = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.WORLD_SURFACE_WG);
 
@@ -219,11 +222,12 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                     ColonyNoise.Nursery[] columnNurseries = noise.nurseriesForColumn(chunkNurseries, x, z);
                     ColonyNoise.Garden[] columnGardens = noise.gardensForColumn(chunkGardens, x, z);
                     ColonyNoise.Larder[] columnLarders = noise.lardersForColumn(chunkLarders, x, z);
+                    double field = noise.colonyField(chunkColonies, x, z);
                     int sectionIndex = -1;
                     LevelChunkSection section = null;
                     for (int y = top - 1; y >= bottom; y--) {
-                        if (noise.isAir(columnShafts, columnThrones, columnNurseries, columnGardens, columnLarders,
-                                x, y, z)) {
+                        if (noise.isAir(field, columnShafts, columnThrones, columnNurseries, columnGardens,
+                                columnLarders, x, y, z)) {
                             continue;
                         }
                         int index = chunk.getSectionIndex(y);
@@ -232,8 +236,8 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                             section = chunk.getSection(index);
                         }
                         BlockState state;
-                        if (noise.isDaylightMembrane(columnShafts, columnThrones, columnNurseries, columnGardens,
-                                columnLarders, x, y, z)) {
+                        if (noise.isDaylightMembrane(field, columnShafts, columnThrones, columnNurseries,
+                                columnGardens, columnLarders, x, y, z)) {
                             state = this.membraneState;
                         } else if (noise.isThroneDais(columnThrones, x, y, z)) {
                             // The queen's plinth: resin, so the dais reads as built rather
@@ -289,6 +293,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         ColonyNoise.Nursery[] chunkNurseries = noise.nurseriesNear(minX, minZ);
         ColonyNoise.Garden[] chunkGardens = noise.gardensNear(minX, minZ);
         ColonyNoise.Larder[] chunkLarders = noise.lardersNear(minX, minZ);
+        ColonyNoise.Colony[] chunkColonies = noise.coloniesNear(minX, minZ);
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 
         for (int localX = 0; localX < 16; localX++) {
@@ -299,6 +304,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                 ColonyNoise.Nursery[] columnNurseries = noise.nurseriesForColumn(chunkNurseries, x, z);
                 ColonyNoise.Garden[] columnGardens = noise.gardensForColumn(chunkGardens, x, z);
                 ColonyNoise.Larder[] columnLarders = noise.lardersForColumn(chunkLarders, x, z);
+                double field = noise.colonyField(chunkColonies, x, z);
                 for (int y = bottom; y < top; y++) {
                     int tier = tierIndex(y);
                     boolean throne = columnThrones.length > 0 && noise.isInThroneRoom(columnThrones, x, y, z);
@@ -311,10 +317,10 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                     boolean here = run(airRun, localX + 1, localZ + 1, y, bottom, top) > 0;
                     if (here) {
                         decorateFloorSpace(chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z, tier,
-                                throne, nursery, garden, bottom, top);
+                                field, throne, nursery, garden, bottom, top);
                     } else {
                         decorateSurface(noise, chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z, tier,
-                                throne, nursery, larder, bottom, top);
+                                field, throne, nursery, larder, bottom, top);
                     }
                 }
             }
@@ -327,6 +333,13 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         // inside the chamber's forced-solid shell (see LARDER_COMB_RADIUS's javadoc), so it
         // never punches a hole in the room's own air.
         for (ColonyNoise.Larder larder : chunkLarders) {
+            // The colony-field gate has to be repeated here: this loop reads lardersNear,
+            // which deliberately keeps its fixed 3x3 cell order, rather than the pruned
+            // per-column arrays. Without it a gated-out larder would still stamp two
+            // Provision Comb blocks into the middle of a wild tunnel.
+            if (!larder.inColony()) {
+                continue;
+            }
             forceProvisionComb(chunk, cursor, minX, minZ, larder.combX1(), larder.combY(), larder.combZ1());
             forceProvisionComb(chunk, cursor, minX, minZ, larder.combX2(), larder.combY(), larder.combZ2());
         }
@@ -376,8 +389,10 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                             noise.nurseriesForColumn(noise.nurseriesNear(chunkX, chunkZ), x, z);
                     ColonyNoise.Garden[] gardens = noise.gardensForColumn(noise.gardensNear(chunkX, chunkZ), x, z);
                     ColonyNoise.Larder[] larders = noise.lardersForColumn(noise.lardersNear(chunkX, chunkZ), x, z);
+                    double field = noise.colonyField(x, z);
                     for (int y = bottom; y < top; y++) {
-                        column[y - bottom] = noise.isAir(shafts, thrones, nurseries, gardens, larders, x, y, z);
+                        column[y - bottom] =
+                                noise.isAir(field, shafts, thrones, nurseries, gardens, larders, x, y, z);
                     }
                 }
 
@@ -418,10 +433,17 @@ public class ColonyChunkGenerator extends ChunkGenerator {
      * scattered along a corridor was the same mistake as speckled comb: it made the block
      * common enough to be scenery and left the rooms that are supposed to be full of it
      * indistinguishable from the corridor outside.
+     *
+     * <p>The ambient per-tier chances are scaled by the colony field (Ep2): a wild tunnel
+     * gets no fungal growth, a core gets exactly what it always did. The chamber branches
+     * above them are NOT scaled -- a room only exists where {@code f} already cleared
+     * {@code CHAMBER_ELIGIBILITY_MIN_F}, and scaling its dressing on top would leave the
+     * rooms out on the ring's edge conspicuously bare inside.
      */
     private void decorateFloorSpace(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
             PositionalRandomFactory randomFactory, byte[] airRun, int localX, int localZ,
-            int x, int y, int z, int tier, boolean throne, boolean nursery, boolean garden, int bottom, int top) {
+            int x, int y, int z, int tier, double field,
+            boolean throne, boolean nursery, boolean garden, int bottom, int top) {
         boolean solidBelow = run(airRun, localX + 1, localZ + 1, y - 1, bottom, top) == 0;
         if (!solidBelow || run(airRun, localX + 1, localZ + 1, y + 1, bottom, top) == 0) {
             return;
@@ -451,12 +473,12 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             decorateGardenFloor(chunk, cursor, roll, x, y, z);
             return;
         }
-        double cumulative = FUNGAL_BLOOM_CHANCE_BY_TIER[tier];
+        double cumulative = FUNGAL_BLOOM_CHANCE_BY_TIER[tier] * field;
         if (roll < cumulative) {
             chunk.setBlockState(cursor.set(x, y, z), ModBlocks.FUNGAL_BLOOM.get().defaultBlockState(), false);
             return;
         }
-        cumulative += FUNGAL_CARPET_CHANCE_BY_TIER[tier];
+        cumulative += FUNGAL_CARPET_CHANCE_BY_TIER[tier] * field;
         if (roll < cumulative) {
             chunk.setBlockState(cursor.set(x, y, z), ModBlocks.FUNGAL_CARPET.get().defaultBlockState(), false);
         }
@@ -497,10 +519,16 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         }
     }
 
-    /** Solid fabric with air against it: comb lining, resin weeps, amber veins. */
+    /**
+     * Solid fabric with air against it: comb lining, resin weeps, amber veins.
+     *
+     * <p>Same colony-field rule as {@link #decorateFloorSpace}: the ambient per-tier chances
+     * are scaled by {@code field}, the chamber branches are not.
+     */
     private void decorateSurface(ColonyNoise noise, ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
             PositionalRandomFactory randomFactory, byte[] airRun, int localX, int localZ,
-            int x, int y, int z, int tier, boolean throne, boolean nursery, boolean larder, int bottom, int top) {
+            int x, int y, int z, int tier, double field,
+            boolean throne, boolean nursery, boolean larder, int bottom, int top) {
         int above = run(airRun, localX + 1, localZ + 1, y + 1, bottom, top);
         int below = run(airRun, localX + 1, localZ + 1, y - 1, bottom, top);
         int north = run(airRun, localX + 1, localZ, y, bottom, top);
@@ -531,25 +559,25 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         // Comb is patch-gated (play-test round 1): outside a patch these two branches are
         // skipped entirely rather than scaled, which also hands the whole 0..1 roll to the
         // resin blocks below instead of squeezing them into the tail of a comb chance.
-        if (roomy && noise.isCombPatch(x, y, z)) {
-            cumulative += ROYAL_COMB_CHANCE_BY_TIER[tier];
+        if (roomy && noise.isCombPatch(field, x, y, z)) {
+            cumulative += ROYAL_COMB_CHANCE_BY_TIER[tier] * field;
             if (roll < cumulative) {
                 chunk.setBlockState(cursor.set(x, y, z), ModBlocks.ROYAL_COMB.get().defaultBlockState(), false);
                 return;
             }
-            cumulative += BROOD_COMB_CHANCE_BY_TIER[tier];
+            cumulative += BROOD_COMB_CHANCE_BY_TIER[tier] * field;
             if (roll < cumulative) {
                 chunk.setBlockState(cursor.set(x, y, z), ModBlocks.BROOD_COMB.get().defaultBlockState(), false);
                 return;
             }
         }
         if (sideOrCeiling) {
-            cumulative += RESIN_WEEP_CHANCE_BY_TIER[tier];
+            cumulative += RESIN_WEEP_CHANCE_BY_TIER[tier] * field;
             if (roll < cumulative) {
                 chunk.setBlockState(cursor.set(x, y, z), ModBlocks.RESIN_WEEP.get().defaultBlockState(), false);
                 return;
             }
-            cumulative += RESIN_BLOCK_CHANCE_BY_TIER[tier];
+            cumulative += RESIN_BLOCK_CHANCE_BY_TIER[tier] * field;
             if (roll < cumulative) {
                 chunk.setBlockState(cursor.set(x, y, z), ModBlocks.RESIN_BLOCK.get().defaultBlockState(), false);
             }
@@ -690,13 +718,19 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         spawnQueenIfThisChunkHoldsAThrone(level, chunkPos);
         spawnLarvaeInNurseryChambers(level, chunkPos, random);
 
+        // One field sample per chunk, at its centre: cluster density is a property of "which
+        // part of the world is this chunk in", and a per-cluster sample would only add jitter
+        // to a number the tunable already states as an expectation.
+        ColonyNoise noise = noise(level.getLevel().getChunkSource().randomState());
+        double field = noise.colonyField(chunkPos.getMiddleBlockX(), chunkPos.getMiddleBlockZ());
+
         for (int tier = 0; tier < TIER_COUNT; tier++) {
             int bandMin = Math.max(tierMinY(tier), level.getMinBuildHeight() + 1);
             int bandMax = Math.min(tierMaxY(tier), level.getMaxBuildHeight() - 2);
             if (bandMax <= bandMin) {
                 continue;
             }
-            spawnTier(level, tier, chunkPos, random, bandMin, bandMax);
+            spawnTier(level, tier, chunkPos, random, bandMin, bandMax, field);
         }
     }
 
@@ -746,13 +780,22 @@ public class ColonyChunkGenerator extends ChunkGenerator {
      * single-caste knot, and no set of weights expresses "these castes, in this ratio, in
      * the same party". Soldiers are placed first, so the escort ends up at the seed position
      * and the workers spread out around it rather than the other way round.
+     *
+     * <p>{@code field} scales the cluster count (Ep2). Expressing the density as clusters
+     * per chunk rather than as a probability is what makes that a one-character change:
+     * multiplying an expectation is meaningful, whereas multiplying vanilla's geometric
+     * {@code creatureProbability} would have moved the mean by {@code p/(1-p)} instead.
+     * {@link ColonyGeneratorTunables#rollCount} carries the fractional part, so a ring chunk
+     * at {@code f = 0.4} really does average four tenths of the core's ants rather than
+     * truncating to none.
      */
     private void spawnTier(WorldGenRegion level, int tier, ChunkPos chunkPos, RandomSource random,
-            int bandMin, int bandMax) {
+            int bandMin, int bandMax, double field) {
         int originX = chunkPos.getMinBlockX();
         int originZ = chunkPos.getMinBlockZ();
 
-        for (int cluster = rollCount(SPAWN_CLUSTERS_PER_CHUNK_BY_TIER[tier], random); cluster > 0; cluster--) {
+        for (int cluster = rollCount(SPAWN_CLUSTERS_PER_CHUNK_BY_TIER[tier] * field, random);
+                cluster > 0; cluster--) {
             int soldiers = between(CLUSTER_SOLDIERS_MIN_BY_TIER[tier], CLUSTER_SOLDIERS_MAX_BY_TIER[tier], random);
             int workers = between(CLUSTER_WORKERS_MIN_BY_TIER[tier], CLUSTER_WORKERS_MAX_BY_TIER[tier], random);
             if (soldiers + workers == 0) {
@@ -806,6 +849,12 @@ public class ColonyChunkGenerator extends ChunkGenerator {
     private void spawnLarvaeInNurseryChambers(WorldGenRegion level, ChunkPos chunkPos, RandomSource random) {
         ColonyNoise noise = noise(level.getLevel().getChunkSource().randomState());
         for (ColonyNoise.Nursery nursery : noise.nurseriesNear(chunkPos.getMinBlockX(), chunkPos.getMinBlockZ())) {
+            // Same reason the Provision Comb pass repeats it: nurseriesNear keeps its fixed
+            // 3x3 cell order rather than the pruned per-column arrays, so a chamber the
+            // colony field gated out would otherwise seed larvae into solid soil.
+            if (!nursery.inColony()) {
+                continue;
+            }
             int centreX = (int) Math.round(nursery.centreX());
             int centreZ = (int) Math.round(nursery.centreZ());
             if (SectionPos.blockToSectionCoord(centreX) != chunkPos.x
@@ -943,13 +992,14 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         ColonyNoise.Nursery[] nurseries = noise.nurseriesForColumn(noise.nurseriesNear(chunkX, chunkZ), x, z);
         ColonyNoise.Garden[] gardens = noise.gardensForColumn(noise.gardensNear(chunkX, chunkZ), x, z);
         ColonyNoise.Larder[] larders = noise.lardersForColumn(noise.lardersNear(chunkX, chunkZ), x, z);
+        double field = noise.colonyField(x, z);
         int bottom = height.getMinBuildHeight();
         BlockState[] column = new BlockState[height.getHeight()];
         for (int i = 0; i < column.length; i++) {
             int y = bottom + i;
-            if (noise.isAir(shafts, thrones, nurseries, gardens, larders, x, y, z)) {
+            if (noise.isAir(field, shafts, thrones, nurseries, gardens, larders, x, y, z)) {
                 column[i] = AIR;
-            } else if (noise.isDaylightMembrane(shafts, thrones, nurseries, gardens, larders, x, y, z)) {
+            } else if (noise.isDaylightMembrane(field, shafts, thrones, nurseries, gardens, larders, x, y, z)) {
                 column[i] = this.membraneState;
             } else if (noise.isThroneDais(thrones, x, y, z)) {
                 column[i] = this.daisState;

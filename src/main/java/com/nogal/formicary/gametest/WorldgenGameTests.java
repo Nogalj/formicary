@@ -1,9 +1,12 @@
 package com.nogal.formicary.gametest;
 
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_ELIGIBILITY_MIN_F;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_SOLDIERS_MAX_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_SOLDIERS_MIN_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_WORKERS_MAX_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_WORKERS_MIN_BY_TIER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_SPACING;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_SPACING;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_DOME_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_SHELL_THICKNESS;
@@ -198,17 +201,33 @@ public class WorldgenGameTests {
      * {@code floorY + 1} without reading a single block, on exactly this guarantee. If the
      * shell arithmetic ever stopped forcing the floor slab solid, the larvae would be placed
      * in mid air and fall out of the room, and nothing else in the build would notice.
+     *
+     * <p><b>Retargeted for the Ep2 colony field.</b> Before it, every cell in the sweep had
+     * a chamber; now a cell whose chamber fell in the wilds generates nothing, and asserting
+     * a solid floor there would be asserting that an absent room has one. The invariant is
+     * unchanged and every assertion below is exactly as strong as it was -- what moved is
+     * the population it runs over: chambers that actually generate
+     * ({@link ColonyNoise.Nursery#inColony()}), widened to a 15x15 cell sweep so the same
+     * larva-seeding guarantee is still checked over hundreds of rooms. The count guard is
+     * not a formality: without it, a bug that gated every chamber out would turn this test
+     * into a vacuous pass, which is precisely the failure mode the gate introduces.
      */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "platform")
     public static void a_nursery_chamber_has_a_solid_floor_and_clear_air_above_it(GameTestHelper helper) {
+        int checked = 0;
         for (long seed : SEEDS) {
             ColonyNoise noise = noise(seed);
-            for (int cellX = -2; cellX <= 2; cellX++) {
-                for (int cellZ = -2; cellZ <= 2; cellZ++) {
+            for (int cellX = -7; cellX <= 7; cellX++) {
+                for (int cellZ = -7; cellZ <= 7; cellZ++) {
                     ColonyNoise.Nursery nursery = centreNurseryOfCell(noise, cellX, cellZ);
+                    if (!nursery.inColony()) {
+                        continue;
+                    }
+                    checked++;
                     int x = (int) Math.round(nursery.centreX());
                     int z = (int) Math.round(nursery.centreZ());
+                    double field = noise.colonyField(x, z);
                     ColonyNoise.Shaft[] shafts = shaftsAt(noise, x, z);
                     ColonyNoise.Throne[] thrones = thronesAt(noise, x, z);
                     ColonyNoise.Nursery[] nurseries = nurseriesAt(noise, x, z);
@@ -216,12 +235,12 @@ public class WorldgenGameTests {
                     ColonyNoise.Larder[] larders = lardersAt(noise, x, z);
 
                     helper.assertFalse(
-                            noise.isAir(shafts, thrones, nurseries, gardens, larders, x, nursery.floorY(), z),
+                            noise.isAir(field, shafts, thrones, nurseries, gardens, larders, x, nursery.floorY(), z),
                             "a nursery chamber's floor slab at (" + x + ", " + nursery.floorY() + ", " + z
                                     + ") on seed " + seed + " should be solid");
                     for (int above = 1; above <= 2; above++) {
                         helper.assertTrue(
-                                noise.isAir(shafts, thrones, nurseries, gardens, larders, x,
+                                noise.isAir(field, shafts, thrones, nurseries, gardens, larders, x,
                                         nursery.floorY() + above, z),
                                 "a nursery chamber's air at (" + x + ", " + (nursery.floorY() + above) + ", "
                                         + z + ") on seed " + seed + " should be clear for a larva to stand in");
@@ -229,7 +248,60 @@ public class WorldgenGameTests {
                 }
             }
         }
+        helper.assertTrue(checked >= 40,
+                "setup: the sweep should find plenty of in-colony nursery chambers to check, found " + checked);
         helper.succeed();
+    }
+
+    /**
+     * Every nursery / garden / larder chamber that generates is inside a colony, and the
+     * ones outside are genuinely gated out rather than merely rare.
+     *
+     * <p>The gate is the load-bearing half of "dense cores, sparse wilds": the density
+     * profile is measured by {@code NoiseProbe}, but "no chamber ever generates below
+     * {@code CHAMBER_ELIGIBILITY_MIN_F}" is a geometric invariant, so a single counterexample
+     * is a bug rather than a statistic and it belongs here. The second assertion is the one
+     * that keeps the first honest: a gate that rejected everything would satisfy it alone.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void chambers_generate_only_inside_colonies(GameTestHelper helper) {
+        int eligible = 0;
+        int total = 0;
+        for (long seed : SEEDS) {
+            ColonyNoise noise = noise(seed);
+            for (int cellX = -7; cellX <= 7; cellX++) {
+                for (int cellZ = -7; cellZ <= 7; cellZ++) {
+                    ColonyNoise.Nursery nursery = centreNurseryOfCell(noise, cellX, cellZ);
+                    ColonyNoise.Garden garden =
+                            noise.gardensNear(cellX * GARDEN_SPACING, cellZ * GARDEN_SPACING)[4];
+                    ColonyNoise.Larder larder =
+                            noise.lardersNear(cellX * LARDER_SPACING, cellZ * LARDER_SPACING)[4];
+                    total += 3;
+                    eligible += (nursery.inColony() ? 1 : 0) + (garden.inColony() ? 1 : 0)
+                            + (larder.inColony() ? 1 : 0);
+
+                    assertGate(helper, seed, "nursery", nursery.inColony(),
+                            noise.colonyField(nursery.centreX(), nursery.centreZ()));
+                    assertGate(helper, seed, "garden", garden.inColony(),
+                            noise.colonyField(garden.centreX(), garden.centreZ()));
+                    assertGate(helper, seed, "larder", larder.inColony(),
+                            noise.colonyField(larder.centreX(), larder.centreZ()));
+                }
+            }
+        }
+        helper.assertTrue(eligible > 0 && eligible < total,
+                "the colony field should let some chambers through and gate others out, got " + eligible
+                        + " of " + total);
+        helper.succeed();
+    }
+
+    /** {@code inColony} agrees with the field at the chamber's own centre, in both directions. */
+    private static void assertGate(GameTestHelper helper, long seed, String kind, boolean inColony, double field) {
+        helper.assertTrue(inColony == field > CHAMBER_ELIGIBILITY_MIN_F,
+                "a " + kind + " chamber on seed " + seed + " reports inColony=" + inColony
+                        + " at colony field " + field + ", which disagrees with the "
+                        + CHAMBER_ELIGIBILITY_MIN_F + " eligibility gate");
     }
 
     // ------------------------------------------------------------------
@@ -350,20 +422,39 @@ public class WorldgenGameTests {
      * coverage {@code p} the agreement rate is {@code 1 - 2p(1-p)}, which at the Nurseries'
      * 14% is about 76%; a contiguous field sits near 100% because disagreement only happens
      * at a patch's boundary.
+     *
+     * <p><b>Retargeted for the Ep2 colony field.</b> Comb is now something a colony grows:
+     * its patch threshold is lerped to "never" out in the wilds, and the origin is wilds on
+     * essentially every seed, so sampling there would measure the gate rather than the
+     * patches. The window moves to a colony <em>core</em> instead -- an 80x80 box centred on
+     * the colony nearest the origin never leaves
+     * {@code COLONY_CORE_RADIUS} (its corners are 57 blocks out), so the field is a flat 1.0
+     * across it and both bounds below are asserted against exactly the same numbers they
+     * were before the field existed. Nothing was loosened.
      */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "platform")
     public static void comb_grows_in_contiguous_patches(GameTestHelper helper) {
         for (long seed : SEEDS) {
             ColonyNoise noise = noise(seed);
+            ColonyNoise.Colony core = noise.nearestColony(0.0, 0.0);
+            int coreX = (int) Math.round(core.centreX());
+            int coreZ = (int) Math.round(core.centreZ());
+            // The whole window lies inside one 384-block colony cell (88 blocks from its
+            // centre at worst), so one neighbourhood resolves the field for all of it.
+            ColonyNoise.Colony[] colonies = noise.coloniesNear(coreX, coreZ);
             long inside = 0;
             long samples = 0;
             long agreements = 0;
-            for (int x = -40; x < 40; x++) {
-                for (int z = -40; z < 40; z++) {
+            for (int dx = -40; dx < 40; dx++) {
+                int x = coreX + dx;
+                for (int dz = -40; dz < 40; dz++) {
+                    int z = coreZ + dz;
+                    double field = noise.colonyField(colonies, x, z);
+                    double fieldNext = noise.colonyField(colonies, x + 1, z);
                     for (int y = tierMinY(1); y < tierMaxY(1); y += 3) {
-                        boolean here = noise.isCombPatch(x, y, z);
-                        boolean next = noise.isCombPatch(x + 1, y, z);
+                        boolean here = noise.isCombPatch(field, x, y, z);
+                        boolean next = noise.isCombPatch(fieldNext, x + 1, y, z);
                         inside += here ? 1 : 0;
                         agreements += here == next ? 1 : 0;
                         samples++;

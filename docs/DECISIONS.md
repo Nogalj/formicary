@@ -1327,3 +1327,51 @@ Owner feedback, two items, both on the two tamed castes (`TamedWorkerAntEntity`,
   asserting `canUse()` directly, rather than folding the negative case into the polling
   positive test, since a `succeedWhen` that polls for "nothing happened" cannot
   distinguish "correctly ignored" from "hasn't gotten around to it yet".
+
+## Ep2 colony field (2026-08-18)
+
+Spec section 1. The dimension stops being one continuous mega-nest: colony cores on a
+jittered 384-block grid, sparse wilds between them.
+
+- **A jittered grid, not a noise field.** Three of the four things the field has to
+  deliver are statements about a *minimum*: one throne per colony, a provable separation
+  between colonies, and "walk far enough and you will hit one". A Perlin field can make
+  none of them -- its blobs have no guaranteed spacing and no guaranteed count. The grid
+  is the same construction `shaftForCell` already uses, and the density falloff is a
+  closed-form function of distance to the nearest centre, so every one of those three is
+  arithmetic rather than a measurement that happened to come out well.
+- **`COLONY_JITTER` is bounded by the boss bar, not by taste.** Total spread 96 on a
+  384 grid puts the minimum centre separation at 288 blocks, against `2 x
+  QueenAntEntity.BOSS_BAR_RADIUS_EXIT` = 56. That inequality is what makes two
+  simultaneous queen bars geometrically impossible, which was the actual play-test
+  symptom. Measured, not assumed: 299.0-299.8 across the three standard seeds.
+- **The field modulates; it never carves and never switches off a guarantee.** Blob
+  chambers, the comb-patch gate, ambient floor/wall decoration and generation-time cluster
+  density all scale with `f`. The worm tunnels, the helicoid ramps and their landings, the
+  ceiling membrane and the arrival pockets are untouched -- those four are the
+  no-softlock guarantees (you can always walk the spine, you can always see and reach an
+  exit), and a density field able to switch them off is a field that can strand a player
+  in the part of the world they are least equipped for. The probe's `anyAir%` column
+  exists to show that: it settles at ~10% out in the wilds rather than at zero.
+- **Thresholds are lerped from `NEVER_THRESHOLD` (9.0), chances are multiplied.** Raising
+  a threshold shrinks a blob field toward its own peaks; multiplying a per-block chance
+  punches holes through blobs that are still there. For anything that is supposed to read
+  as one contiguous thing (a chamber, a comb patch) only the first is right. A consequence
+  worth knowing before retuning: because 9.0 is so far outside Perlin's own +-0.91 span,
+  the lerp compresses the interesting range of `f` for those two into roughly `[0.93, 1]`,
+  i.e. the blob carve and the comb effectively cut off around 105 blocks from a centre
+  rather than fading all the way to 150. Measured: chamber air 12.1% in the core, 2.4% in
+  the r100-124 ring, 0.000% past that. The decoration chances and the chamber gate, which
+  are linear in `f`, are what actually carry the visual gradient from 105 out to 150.
+- **Chamber eligibility is `f > 0.2` (about 134 blocks), not core-only.** Nurseries are
+  the only larva source and arrival XZ is uncorrelated with colonies, so core-only
+  (~21% of the area) would land half of all first entries in empty tunnels. At 0.2 about
+  36% of 96-block cells generate their chamber -- measured, 105 of 289 larder cells.
+- **`nearest*` for the three gated chamber kinds searches 6 cell rings, not 2.** The old
+  radius assumed every cell had a chamber. It now has to reach the nearest colony (at most
+  320 blocks) plus its eligible radius (134) = 454, which 6 rings of 96 (576) covers.
+- **The probe's origin-anchored sections moved to a colony.** `nurseries`, `gardens`,
+  `larders`, `combPatches` and `spawnDensity` now sample around the colony nearest the
+  origin. On a 384 grid the origin is over 200 blocks from any centre on every seed
+  tested, i.e. wilds -- those sections would have reported zero chambers and zero comb and
+  been measuring the gate rather than the thing each was written to check.

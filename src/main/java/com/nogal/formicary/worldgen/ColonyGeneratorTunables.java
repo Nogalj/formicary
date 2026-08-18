@@ -329,6 +329,107 @@ public final class ColonyGeneratorTunables {
     public static final int ENTRY_CARVE_HEIGHT = 4;
 
     // ------------------------------------------------------------------
+    // The colony field (Ep2 D1) -- the layer that sits ABOVE everything below it
+    //
+    // Before this, the dimension was one continuous mega-nest: every tunable below was a
+    // constant over the whole world, so 4000 blocks of travel looked exactly like the first
+    // 40. The field turns that into dense colony cores with sparse wilds between them --
+    // a single scalar f(x, z) in [0, 1] that MODULATES the existing carve rather than
+    // replacing it. Nothing here carves anything on its own.
+    //
+    // What f modulates (see ColonyNoise and ColonyChunkGenerator for the sites):
+    //   * blob-chamber small/large thresholds and the comb-patch threshold, lerped from
+    //     NEVER_THRESHOLD at f = 0 to their per-tier value at f = 1;
+    //   * floor/wall decoration chances and generation-time ant-cluster density, multiplied;
+    //   * nursery / fungus garden / larder eligibility, gated at CHAMBER_ELIGIBILITY_MIN_F.
+    //
+    // What it deliberately does NOT touch: the worm tunnels, the helicoid ramps and their
+    // landings, the ceiling membrane and the arrival pockets. Those four are the mod's
+    // no-softlock guarantees -- you can always walk the spine top to bottom, you can always
+    // see and reach an exit -- and a density field that could switch them off would be a
+    // field that can strand a player between colonies.
+    // ------------------------------------------------------------------
+
+    /**
+     * One colony per this many blocks on each axis. Also the throne chamber's cell: since
+     * Ep2 there is exactly one throne, and one queen, per colony by construction.
+     */
+    public static final int COLONY_SPACING = 384;
+
+    /**
+     * Seed-jitter of a colony centre inside its cell, in blocks (TOTAL spread, so a centre
+     * lands within {@code COLONY_JITTER / 2} = 48 of its cell centre -- the same convention
+     * {@link #SHAFT_JITTER} uses).
+     *
+     * <p><b>Bounded by an invariant, not by taste.</b> Two neighbouring centres are at least
+     * {@code COLONY_SPACING - COLONY_JITTER} = <b>288</b> blocks apart, and that minimum has
+     * to stay above {@code 2 *} {@code QueenAntEntity#BOSS_BAR_RADIUS_EXIT} (2 x 28 = 56):
+     * a player can only ever be inside two queens' bar radii at once if two thrones are
+     * closer than that, so 288 > 56 is what makes two simultaneous boss bars impossible --
+     * the symptom play-test round 1 actually reported. {@link NoiseProbe}'s colony section
+     * measures the real minimum separation across seeds rather than trusting this algebra.
+     */
+    public static final double COLONY_JITTER = 96.0;
+
+    /** Inside this radius of a colony centre the field is a flat 1.0 -- full density. */
+    public static final double COLONY_CORE_RADIUS = 100.0;
+
+    /** By this radius the field has fallen to 0.0 -- wilds: worm tunnels and ramps only. */
+    public static final double COLONY_OUTER_RADIUS = 150.0;
+
+    /**
+     * Nursery, fungus garden and larder chambers generate only where the field at their own
+     * centre is above this.
+     *
+     * <p>0.2 puts the cut at about 134 blocks from a colony centre (solving the falloff for
+     * f = 0.2), i.e. deliberately out in the ring rather than core-only. Nurseries are the
+     * only larva source and arrival XZ is uncorrelated with colonies -- portals are 1:1 with
+     * the anthill thrown at -- so confining chambers to the cores (~21% of the area) would
+     * land half of all first entries in empty tunnels with nothing findable. This is the
+     * named tunable for the near-arrival experience.
+     */
+    public static final double CHAMBER_ELIGIBILITY_MIN_F = 0.2;
+
+    /**
+     * Ender ants runtime-spawn where the field is <em>below</em> this -- i.e. out in the
+     * wilds between colonies, not inside a working nest.
+     *
+     * <p>Consumed by a later package (the ender ant's {@code SpawnPlacements} predicate);
+     * it lives here now because it is a property of the field, and the field is what this
+     * package is. 0.35 sits above {@link #CHAMBER_ELIGIBILITY_MIN_F} on purpose: the two
+     * bands overlap slightly, so the outer edge of a colony's chamber ring is also where
+     * you first start meeting them.
+     */
+    public static final double ENDER_SPAWN_MAX_F = 0.35;
+
+    /**
+     * The "never" sentinel the {@code *_THRESHOLD_BY_TIER} arrays already used for a tier
+     * that grows no comb / no cathedral rooms: no single-octave Perlin value can exceed it
+     * (measured span is {@code [-0.90, 0.91]}).
+     *
+     * <p>It is also the {@code f = 0} end of every threshold lerp, which is what makes the
+     * wilds wilds -- at zero field the blob chambers and the comb patches are switched off
+     * by exactly the mechanism the two dead tiers already used, rather than by a second,
+     * special-cased branch.
+     */
+    public static final double NEVER_THRESHOLD = 9.00;
+
+    /**
+     * The colony density at {@code distance} from the nearest colony centre: 1.0 inside
+     * {@link #COLONY_CORE_RADIUS}, smoothstepped to 0.0 by {@link #COLONY_OUTER_RADIUS}.
+     *
+     * <p>{@link Mth#smoothstep} is vanilla's quintic {@code 6t^5 - 15t^4 + 10t^3}, so the
+     * falloff is flat at both ends -- no visible seam where a core stops being a core, and
+     * no seam where the wilds begin either. Lives here rather than in {@link ColonyNoise}
+     * so that anything registry-free (the probe, a spawn predicate) can ask what the field
+     * would be at a distance without building a noise object.
+     */
+    public static double colonyFalloff(double distance) {
+        double t = (distance - COLONY_CORE_RADIUS) / (COLONY_OUTER_RADIUS - COLONY_CORE_RADIUS);
+        return 1.0 - Mth.smoothstep(Mth.clamp(t, 0.0, 1.0));
+    }
+
+    // ------------------------------------------------------------------
     // The queen's throne chamber (M7) -- a rare domed room in the Royal Depths
     //
     // Rarity is a grid, like the connectivity shafts: one chamber per THRONE_SPACING
