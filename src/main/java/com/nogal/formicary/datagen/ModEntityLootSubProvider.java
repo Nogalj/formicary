@@ -11,6 +11,7 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.data.loot.EntityLootSubProvider;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.level.storage.loot.entries.LootItem;
@@ -72,6 +73,34 @@ public class ModEntityLootSubProvider extends EntityLootSubProvider {
         // scope for the redistribution, only the worker/tamed-worker chitin was.
         this.add(ModEntities.TAMED_SOLDIER_ANT.get(), soldierTable());
         this.add(ModEntities.QUEEN_ANT.get(), queenTable());
+        this.add(ModEntities.ENDER_ANT.get(), enderAntTable());
+    }
+
+    /**
+     * The ender ant's drop (Ep2, spec section 5): "0-1 ender pearl (+Looting)".
+     *
+     * <p>Same shape as vanilla's enderman -- one pool, one roll, an ender pearl whose count
+     * is {@code UniformGenerator.between(0, 1)} with the standard Looting multiplier on top.
+     * {@code NumberProvider#getInt} rounds, so a uniform draw over {@code [0, 1)} is exactly
+     * a coin flip, which is the intended feel: this is the renewable half of the exit
+     * economy (section 2 pairs it with the larder's guaranteed pearls), not a faucet.
+     *
+     * <p>Deliberately no chitin and no Scent Gland. Chitin is soldier-only since play-test
+     * round 1, and the Scent Gland is the colony's own pheromone signature -- an ender ant
+     * is not one of the colony's ants ({@code ColonyAnger.isColonyAnt} does not answer for
+     * it), so a gland from one would brew a disguise out of the wrong smell.
+     */
+    private LootTable.Builder enderAntTable() {
+        return LootTable.lootTable()
+                .withPool(
+                        LootPool.lootPool()
+                                .setRolls(ConstantValue.exactly(1.0F))
+                                .add(
+                                        LootItem.lootTableItem(Items.ENDER_PEARL)
+                                                .apply(SetItemCountFunction.setCount(
+                                                        UniformGenerator.between(0.0F, 1.0F)))
+                                                .apply(EnchantedCountIncreaseFunction.lootingMultiplier(
+                                                        this.registries, UniformGenerator.between(0.0F, 1.0F)))));
     }
 
     /**
@@ -142,6 +171,7 @@ public class ModEntityLootSubProvider extends EntityLootSubProvider {
                 ModEntities.LARVA.get(),
                 ModEntities.TAMED_WORKER_ANT.get(),
                 ModEntities.TAMED_SOLDIER_ANT.get(),
-                ModEntities.QUEEN_ANT.get()).stream();
+                ModEntities.QUEEN_ANT.get(),
+                ModEntities.ENDER_ANT.get()).stream();
     }
 }

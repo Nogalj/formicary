@@ -98,6 +98,32 @@ public class ModEntities {
                             .clientTrackingRange(16)
                             .build("queen_ant"));
 
+    /**
+     * The deep tiers' hostile caste (Ep2, spec section 5). The one {@code MobCategory
+     * .MONSTER} type that actually populates the dimension at runtime -- the queen is
+     * MONSTER too but is placed by the generator alone.
+     *
+     * <p>{@code clientTrackingRange} is left at the builder's default 5, the same as
+     * {@link #WORKER_ANT} and {@link #SOLDIER_ANT}: the queen's 16 exists so a boss bar can
+     * be driven from across a chamber, and there is nothing about an ender ant that needs to
+     * be simulated on a client four chunks earlier than an ordinary ant.
+     *
+     * <p>0.9 x 0.7 is the worker's 0.9 x 0.6 footprint one notch taller, matching the
+     * longer legs its model carries (see {@code assets-src/models.py}'s {@code ENDER_ANT}
+     * spec) -- the same "keep the hitbox tracking the art" rule {@link #SOLDIER_ANT}'s size
+     * follows.
+     *
+     * <p>Deliberately <b>no spawn egg</b>. The three castes above have one because they are
+     * the colony's furniture and a creative build wants to place them; an ender ant is an
+     * encounter, and where it may appear is the whole point of its {@code SpawnPlacements}
+     * predicate below.
+     */
+    public static final DeferredHolder<EntityType<?>, EntityType<EnderAntEntity>> ENDER_ANT =
+            ENTITY_TYPES.register("ender_ant",
+                    () -> EntityType.Builder.of(EnderAntEntity::new, MobCategory.MONSTER)
+                            .sized(0.9F, 0.7F)
+                            .build("ender_ant"));
+
     /** Chitin red-brown shell, amber highlight -- the same pair the texture uses. */
     public static final DeferredItem<DeferredSpawnEggItem> WORKER_ANT_SPAWN_EGG =
             ModItems.ITEMS.registerItem("worker_ant_spawn_egg",
@@ -135,6 +161,7 @@ public class ModEntities {
             event.put(TAMED_WORKER_ANT.get(), TamedWorkerAntEntity.createAttributes().build());
             event.put(TAMED_SOLDIER_ANT.get(), TamedSoldierAntEntity.createAttributes().build());
             event.put(QUEEN_ANT.get(), QueenAntEntity.createAttributes().build());
+            event.put(ENDER_ANT.get(), EnderAntEntity.createAttributes().build());
         }
 
         /**
