@@ -4,13 +4,11 @@ import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.FungalSporeCropBlock;
 import com.nogal.formicary.block.ModBlocks;
 
-import net.minecraft.core.Direction;
 import net.minecraft.data.PackOutput;
 import net.minecraft.world.level.block.Block;
 import net.neoforged.neoforge.client.model.generators.BlockModelBuilder;
 import net.neoforged.neoforge.client.model.generators.BlockStateProvider;
 import net.neoforged.neoforge.client.model.generators.ConfiguredModel;
-import net.neoforged.neoforge.client.model.generators.ModelBuilder;
 import net.neoforged.neoforge.common.data.ExistingFileHelper;
 
 /**
@@ -36,13 +34,23 @@ public class ModBlockStateProvider extends BlockStateProvider {
         simpleBlock(ModBlocks.HARDENED_SOIL.get());
         simpleBlock(ModBlocks.RESIN_WEEP.get());
         simpleBlock(ModBlocks.RESIN_BLOCK.get());
-        // Combs get a hand-built cube whose top/bottom faces rotate the UV 90
-        // degrees: cube_all orients caps differently from sides, so the comb's
-        // offset rows ran a different way on floors than on walls (Logan's
-        // 2026-08-13 review).
-        combBlock(ModBlocks.BROOD_COMB.get(), "brood_comb");
-        combBlock(ModBlocks.ROYAL_COMB.get(), "royal_comb");
-        combBlock(ModBlocks.PROVISION_COMB.get(), "provision_comb");
+        // Plain cube-all, no rotation: Ep2 task I2 re-diagnosis (2026-08-18) found
+        // the 2026-08-13 fix's per-face CLOCKWISE_90 on UP/DOWN was itself the bug,
+        // not the cure. Verified against BlockElement.uvsByFace in reference/: a
+        // full cube's default UV already gives north/south walls U=world X, V=
+        // world Y (flipped) -- identical axis roles to the floor's U=X, V=Z -- so
+        // those walls needed ZERO rotation, and CLOCKWISE_90 broke the one pairing
+        // that already matched. East/west walls map U to world Z instead, which is
+        // a true transpose relative to the floor's V=Z, and ModelBuilder.FaceRotation
+        // only has the four pure rotations (verified in ModelBuilder.java) -- none
+        // of which can express a transpose, so no single rotation value reconciles
+        // both wall pairings at once. The actual fix lives in the texture: comb()
+        // in assets-src/blocks.py now shades its hollow cells with the same
+        // x/y-symmetric L the capped cells already used, so the pattern is
+        // transpose-invariant and neither pairing needs any rotation at all.
+        simpleBlock(ModBlocks.BROOD_COMB.get());
+        simpleBlock(ModBlocks.ROYAL_COMB.get());
+        simpleBlock(ModBlocks.PROVISION_COMB.get());
         simpleBlock(ModBlocks.EGG_CLUSTER.get());
         simpleBlock(ModBlocks.DAYLIGHT_MEMBRANE.get());
         simpleBlock(ModBlocks.ANTHILL_SOIL.get());
@@ -68,8 +76,8 @@ public class ModBlockStateProvider extends BlockStateProvider {
 
         // Ep2 task H3: decorative families. Each base block is a plain cube-all (its
         // texture already carries the "cut" look -- mortar grid, tile grid, gloss line
-        // -- so no hand-built model is needed the way combBlock() needs one), and every
-        // stairs/slab/wall reuses that same single texture via the single-texture
+        // -- so no hand-built model is needed, same as the combs above since Ep2 task
+        // I2), and every stairs/slab/wall reuses that same single texture via the
         // stairsBlock/slabBlock/wallBlock overloads -- the "dedicated provider helpers"
         // the task brief points at.
         simpleBlock(ModBlocks.PACKED_SOIL_BRICKS.get());
@@ -108,27 +116,5 @@ public class ModBlockStateProvider extends BlockStateProvider {
         getVariantBuilder(crop).forAllStates(state -> new ConfiguredModel[] {
                 new ConfiguredModel(modelByAge[state.getValue(FungalSporeCropBlock.AGE)])
         });
-    }
-
-    /**
-     * Full cube whose UP/DOWN faces rotate their UVs 90 degrees so the comb's offset
-     * cell rows flow the same way on floors/ceilings as on walls. cube_all cannot do
-     * this -- caps and sides get different UV orientations by construction.
-     */
-    private void combBlock(Block block, String name) {
-        var model = models().getBuilder(name)
-                .texture("all", modLoc("block/" + name))
-                .texture("particle", modLoc("block/" + name))
-                .element()
-                .from(0, 0, 0)
-                .to(16, 16, 16)
-                .allFaces((dir, face) -> {
-                    face.texture("#all").cullface(dir);
-                    if (dir == Direction.UP || dir == Direction.DOWN) {
-                        face.rotation(ModelBuilder.FaceRotation.CLOCKWISE_90);
-                    }
-                })
-                .end();
-        simpleBlock(block, model);
     }
 }

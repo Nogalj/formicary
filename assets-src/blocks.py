@@ -87,9 +87,30 @@ def value_noise_fill(name, palette, weights=None, jitter=0.22):
 
 def comb(name, line, hollow, hollow_lit, cap, cap_rim, cap_shade, cell_w=4, cell_h=4):
     """Organic wax comb, bee-nest style: 4x4 cells on an offset grid. Each cell
-    is randomly either OPEN (a dark hollow whose bottom inner edge catches the
-    light) or CAPPED (a waxy dome, lit top-left with a shaded lower-right).
-    The mix is what keeps it from reading as stamped metal tiles."""
+    is randomly either OPEN (a dark hollow whose far inner edge catches the
+    light, near corner in shadow) or CAPPED (a waxy dome, lit top-left with a
+    shaded lower-right). The mix is what keeps it from reading as stamped
+    metal tiles.
+
+    Ep2 task I2 re-diagnosis (2026-08-18): the capped cell's shading was
+    already written as an x/y-symmetric L (`cx == cell_w - 1 or cy ==
+    cell_h - 1`), but the hollow cell's was an if/elif PRIORITY chain --
+    lit only along cy == cell_h - 1, plain hollow along cx == cell_w - 1 --
+    which is not symmetric under swapping x and y. That asymmetry is what a
+    UV rotation on the UP/DOWN faces can never fix: verified against
+    `BlockElement.uvsByFace` in `reference/`, a full cube's default UV maps
+    U to world X and V to world Y (flipped) on the north/south faces, so a
+    north/south wall already needs ZERO rotation to agree with the floor's
+    U=X, V=Z -- rotating those faces (the shipped 2026-08-13 fix) broke the
+    one pairing that was already correct. The east/west faces map U to
+    world Z instead, which relative to the floor's V=Z is a true axis swap
+    (transpose) -- and `ModelBuilder.FaceRotation` only has the four pure
+    rotations (verified in `reference/.../ModelBuilder.java`), none of
+    which can express a transpose. No single rotation value reconciles
+    both pairings; the fix has to make the texture itself transpose-
+    invariant so neither pairing needs any rotation at all. Making the
+    hollow cell's lit edge the same symmetric L shape the capped cell
+    already uses does exactly that."""
     img = blank()
     px = img.load()
     r = rng(name)
@@ -113,10 +134,8 @@ def comb(name, line, hollow, hollow_lit, cap, cap_rim, cap_shade, cell_w=4, cell
                 else:
                     px[x, y] = cap
             else:
-                if cy == cell_h - 1:
+                if cx == cell_w - 1 or cy == cell_h - 1:
                     px[x, y] = hollow_lit
-                elif cx == cell_w - 1:
-                    px[x, y] = hollow
                 elif cx == 1 and cy == 1:
                     px[x, y] = (max(hollow[0] - 20, 0), max(hollow[1] - 16, 0),
                                 max(hollow[2] - 8, 0), 255)
