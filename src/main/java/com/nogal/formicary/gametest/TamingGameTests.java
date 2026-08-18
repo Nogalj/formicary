@@ -64,6 +64,15 @@ public class TamingGameTests {
 
     private static final int TEST_EFFECT_DURATION = 200;
 
+    /**
+     * How far above its arena a radius-searching test works. See {@link #isolated}.
+     *
+     * <p>Comfortably more than {@code TamedWorkerAntEntity.DEPOSIT_SEARCH_RADIUS} so nothing
+     * at arena level is reachable, and small enough to stay inside a flat world's build
+     * height whichever Y the harness lays the grid out at.
+     */
+    private static final int ISOLATION_LIFT = 80;
+
     // ------------------------------------------------------- the diet fork --
 
     /**
@@ -177,6 +186,62 @@ public class TamingGameTests {
         keeper.setShiftKeyDown(true);
         worker.interact(keeper, InteractionHand.MAIN_HAND);
         helper.assertFalse(worker.isBound(), "sneak-right-clicking the worker must unbind it");
+        helper.succeed();
+    }
+
+    /**
+     * Ep2: the sneak-click is a toggle. The half that already worked -- a bound worker going
+     * back to follow mode -- is covered above; this is the half that used to play a sound and
+     * do nothing. A following worker takes the nearest storage block within
+     * {@code DEPOSIT_SEARCH_RADIUS} as its anchor.
+     *
+     * <p>Driven through the static seam rather than {@code worker.interact}, for the reason
+     * the seam exists: {@code mobInteract}'s own guard is {@code isOwnedByUuid} plus
+     * {@code isShiftKeyDown}, both of which a mock player satisfies, but the decision worth
+     * asserting is the search itself.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void sneak_click_binds_a_following_worker_to_the_nearest_storage(GameTestHelper helper) {
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(2, STAND_Y, 2));
+        worker.tame(keeper);
+        lift(worker);
+
+        BlockPos chest = worker.blockPosition().east(6);
+        helper.getLevel().setBlockAndUpdate(chest, Blocks.CHEST.defaultBlockState());
+
+        helper.assertFalse(worker.isBound(), "a freshly grown worker follows, it is not bound");
+
+        BlockPos bound = TamedWorkerAntEntity.bindNearestDeposit(helper.getLevel(), worker, keeper);
+
+        helper.assertValueEqual(bound, chest, "the block the sneak-click bound the worker to");
+        helper.assertValueEqual(worker.getBoundChest(), chest, "the worker's bound chest");
+        helper.succeed();
+    }
+
+    /**
+     * The other side of the toggle's new branch: with nothing bindable in range the worker is
+     * left exactly as it was -- following, unbound -- rather than being anchored to wherever
+     * it happens to be standing.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void a_sneak_click_with_no_storage_in_range_leaves_the_worker_following(GameTestHelper helper) {
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(2, STAND_Y, 2));
+        worker.tame(keeper);
+        lift(worker);
+
+        helper.assertTrue(
+                TamedWorkerAntEntity.findNearestDeposit(helper.getLevel(), worker.blockPosition()) == null,
+                "setup: an isolated worker must have no deposit block within its search radius");
+
+        helper.assertTrue(TamedWorkerAntEntity.bindNearestDeposit(helper.getLevel(), worker, keeper) == null,
+                "a sneak-click with nothing in range must bind nothing");
+        helper.assertFalse(worker.isBound(), "the worker must be left following");
         helper.succeed();
     }
 
@@ -502,6 +567,24 @@ public class TamingGameTests {
     }
 
     // ------------------------------------------------------------ helpers --
+
+    /**
+     * Lifts {@code entity} {@link #ISOLATION_LIFT} blocks into open air above its arena.
+     *
+     * <p>Needed by the two binding tests and by nothing else in this file, because they are
+     * the only ones that search by <em>radius</em> instead of reading a position the test
+     * wrote. GameTest arenas are laid out in a grid five to six blocks apart
+     * ({@code StructureGridSpawner.SPACE_BETWEEN_COLUMNS} / {@code _ROWS}, read in the
+     * decompiled source) and a whole batch is live at once, so a 16-block block search
+     * started at arena level reaches into the neighbours -- several of which stand a chest
+     * of their own. Up here the only deposit block within range is the one the test placed.
+     *
+     * <p>The lifted entity is in free fall, which is harmless: every assertion that follows
+     * runs in the same tick, before anything moves.
+     */
+    private static void lift(net.minecraft.world.entity.Entity entity) {
+        entity.setPos(entity.getX(), entity.getY() + ISOLATION_LIFT, entity.getZ());
+    }
 
     /** Spawns a larva already flagged as placed, the way {@code LarvaItem} does. */
     private static LarvaEntity placedLarva(GameTestHelper helper, BlockPos pos) {

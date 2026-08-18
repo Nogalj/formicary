@@ -76,6 +76,9 @@ public class ModLanguageProvider extends LanguageProvider {
         // Play-test round 1, spec item 1: actionbar feedback on every command-state cycle.
         add("entity.formicary.tamed_worker_ant.state.following", "Following");
         add("entity.formicary.tamed_worker_ant.state.harvesting", "Harvesting");
+        // Ep2: the sneak-click is a toggle now, so the "I looked and found nothing" answer
+        // needs a line of its own -- otherwise the click is indistinguishable from a no-op.
+        add("entity.formicary.tamed_worker_ant.state.no_chest", "No storage nearby");
         add("entity.formicary.tamed_soldier_ant.state.escort", "Escort");
         add("entity.formicary.tamed_soldier_ant.state.guard_post", "Guard Post");
 

@@ -1,6 +1,7 @@
 package com.nogal.formicary.entity;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -37,6 +38,7 @@ import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.HopperBlockEntity;
@@ -56,8 +58,10 @@ import net.minecraft.world.phys.AABB;
  *       bound to, harvests ripe crops ({@link HarvestCropsGoal}), replants from the
  *       harvested seed and carries the rest back ({@link DepositToChestGoal}).</li>
  * </ul>
- * Sneak-right-clicking the ant unbinds it back to follow mode; right-clicking a chest while
- * it follows you binds it (see {@link #bindNearestFollower}).
+ * Sneak-right-clicking the ant toggles between the two: a bound worker goes back to follow
+ * mode, and a following worker takes the nearest storage block it can see as its anchor
+ * (see {@link #bindNearestDeposit}). Right-clicking a chest while it follows you binds it
+ * to that chest specifically (see {@link #bindNearestFollower}).
  *
  * <p>Nothing it picks up is ever destroyed: overflow is popped on the ground rather than
  * voided, an undeliverable load is kept rather than dumped, and the pack is emptied onto
@@ -83,6 +87,13 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
 
     /** How far from the player a chest click reaches to find a follower to bind. */
     public static final double BIND_RANGE = 8.0;
+
+    /**
+     * How far a sneak-click on a <em>following</em> worker looks for something to bind to.
+     * Matches {@link #PATROL_RADIUS}: the storage it picks is the centre of the field it
+     * will then patrol, so anything it can be bound to is somewhere it could already work.
+     */
+    public static final int DEPOSIT_SEARCH_RADIUS = 16;
 
     /**
      * Play-test round 1, spec item 2: how far a harvesting worker looks for a loose item
@@ -230,6 +241,58 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
                     true);
         }
         return best;
+    }
+
+    /**
+     * The ant-side half of binding, and the mirror image of {@link #bindNearestFollower}:
+     * instead of a clicked chest looking for a worker, a sneak-clicked <em>worker</em> looks
+     * for a chest. It is what makes the sneak-click a real toggle -- the click that unbinds a
+     * working ant now puts a following one to work rather than doing nothing.
+     *
+     * <p>A static seam for the same reason its sibling is one: the mock player a GameTest can
+     * build is never added to the level, so a test cannot drive the decision through a real
+     * right-click and has to call the decision itself.
+     *
+     * @return the block the worker bound to, or {@code null} when nothing in range qualified
+     *         (in which case the worker is left following, exactly as it was)
+     */
+    @Nullable
+    public static BlockPos bindNearestDeposit(ServerLevel level, TamedWorkerAntEntity worker, Player owner) {
+        BlockPos found = findNearestDeposit(level, worker.blockPosition());
+        if (found == null) {
+            owner.displayClientMessage(
+                    Component.translatable("entity.formicary.tamed_worker_ant.state.no_chest"), true);
+            return null;
+        }
+        worker.bindTo(found);
+        level.playSound(null, found, SoundEvents.BEEHIVE_WORK, SoundSource.NEUTRAL, 0.7F, 1.3F);
+        owner.displayClientMessage(
+                Component.translatable("entity.formicary.tamed_worker_ant.state.harvesting"), true);
+        return found;
+    }
+
+    /**
+     * The nearest {@link ModBlockTags#WORKER_DEPOSITS} block to {@code origin} inside
+     * {@link #DEPOSIT_SEARCH_RADIUS}, or {@code null} if the box holds none.
+     *
+     * <p>A flat sweep of the {@code 33^3} box. That is 35937 block reads, which would be
+     * absurd on a tick but is nothing at all at interaction frequency -- this runs once per
+     * sneak-click, so a cheaper spiral would buy nothing and cost clarity.
+     *
+     * <p>{@code betweenClosed} hands out one reused {@code MutableBlockPos} cursor (verified
+     * in the decompiled {@code BlockPos}), so the copy has to be taken <em>before</em> the
+     * reduction -- holding onto a candidate across iterations otherwise means holding onto a
+     * position that keeps moving.
+     */
+    @Nullable
+    public static BlockPos findNearestDeposit(BlockGetter level, BlockPos origin) {
+        return BlockPos.betweenClosedStream(
+                        origin.offset(-DEPOSIT_SEARCH_RADIUS, -DEPOSIT_SEARCH_RADIUS, -DEPOSIT_SEARCH_RADIUS),
+                        origin.offset(DEPOSIT_SEARCH_RADIUS, DEPOSIT_SEARCH_RADIUS, DEPOSIT_SEARCH_RADIUS))
+                .filter(pos -> isDepositBlock(level.getBlockState(pos)))
+                .map(BlockPos::immutable)
+                .min(Comparator.comparingDouble(pos -> pos.distSqr(origin)))
+                .orElse(null);
     }
 
     /** Whether {@code state} is something a worker may be bound to and deposit into. */
@@ -384,7 +447,7 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
         if (!player.isShiftKeyDown() || !this.isOwnedByUuid(player)) {
             return super.mobInteract(player, hand);
         }
-        if (!this.level().isClientSide) {
+        if (this.level() instanceof ServerLevel serverLevel) {
             if (this.isBound()) {
                 this.unbind();
                 this.playSound(SoundEvents.BEEHIVE_EXIT, 0.7F, 1.2F);
@@ -395,9 +458,10 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
                 // never double-sends it.
                 player.displayClientMessage(
                         Component.translatable("entity.formicary.tamed_worker_ant.state.following"), true);
-            } else {
-                // Already following: nothing to unbind, but answer so the click is not
-                // passed on to the held item.
+            } else if (bindNearestDeposit(serverLevel, this, player) == null) {
+                // Nothing worth binding to: stay in follow mode, but still answer the click
+                // so it is not passed on to the held item. The "no storage nearby" line was
+                // already sent by the seam.
                 this.playSound(SoundEvents.BEEHIVE_ENTER, 0.5F, 1.4F);
             }
         }
