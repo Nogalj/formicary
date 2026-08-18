@@ -39,6 +39,18 @@ public class ModLanguageProvider extends LanguageProvider {
         addBlock(ModBlocks.ANTHILL_CORE, "Anthill Core");
         addBlock(ModBlocks.QUEENS_CREST, "Queen's Crest");
 
+        // Ep2 task H3: decorative families.
+        addBlock(ModBlocks.PACKED_SOIL_BRICKS, "Packed Soil Bricks");
+        addBlock(ModBlocks.PACKED_SOIL_BRICK_STAIRS, "Packed Soil Brick Stairs");
+        addBlock(ModBlocks.PACKED_SOIL_BRICK_SLAB, "Packed Soil Brick Slab");
+        addBlock(ModBlocks.PACKED_SOIL_BRICK_WALL, "Packed Soil Brick Wall");
+        addBlock(ModBlocks.HARDENED_SOIL_TILES, "Hardened Soil Tiles");
+        addBlock(ModBlocks.HARDENED_SOIL_TILE_STAIRS, "Hardened Soil Tile Stairs");
+        addBlock(ModBlocks.HARDENED_SOIL_TILE_SLAB, "Hardened Soil Tile Slab");
+        addBlock(ModBlocks.POLISHED_RESIN, "Polished Resin");
+        addBlock(ModBlocks.POLISHED_RESIN_STAIRS, "Polished Resin Stairs");
+        addBlock(ModBlocks.POLISHED_RESIN_SLAB, "Polished Resin Slab");
+
         addItem(ModItems.RESIN, "Resin");
         addItem(ModItems.CHITIN, "Chitin");
         addItem(ModItems.LARVA, "Larva");

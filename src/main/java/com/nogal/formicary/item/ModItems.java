@@ -196,6 +196,28 @@ public class ModItems {
     public static final DeferredItem<BlockItem> ANTHILL_CORE = ITEMS.registerSimpleBlockItem(ModBlocks.ANTHILL_CORE);
     public static final DeferredItem<BlockItem> QUEENS_CREST = ITEMS.registerSimpleBlockItem(ModBlocks.QUEENS_CREST);
 
+    // --- Ep2 task H3: decorative families. ---
+    public static final DeferredItem<BlockItem> PACKED_SOIL_BRICKS =
+            ITEMS.registerSimpleBlockItem(ModBlocks.PACKED_SOIL_BRICKS);
+    public static final DeferredItem<BlockItem> PACKED_SOIL_BRICK_STAIRS =
+            ITEMS.registerSimpleBlockItem(ModBlocks.PACKED_SOIL_BRICK_STAIRS);
+    public static final DeferredItem<BlockItem> PACKED_SOIL_BRICK_SLAB =
+            ITEMS.registerSimpleBlockItem(ModBlocks.PACKED_SOIL_BRICK_SLAB);
+    public static final DeferredItem<BlockItem> PACKED_SOIL_BRICK_WALL =
+            ITEMS.registerSimpleBlockItem(ModBlocks.PACKED_SOIL_BRICK_WALL);
+    public static final DeferredItem<BlockItem> HARDENED_SOIL_TILES =
+            ITEMS.registerSimpleBlockItem(ModBlocks.HARDENED_SOIL_TILES);
+    public static final DeferredItem<BlockItem> HARDENED_SOIL_TILE_STAIRS =
+            ITEMS.registerSimpleBlockItem(ModBlocks.HARDENED_SOIL_TILE_STAIRS);
+    public static final DeferredItem<BlockItem> HARDENED_SOIL_TILE_SLAB =
+            ITEMS.registerSimpleBlockItem(ModBlocks.HARDENED_SOIL_TILE_SLAB);
+    public static final DeferredItem<BlockItem> POLISHED_RESIN =
+            ITEMS.registerSimpleBlockItem(ModBlocks.POLISHED_RESIN);
+    public static final DeferredItem<BlockItem> POLISHED_RESIN_STAIRS =
+            ITEMS.registerSimpleBlockItem(ModBlocks.POLISHED_RESIN_STAIRS);
+    public static final DeferredItem<BlockItem> POLISHED_RESIN_SLAB =
+            ITEMS.registerSimpleBlockItem(ModBlocks.POLISHED_RESIN_SLAB);
+
     private ModItems() {
     }
 }

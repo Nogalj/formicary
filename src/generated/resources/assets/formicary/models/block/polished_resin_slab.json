@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/slab",
+  "textures": {
+    "bottom": "formicary:block/polished_resin",
+    "side": "formicary:block/polished_resin",
+    "top": "formicary:block/polished_resin"
+  }
+}

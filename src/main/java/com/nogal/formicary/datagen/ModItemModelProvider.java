@@ -80,6 +80,27 @@ public class ModItemModelProvider extends ItemModelProvider {
         withExistingParent("larva_spawn_egg", "item/template_spawn_egg");
         // Play-test round 1, spec item 5.
         withExistingParent("queen_ant_spawn_egg", "item/template_spawn_egg");
+
+        // Ep2 task H3: decorative families. Base blocks, stairs and slabs all parent
+        // the block model at their own name (blockItem() -- the stairs/slab "bottom"
+        // model ModBlockStateProvider generates is written at exactly that path, the
+        // same convention vanilla's own oak_stairs.json/oak_slab.json items use). Walls
+        // are the one shape that needs its own item model: wallBlock() never writes a
+        // model at the wall's bare name (only "..._post"/"..._side"/"..._side_tall"), so
+        // the item instead parents vanilla's block/wall_inventory template -- the same
+        // one every vanilla *_wall item uses for its inventory icon.
+        blockItem("packed_soil_bricks");
+        blockItem("packed_soil_brick_stairs");
+        blockItem("packed_soil_brick_slab");
+        wallItem("packed_soil_brick_wall", "packed_soil_bricks");
+
+        blockItem("hardened_soil_tiles");
+        blockItem("hardened_soil_tile_stairs");
+        blockItem("hardened_soil_tile_slab");
+
+        blockItem("polished_resin");
+        blockItem("polished_resin_stairs");
+        blockItem("polished_resin_slab");
     }
 
     private void blockItem(String name) {
@@ -88,5 +109,9 @@ public class ModItemModelProvider extends ItemModelProvider {
 
     private void handheldItem(String name) {
         withExistingParent(name, "item/handheld").texture("layer0", modLoc("item/" + name));
+    }
+
+    private void wallItem(String name, String textureBlockName) {
+        withExistingParent(name, "block/wall_inventory").texture("wall", modLoc("block/" + textureBlockName));
     }
 }

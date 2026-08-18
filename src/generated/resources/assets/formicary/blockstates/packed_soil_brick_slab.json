@@ -1,0 +1,13 @@
+{
+  "variants": {
+    "type=bottom": {
+      "model": "formicary:block/packed_soil_brick_slab"
+    },
+    "type=double": {
+      "model": "formicary:block/packed_soil_bricks"
+    },
+    "type=top": {
+      "model": "formicary:block/packed_soil_brick_slab_top"
+    }
+  }
+}

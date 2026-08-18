@@ -6,8 +6,11 @@ import net.minecraft.util.valueproviders.UniformInt;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.CarpetBlock;
 import net.minecraft.world.level.block.DropExperienceBlock;
+import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.TransparentBlock;
+import net.minecraft.world.level.block.WallBlock;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
@@ -205,6 +208,78 @@ public class ModBlocks {
                     .mapColor(MapColor.GOLD)
                     .sound(SoundType.AMETHYST)
                     .strength(3.0F, 6.0F));
+
+    // --- Ep2 task H3: decorative families -- packed_soil_bricks (+ stairs/slab/wall),
+    // hardened_soil_tiles (+ stairs/slab), polished_resin (+ stairs/slab). Every shape in
+    // a family reuses that family's parent block's exact BlockBehaviour.Properties
+    // (mapColor/sound/strength), matching the task brief's "mineable tags matching
+    // parents" -- and matching it literally, since none of Packed Soil / Hardened Soil /
+    // Resin Block carry a mineable/* tag of their own (grep of src/generated confirms it),
+    // so "matching" means carrying none here either, same as the parents.
+    //
+    // Deliberately NOT added to ModBlockTags.COLONY_FABRIC even though two parents
+    // (Packed Soil, Hardened Soil) are: that tag gates the DIMENSION'S OWN raw terrain
+    // behind the chitin set (spec section 5), and these are player-crafted building
+    // blocks made FROM harvested fabric, not fabric themselves -- gating a wall a player
+    // built would punish building, not protect the dimension.
+    //
+    // Stairs/slab/wall base states reference their OWN family's base block (not the raw
+    // parent), the same way vanilla's oak_stairs point at oak_planks rather than at a log
+    // -- and it is a safe forward reference: DeferredRegister iterates its entries in
+    // registration order when the registry event fires, so by the time each shape's
+    // supplier resolves, its family's base block (registered immediately above it, in the
+    // same DeferredRegister) has already bound its DeferredBlock.
+
+    private static final BlockBehaviour.Properties PACKED_SOIL_BRICK_PROPERTIES = BlockBehaviour.Properties.of()
+            .mapColor(MapColor.DIRT)
+            .sound(SoundType.ROOTED_DIRT)
+            .strength(0.5F);
+
+    public static final DeferredBlock<Block> PACKED_SOIL_BRICKS = BLOCKS.registerSimpleBlock(
+            "packed_soil_bricks", PACKED_SOIL_BRICK_PROPERTIES);
+
+    public static final DeferredBlock<StairBlock> PACKED_SOIL_BRICK_STAIRS = BLOCKS.registerBlock(
+            "packed_soil_brick_stairs",
+            properties -> new StairBlock(PACKED_SOIL_BRICKS.get().defaultBlockState(), properties),
+            PACKED_SOIL_BRICK_PROPERTIES);
+
+    public static final DeferredBlock<SlabBlock> PACKED_SOIL_BRICK_SLAB = BLOCKS.registerBlock(
+            "packed_soil_brick_slab", SlabBlock::new, PACKED_SOIL_BRICK_PROPERTIES);
+
+    public static final DeferredBlock<WallBlock> PACKED_SOIL_BRICK_WALL = BLOCKS.registerBlock(
+            "packed_soil_brick_wall", WallBlock::new, PACKED_SOIL_BRICK_PROPERTIES);
+
+    private static final BlockBehaviour.Properties HARDENED_SOIL_TILE_PROPERTIES = BlockBehaviour.Properties.of()
+            .mapColor(MapColor.COLOR_GRAY)
+            .sound(SoundType.STONE)
+            .strength(2.0F, 6.0F);
+
+    public static final DeferredBlock<Block> HARDENED_SOIL_TILES = BLOCKS.registerSimpleBlock(
+            "hardened_soil_tiles", HARDENED_SOIL_TILE_PROPERTIES);
+
+    public static final DeferredBlock<StairBlock> HARDENED_SOIL_TILE_STAIRS = BLOCKS.registerBlock(
+            "hardened_soil_tile_stairs",
+            properties -> new StairBlock(HARDENED_SOIL_TILES.get().defaultBlockState(), properties),
+            HARDENED_SOIL_TILE_PROPERTIES);
+
+    public static final DeferredBlock<SlabBlock> HARDENED_SOIL_TILE_SLAB = BLOCKS.registerBlock(
+            "hardened_soil_tile_slab", SlabBlock::new, HARDENED_SOIL_TILE_PROPERTIES);
+
+    private static final BlockBehaviour.Properties POLISHED_RESIN_PROPERTIES = BlockBehaviour.Properties.of()
+            .mapColor(MapColor.COLOR_ORANGE)
+            .sound(SoundType.HONEY_BLOCK)
+            .strength(0.8F);
+
+    public static final DeferredBlock<Block> POLISHED_RESIN = BLOCKS.registerSimpleBlock(
+            "polished_resin", POLISHED_RESIN_PROPERTIES);
+
+    public static final DeferredBlock<StairBlock> POLISHED_RESIN_STAIRS = BLOCKS.registerBlock(
+            "polished_resin_stairs",
+            properties -> new StairBlock(POLISHED_RESIN.get().defaultBlockState(), properties),
+            POLISHED_RESIN_PROPERTIES);
+
+    public static final DeferredBlock<SlabBlock> POLISHED_RESIN_SLAB = BLOCKS.registerBlock(
+            "polished_resin_slab", SlabBlock::new, POLISHED_RESIN_PROPERTIES);
 
     private ModBlocks() {
     }

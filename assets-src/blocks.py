@@ -540,6 +540,58 @@ def anthill_core():
     return img
 
 
+def packed_soil_bricks():
+    """Packed Soil cut into bricks: same soil palette (so the material reads
+    through), laid in a running-bond mortar grid -- two courses of two bricks,
+    joints offset on alternate rows, the way vanilla's own bricks.png reads."""
+    img = value_noise_fill("packed_soil_bricks", PACKED_SOIL_PAL, jitter=0.14)
+    px = img.load()
+    mortar = (74, 56, 37, 255)
+    for y in range(SIZE):
+        if y % 4 == 0:
+            for x in range(SIZE):
+                px[x, y] = mortar
+    for row in range(4):
+        y0 = row * 4
+        offset = 4 if row % 2 else 0
+        for x in range(offset, SIZE, 8):
+            for yy in range(y0, min(SIZE, y0 + 4)):
+                px[wrap(x), yy] = mortar
+    return img
+
+
+def hardened_soil_tiles():
+    """Hardened Soil cut into flat tiles: same stony palette, a straight
+    (non-offset) 4x4 grout grid -- the straight grid is what tells it apart
+    from the bricks' running bond at a glance."""
+    img = value_noise_fill("hardened_soil_tiles",
+                           [(82, 74, 65, 255), (92, 83, 73, 255), (110, 100, 89, 255),
+                            (119, 109, 97, 255), (129, 119, 106, 255)], jitter=0.14)
+    px = img.load()
+    grout = (56, 50, 44, 255)
+    for i in range(0, SIZE, 4):
+        for x in range(SIZE):
+            px[x, i] = grout
+        for y in range(SIZE):
+            px[i, y] = grout
+    return img
+
+
+def polished_resin():
+    """Resin Block, smoothed: the same amber ramp as resin_block but with the
+    noise jitter tightened way down (an even surface, not a lumpy one) and a
+    single clean diagonal gloss line rather than resin_block's busier streak
+    -- 'polished' reads as flatness plus one confident highlight."""
+    img = value_noise_fill("polished_resin",
+                           [AMBER_DARK, AMBER_BASE, (196, 118, 32, 255), AMBER_MID, AMBER_LIGHT],
+                           weights=[1, 3, 8, 3, 1], jitter=0.08)
+    px = img.load()
+    for (x, y) in [(3, 12), (4, 11), (5, 10), (6, 9), (10, 5), (11, 4), (12, 3)]:
+        px[x, y] = AMBER_PALE
+    px[8, 7] = AMBER_SPARK
+    return img
+
+
 def queens_crest():
     """Gold trophy plaque: double-beveled frame, corner studs, faceted gem."""
     img = value_noise_fill("queens_crest",
@@ -1523,6 +1575,9 @@ BLOCK_TEXTURES = {
     "daylight_membrane": daylight_membrane,
     "anthill_core": anthill_core,
     "queens_crest": queens_crest,
+    "packed_soil_bricks": packed_soil_bricks,
+    "hardened_soil_tiles": hardened_soil_tiles,
+    "polished_resin": polished_resin,
 }
 
 ITEM_TEXTURES = {
@@ -1604,6 +1659,31 @@ def armor_layer_sheet(layers, scale=6):
     return sheet
 
 
+def family_wall_sheet(families, cols=6, rows=4, scale=6):
+    """Ep2 task H3 shot list: each decorative family's base texture tiled into
+    a `cols` x `rows` swatch -- a stand-in for 'a sample wall of each family'
+    in a pipeline with no running game client to screenshot an actual built
+    wall. Every stairs/slab/wall shape in a family reuses this exact texture
+    (see ModBlockStateProvider's single-texture stairsBlock/slabBlock/
+    wallBlock calls), so tiling the flat texture is the same continuity check
+    the file's other 'Tiling note' comments already care about -- does the
+    pattern still read as a wall, or does the repeat show a seam/grid."""
+    tile_px = SIZE * scale
+    wall_w, wall_h = cols * tile_px, rows * tile_px
+    label_h = 14
+    sheet = Image.new("RGBA", (len(families) * (wall_w + 8) + 8, wall_h + label_h + 16),
+                      (34, 34, 34, 255))
+    draw = ImageDraw.Draw(sheet)
+    for i, (name, img) in enumerate(families):
+        gx, gy = 8 + i * (wall_w + 8), 8
+        big = img.resize((tile_px, tile_px), Image.NEAREST)
+        for r in range(rows):
+            for c in range(cols):
+                sheet.alpha_composite(big, (gx + c * tile_px, gy + r * tile_px))
+        draw.text((gx + 2, gy + wall_h + 2), name, fill=(220, 220, 220, 255))
+    return sheet
+
+
 def main():
     BLOCK_TEX_DIR.mkdir(parents=True, exist_ok=True)
     ITEM_TEX_DIR.mkdir(parents=True, exist_ok=True)
@@ -1643,6 +1723,14 @@ def main():
     armor_sheet_path = PREVIEW_DIR / "armor_layers_sheet.png"
     armor_sheet.save(armor_sheet_path)
     print(f"wrote {armor_sheet_path.relative_to(REPO_ROOT)}")
+
+    # Ep2 task H3: shot-list render of a sample wall of each decorative family.
+    family_names = ["packed_soil_bricks", "hardened_soil_tiles", "polished_resin"]
+    families = [(name, img) for (name, img) in generated if name in family_names]
+    wall_sheet = family_wall_sheet(families)
+    wall_sheet_path = PREVIEW_DIR / "decorative_families_wall_sheet.png"
+    wall_sheet.save(wall_sheet_path)
+    print(f"wrote {wall_sheet_path.relative_to(REPO_ROOT)}")
 
     effect_icons = []
     for name, make in EFFECT_ICONS.items():

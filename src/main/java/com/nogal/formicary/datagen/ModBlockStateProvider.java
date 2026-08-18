@@ -65,6 +65,28 @@ public class ModBlockStateProvider extends BlockStateProvider {
                 models().carpet("fungal_carpet", blockTexture(ModBlocks.FUNGAL_CARPET.get())));
 
         fungalSporeCropBlock();
+
+        // Ep2 task H3: decorative families. Each base block is a plain cube-all (its
+        // texture already carries the "cut" look -- mortar grid, tile grid, gloss line
+        // -- so no hand-built model is needed the way combBlock() needs one), and every
+        // stairs/slab/wall reuses that same single texture via the single-texture
+        // stairsBlock/slabBlock/wallBlock overloads -- the "dedicated provider helpers"
+        // the task brief points at.
+        simpleBlock(ModBlocks.PACKED_SOIL_BRICKS.get());
+        stairsBlock(ModBlocks.PACKED_SOIL_BRICK_STAIRS.get(), blockTexture(ModBlocks.PACKED_SOIL_BRICKS.get()));
+        slabBlock(ModBlocks.PACKED_SOIL_BRICK_SLAB.get(), blockTexture(ModBlocks.PACKED_SOIL_BRICKS.get()),
+                blockTexture(ModBlocks.PACKED_SOIL_BRICKS.get()));
+        wallBlock(ModBlocks.PACKED_SOIL_BRICK_WALL.get(), blockTexture(ModBlocks.PACKED_SOIL_BRICKS.get()));
+
+        simpleBlock(ModBlocks.HARDENED_SOIL_TILES.get());
+        stairsBlock(ModBlocks.HARDENED_SOIL_TILE_STAIRS.get(), blockTexture(ModBlocks.HARDENED_SOIL_TILES.get()));
+        slabBlock(ModBlocks.HARDENED_SOIL_TILE_SLAB.get(), blockTexture(ModBlocks.HARDENED_SOIL_TILES.get()),
+                blockTexture(ModBlocks.HARDENED_SOIL_TILES.get()));
+
+        simpleBlock(ModBlocks.POLISHED_RESIN.get());
+        stairsBlock(ModBlocks.POLISHED_RESIN_STAIRS.get(), blockTexture(ModBlocks.POLISHED_RESIN.get()));
+        slabBlock(ModBlocks.POLISHED_RESIN_SLAB.get(), blockTexture(ModBlocks.POLISHED_RESIN.get()),
+                blockTexture(ModBlocks.POLISHED_RESIN.get()));
     }
 
     /**

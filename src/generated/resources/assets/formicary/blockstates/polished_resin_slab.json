@@ -1,0 +1,13 @@
+{
+  "variants": {
+    "type=bottom": {
+      "model": "formicary:block/polished_resin_slab"
+    },
+    "type=double": {
+      "model": "formicary:block/polished_resin"
+    },
+    "type=top": {
+      "model": "formicary:block/polished_resin_slab_top"
+    }
+  }
+}

@@ -116,6 +116,23 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
 
         // D1: the larder's stockpile block -- see provisionCombTable() for the reasoning.
         add(ModBlocks.PROVISION_COMB.get(), provisionCombTable());
+
+        // Ep2 task H3: decorative families -- every shape drops itself, same as every
+        // other plain building block in this table. Slabs use the inherited
+        // createSlabItemTable() rather than plain dropSelf(): a broken DOUBLE slab
+        // (SlabBlock.TYPE == DOUBLE, two slabs merged into one block) has to drop 2
+        // items, not 1 -- the same vanilla shape every stone/wood slab's own loot table
+        // uses (verified in the decompiled BlockLootSubProvider.createSlabItemTable).
+        dropSelf(ModBlocks.PACKED_SOIL_BRICKS.get());
+        dropSelf(ModBlocks.PACKED_SOIL_BRICK_STAIRS.get());
+        add(ModBlocks.PACKED_SOIL_BRICK_SLAB.get(), createSlabItemTable(ModBlocks.PACKED_SOIL_BRICK_SLAB.get()));
+        dropSelf(ModBlocks.PACKED_SOIL_BRICK_WALL.get());
+        dropSelf(ModBlocks.HARDENED_SOIL_TILES.get());
+        dropSelf(ModBlocks.HARDENED_SOIL_TILE_STAIRS.get());
+        add(ModBlocks.HARDENED_SOIL_TILE_SLAB.get(), createSlabItemTable(ModBlocks.HARDENED_SOIL_TILE_SLAB.get()));
+        dropSelf(ModBlocks.POLISHED_RESIN.get());
+        dropSelf(ModBlocks.POLISHED_RESIN_STAIRS.get());
+        add(ModBlocks.POLISHED_RESIN_SLAB.get(), createSlabItemTable(ModBlocks.POLISHED_RESIN_SLAB.get()));
     }
 
     /**

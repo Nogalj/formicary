@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/outer_stairs",
+  "textures": {
+    "bottom": "formicary:block/hardened_soil_tiles",
+    "side": "formicary:block/hardened_soil_tiles",
+    "top": "formicary:block/hardened_soil_tiles"
+  }
+}

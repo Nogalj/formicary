@@ -83,6 +83,9 @@ public class ModRecipeProvider extends RecipeProvider {
 
         // Ep2 task H1: the chitin tool set, standard vanilla shapes (heads + stick handle).
         chitinToolRecipes(recipeOutput);
+
+        // Ep2 task H3: decorative families.
+        decorativeFamilyRecipes(recipeOutput);
     }
 
     /**
@@ -219,6 +222,121 @@ public class ModRecipeProvider extends RecipeProvider {
                 .pattern("FF")
                 .define('F', ModItems.FUNGAL_BLOOM.get())
                 .unlockedBy(getHasName(ModItems.FUNGAL_BLOOM.get()), has(ModItems.FUNGAL_BLOOM.get()))
+                .save(recipeOutput);
+    }
+
+    /** Vanilla's own stairs yield: 6 source blocks (staircase pattern) -> 4 stairs. */
+    private static final int STAIRS_PER_CRAFT = 4;
+    /** Vanilla's own slab yield: 3 source blocks (single row) -> 6 slabs. */
+    private static final int SLABS_PER_CRAFT = 6;
+    /** Vanilla's own wall yield: 6 source blocks (two rows of three) -> 6 walls. */
+    private static final int WALLS_PER_CRAFT = 6;
+    /** Task brief H3: 4 source blocks in a 2x2 square makes 4 of the cut variant. */
+    private static final int DECORATIVE_FAMILY_BASE_PER_CRAFT = 4;
+
+    /**
+     * Ep2 task H3: the three decorative families. Each base block is 4 of its parent
+     * in a 2x2 square making 4 (a crafting-table-only ratio, the same "N in a square"
+     * shape {@code decorativeRecipes} above already uses for Brood Comb, just 1:1
+     * instead of 4:1); stairs/slab/wall use vanilla's own standard shapes and yields
+     * exactly (verified against the well-known vanilla recipe book: 6 stairs, 3 slab,
+     * 6 wall).
+     */
+    private void decorativeFamilyRecipes(RecipeOutput recipeOutput) {
+        packedSoilBrickRecipes(recipeOutput);
+        hardenedSoilTileRecipes(recipeOutput);
+        polishedResinRecipes(recipeOutput);
+    }
+
+    private void packedSoilBrickRecipes(RecipeOutput recipeOutput) {
+        ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, ModBlocks.PACKED_SOIL_BRICKS.get(),
+                        DECORATIVE_FAMILY_BASE_PER_CRAFT)
+                .pattern("XX")
+                .pattern("XX")
+                .define('X', ModBlocks.PACKED_SOIL.get())
+                .unlockedBy(getHasName(ModBlocks.PACKED_SOIL.get()), has(ModBlocks.PACKED_SOIL.get()))
+                .save(recipeOutput);
+
+        String hasBricks = getHasName(ModBlocks.PACKED_SOIL_BRICKS.get());
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, ModBlocks.PACKED_SOIL_BRICK_STAIRS.get(),
+                        STAIRS_PER_CRAFT)
+                .pattern("X  ")
+                .pattern("XX ")
+                .pattern("XXX")
+                .define('X', ModBlocks.PACKED_SOIL_BRICKS.get())
+                .unlockedBy(hasBricks, has(ModBlocks.PACKED_SOIL_BRICKS.get()))
+                .save(recipeOutput);
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, ModBlocks.PACKED_SOIL_BRICK_SLAB.get(),
+                        SLABS_PER_CRAFT)
+                .pattern("XXX")
+                .define('X', ModBlocks.PACKED_SOIL_BRICKS.get())
+                .unlockedBy(hasBricks, has(ModBlocks.PACKED_SOIL_BRICKS.get()))
+                .save(recipeOutput);
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, ModBlocks.PACKED_SOIL_BRICK_WALL.get(),
+                        WALLS_PER_CRAFT)
+                .pattern("XXX")
+                .pattern("XXX")
+                .define('X', ModBlocks.PACKED_SOIL_BRICKS.get())
+                .unlockedBy(hasBricks, has(ModBlocks.PACKED_SOIL_BRICKS.get()))
+                .save(recipeOutput);
+    }
+
+    private void hardenedSoilTileRecipes(RecipeOutput recipeOutput) {
+        ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, ModBlocks.HARDENED_SOIL_TILES.get(),
+                        DECORATIVE_FAMILY_BASE_PER_CRAFT)
+                .pattern("XX")
+                .pattern("XX")
+                .define('X', ModBlocks.HARDENED_SOIL.get())
+                .unlockedBy(getHasName(ModBlocks.HARDENED_SOIL.get()), has(ModBlocks.HARDENED_SOIL.get()))
+                .save(recipeOutput);
+
+        String hasTiles = getHasName(ModBlocks.HARDENED_SOIL_TILES.get());
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, ModBlocks.HARDENED_SOIL_TILE_STAIRS.get(),
+                        STAIRS_PER_CRAFT)
+                .pattern("X  ")
+                .pattern("XX ")
+                .pattern("XXX")
+                .define('X', ModBlocks.HARDENED_SOIL_TILES.get())
+                .unlockedBy(hasTiles, has(ModBlocks.HARDENED_SOIL_TILES.get()))
+                .save(recipeOutput);
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, ModBlocks.HARDENED_SOIL_TILE_SLAB.get(),
+                        SLABS_PER_CRAFT)
+                .pattern("XXX")
+                .define('X', ModBlocks.HARDENED_SOIL_TILES.get())
+                .unlockedBy(hasTiles, has(ModBlocks.HARDENED_SOIL_TILES.get()))
+                .save(recipeOutput);
+    }
+
+    private void polishedResinRecipes(RecipeOutput recipeOutput) {
+        ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, ModBlocks.POLISHED_RESIN.get(),
+                        DECORATIVE_FAMILY_BASE_PER_CRAFT)
+                .pattern("XX")
+                .pattern("XX")
+                .define('X', ModBlocks.RESIN_BLOCK.get())
+                .unlockedBy(getHasName(ModBlocks.RESIN_BLOCK.get()), has(ModBlocks.RESIN_BLOCK.get()))
+                .save(recipeOutput);
+
+        String hasPolished = getHasName(ModBlocks.POLISHED_RESIN.get());
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, ModBlocks.POLISHED_RESIN_STAIRS.get(),
+                        STAIRS_PER_CRAFT)
+                .pattern("X  ")
+                .pattern("XX ")
+                .pattern("XXX")
+                .define('X', ModBlocks.POLISHED_RESIN.get())
+                .unlockedBy(hasPolished, has(ModBlocks.POLISHED_RESIN.get()))
+                .save(recipeOutput);
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, ModBlocks.POLISHED_RESIN_SLAB.get(),
+                        SLABS_PER_CRAFT)
+                .pattern("XXX")
+                .define('X', ModBlocks.POLISHED_RESIN.get())
+                .unlockedBy(hasPolished, has(ModBlocks.POLISHED_RESIN.get()))
                 .save(recipeOutput);
     }
 }
