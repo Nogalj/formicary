@@ -17,7 +17,6 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.HARDENED_ACCE
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_THICKNESS;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_THRESHOLD;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_XZ_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MIN_Y;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_APPROACH_DISTANCE;
@@ -777,16 +776,25 @@ public final class ColonyNoise {
     /**
      * Whether the ceiling block at (x, y, z) is a Daylight Membrane rather than plain cap.
      *
-     * <p>Three conditions, all necessary:
+     * <p>Two conditions, both necessary and (since Ep2) jointly sufficient:
      * <ul>
      *   <li>{@code y} is in the bottom {@link ColonyGeneratorTunables#MEMBRANE_THICKNESS}
      *       layers of the cap, so the patch is flush with the ceiling's underside.</li>
      *   <li>The block directly below the cap is air, so the patch is actually <i>visible</i>
-     *       from inside the Upper Galleries. Roughly two thirds of the ceiling in this
-     *       dimension is backed by solid fabric; a patch there would be a decoration nobody
-     *       ever sees, and would make the reachability number a lie.</li>
-     *   <li>The 2D patch field is above {@link ColonyGeneratorTunables#MEMBRANE_THRESHOLD}.</li>
+     *       from inside the Upper Galleries. Only 10.4-13.1% of ceiling columns qualify
+     *       (measured by {@code NoiseProbe -PprobeWhat=membrane} over 192x192 columns on
+     *       seeds 1234567 / 42 / 987654321); a patch anywhere else is a decoration nobody
+     *       ever sees, and would make any reachability claim a lie.</li>
      * </ul>
+     *
+     * <p><b>Ep2 dropped the third condition</b> -- a threshold on a 2D patch field, which
+     * kept only its peaks. The rule it leaves behind is the one a player can actually learn:
+     * <em>every bit of roof you can see is a way out</em>. Under the threshold the answer to
+     * "can I leave from here" was a noise lookup with no tell in the world, and play-test
+     * round 1's report was that the exits simply could not be found; measured reachability
+     * (median 21-24 blocks to the nearest patch) had been fine, which is exactly why the
+     * measurement was the wrong target. Visible ceiling is scarce enough on its own -- it is
+     * the mask, not the field, that was ever doing the rationing.
      *
      * <p>The visibility test reads {@link #isAir} at a fixed Y rather than the chunk, so it
      * stays a pure function of world position -- the same property that lets
@@ -798,10 +806,7 @@ public final class ColonyNoise {
         if (y < CEILING_BOTTOM || y >= CEILING_BOTTOM + MEMBRANE_THICKNESS) {
             return false;
         }
-        if (!isAir(columnShafts, columnThrones, columnNurseries, x, CEILING_BOTTOM - 1, z)) {
-            return false;
-        }
-        return probeMembrane(x, z) > MEMBRANE_THRESHOLD;
+        return isAir(columnShafts, columnThrones, columnNurseries, x, CEILING_BOTTOM - 1, z);
     }
 
     // ------------------------------------------------------------------

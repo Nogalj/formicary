@@ -220,6 +220,16 @@ meaningfully change gameplay go to Logan instead of here.
   the distance from an exposed ceiling point to the nearest patch. 0.022 was rejected: at
   every threshold it left blob-free regions 110-135 blocks from an exit. 0.035 / 0.30 gives
   median 21-24, p95 47-61, max 56-86 across three seeds.
+- **Ep2 retired `MEMBRANE_THRESHOLD` outright: every exposed ceiling column is a membrane.**
+  The measurement above was healthy and the exits were still reported as unfindable, which
+  is the finding -- distance to a patch a player cannot tell apart from plain cap measures
+  nothing they experience, so the tuning knob was optimising an unobservable. What is left
+  is a rule that can be *learned* ("visible roof = way out") and a scarcity that comes from
+  the visibility mask alone: 10.4-13.1% of ceiling columns across the three standard seeds,
+  which is still narrow-tunnel ceiling almost everywhere. The 2D patch field and
+  `MEMBRANE_XZ_SCALE` survive as a `NoiseProbe` readout only; the probe's `membrane` section
+  now asserts the invariant (exposed => membrane, and nothing else is membrane) instead of
+  sweeping thresholds.
 - **The arrival pocket only ever removes solid blocks.** The dimension's no-soft-lock
   guarantee is a helicoid ramp whose floor is *forced solid* so a chamber cannot swallow the
   walkway (`ColonyNoise#shaftState`). Dropping a 5x5 slab of soil at a fixed Y would be the

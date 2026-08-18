@@ -241,43 +241,30 @@ public final class ColonyGeneratorTunables {
     public static final double[] ROYAL_COMB_CHANCE_BY_TIER = {0.030, 0.045, 0.000, 0.000};
 
     // ------------------------------------------------------------------
-    // Daylight Membrane exit patches (M5) -- the way out, embedded in the ceiling cap
+    // Daylight Membrane exits (M5, retuned in Ep2) -- the way out, embedded in the cap
     //
-    // Deliberately a 2D field: a patch is a hole in the roof, and a roof is flat. It is
-    // masked by "is the block directly under the cap actually air", so a patch only ever
-    // appears where a player standing in the Upper Galleries can see it -- which is also
-    // why the threshold has to be generous. Roughly two thirds of ceiling columns in this
-    // dimension sit over solid fabric, so a patch that lands there is invisible and does
-    // not count toward reachability. NoiseProbe's `membrane` section measures what these
-    // two numbers actually produce (coverage, and the distance from an exposed ceiling
-    // point to the nearest visible patch); do not change them without re-running it.
+    // The rule is now a one-liner with no tunable in it: a ceiling column with air under
+    // it IS a membrane. What used to ration the exits was a 2D patch field thresholded at
+    // its peaks; Ep2 retired that threshold outright, because the scarcity it produced was
+    // invisible from the ground (see ColonyNoise#isDaylightMembrane for the reasoning) and
+    // the visibility mask -- "is the block directly under the cap actually air" -- already
+    // rations hard on its own: only ~12% of ceiling columns in this dimension have air
+    // beneath them at all. NoiseProbe's `membrane` section now asserts the invariant
+    // (exposed ceiling column => membrane, zero violations) rather than measuring a
+    // distance-to-nearest-exit; run it after anything that changes the carve.
     // ------------------------------------------------------------------
 
     /**
-     * Horizontal sampling scale of the patch field. Feature size is about {@code 1/scale}
-     * blocks, so 0.035 gives roughly 29-block cells. Chosen over a coarser 0.022 because
-     * the coarse field left blob-free regions with the nearest exit 110-135 blocks away
-     * however the threshold was set; smaller, more numerous cells bring the worst case in
-     * without making the patches themselves any bigger.
+     * Horizontal sampling scale of the patch field.
+     *
+     * <p>No longer consumed by generation: with {@code MEMBRANE_THRESHOLD} retired in Ep2
+     * the field gates nothing, and it survives only as a {@link NoiseProbe} readout
+     * ({@code ColonyNoise#probeMembrane}) in case a future pass wants to bring back a
+     * rationed variant. Kept at the measured value: feature size is about {@code 1/scale}
+     * blocks, so 0.035 gives roughly 29-block cells -- a coarser 0.022 was rejected in M5
+     * because it left blob-free regions 110-135 blocks from an exit at every threshold.
      */
     public static final double MEMBRANE_XZ_SCALE = 0.035;
-
-    /**
-     * A patch forms where the field is above this. Lower = more and bigger patches. The
-     * field is single-octave Perlin, measured span about [-0.90, 0.91], so 0.30 keeps the
-     * peaks only: 10-16% of columns, which after the visibility mask is 1.0-1.8% of the
-     * ceiling. Measured distance from an exposed ceiling point to the nearest visible patch
-     * (NoiseProbe, {@code -PprobeWhat=membrane}), median / p95 / max in blocks:
-     * <pre>
-     *   seed 1234567 : 24 /  47 /  56
-     *   seed 42      : 22 /  61 /  86
-     *   seed 987654321: 21 / 54 /  61
-     * </pre>
-     * against the spec's "roughly one patch reachable within ~40-60 blocks of any point".
-     * 0.40 was rejected: it holds on two seeds but drifts to median 53 / max 102 on the
-     * third.
-     */
-    public static final double MEMBRANE_THRESHOLD = 0.30;
 
     /**
      * How many layers of the ceiling cap a patch replaces, counting up from
