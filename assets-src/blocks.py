@@ -1259,6 +1259,13 @@ CHITIN_SPARK = (222, 130, 84, 255)
 
 # Legend shared by the four armor item masks below. Same five tones the chitin
 # item sprite uses, so the set reads as made of that drop.
+#
+# Ep2 task I4 redesign (2026-08-18): unlike the worn layers' AHEAD_* family,
+# this legend already spans 34-222 -- plenty of contrast -- so the icon fix
+# is not a value-range problem. Each mask's single-pixel "s" spark widens to
+# two pixels (matching the eye-glint fix in chitin_layer_1), and the boots
+# gain a claw-tip spark at the toe to echo the worn boots' own AJAW_TIP
+# accent, so the icon and the worn piece read as the same designed object.
 ARMOR_LEGEND = {
     ".": None,
     "o": CHITIN_OUTLINE,
@@ -1295,7 +1302,7 @@ CHITIN_CHESTPLATE_MASK = [
     ".ormmoooooommro.",
     ".ormmrrrrrrmmro.",
     ".ormmmmmmmmmmro.",
-    ".ormmmsmmmmmmro.",
+    ".ormmmssmmmmmro.",
     ".ormmmmmmmmmmro.",
     ".ordbbbbbbbbdro.",
     ".ordbbbbbbbbdro.",
@@ -1312,7 +1319,7 @@ CHITIN_LEGGINGS_MASK = [
     "................",
     "..oooooooooooo..",
     ".ormmmmmmmmmmro.",
-    ".ormmmsmmmmmmro.",
+    ".ormmmssmmmmmro.",
     ".ormmmmmmmmmmro.",
     ".orbbbbbbbbbbro.",
     ".orbbbbbbbbbbro.",
@@ -1336,7 +1343,7 @@ CHITIN_BOOTS_MASK = [
     ".ormmro..ormmro.",
     ".ormmro..ormmro.",
     ".orbbro..orbbro.",
-    ".orbbbo..orbbbo.",
+    ".orbsbo..orbsbo.",
     ".oddddo..oddddo.",
     ".oooooo..oooooo.",
     "................",
@@ -1599,8 +1606,15 @@ AHEAD_DARK = (30, 13, 11, 255)     # soldier head-plate tones (helmet + pauldron
 AHEAD_BASE = (46, 19, 15, 255)
 AHEAD_MID = (64, 27, 21, 255)
 AHEAD_LIGHT = (82, 36, 27, 255)
+# Ep2 task I4 redesign (2026-08-18): AHEAD_MID/_LIGHT top out at 64/82 -- next to
+# the body's SOLD_LIGHT/SOLD_PALE (145/168) that is a much narrower value range,
+# and it is why the helmet read as a flat dark blob on a posed armor stand while
+# the torso's bands were still legible. AHEAD_RIM borrows enough of the body's
+# range to give the helmet a real lit edge without changing its hue family.
+AHEAD_RIM = (104, 46, 34, 255)
 AJAW_TIP = (206, 122, 78, 255)     # pale mandible tip -- claw/clasp accents
 AEYE = (196, 98, 52, 255)          # antenna-tip amber -- eye lenses
+EYE_GLOW = (244, 178, 118, 255)    # brighter glint above each eye lens -- I4
 
 
 def _jitter(px, name, x0, y0, w, h, amount=6):
@@ -1679,21 +1693,38 @@ def chitin_layer_1():
     Design pulls straight from the soldier ant model: near-black head plates
     with a crest ridge and amber eye lenses on the helmet, gaster-style segment
     bands on the torso with a dark pronotum shield, pauldron plates on the
-    shoulders, mandible-pale claw tips on the boots."""
+    shoulders, mandible-pale claw tips on the boots.
+
+    Ep2 task I4 redesign (2026-08-18): a posed-armor-stand check found the
+    helmet reading as a near-flat dark blob next to the torso's legible
+    banding -- AHEAD_RIM widens its edge highlight to match, the brow ridge
+    borrows the body's own SOLD_LIGHT instead of the dimmer AHEAD_LIGHT, each
+    eye lens grows from a single pixel to a two-pixel lens plus a brighter
+    EYE_GLOW glint (the same "make it bigger and brighter, not just present"
+    fix the I3 resin-weep retexture needed), and a small pale mandible-tip hint
+    under the brow ties the helmet back to the boots' own AJAW_TIP claw accents."""
     img = Image.new("RGBA", (ARMOR_TEX_W, ARMOR_TEX_H), (0, 0, 0, 0))
     px = img.load()
 
     # -- helmet: head-plate tones. Side strip is 4 faces of 8: right/front/left/back.
-    flat_plate(img, "helm_sides", 0, 8, 32, 8, AHEAD_BASE, AHEAD_MID, SOLD_DARKEST)
+    flat_plate(img, "helm_sides", 0, 8, 32, 8, AHEAD_BASE, AHEAD_RIM, SOLD_DARKEST)
     # brow ridge -- one lighter row above the eyes, all the way round
     for xx in range(32):
-        px[xx, 10] = AHEAD_LIGHT
-    # amber eye lenses: two on the front face, one on each side face
-    for (ex, ey) in [(10, 12), (13, 12), (3, 12), (20, 12)]:
+        px[xx, 10] = SOLD_LIGHT
+    # amber eye lenses: two on the front face, one on each side face -- each a
+    # 2px lens (widened outward, away from the other eye on the same face) with
+    # a brighter glint above so they read from further back than one pixel can.
+    for (ex, ey, ox) in [(10, 12, -1), (13, 12, 1), (3, 12, -1), (20, 12, -1)]:
         px[ex, ey] = AEYE
-        px[ex, ey - 1] = lerp_color(AEYE, AHEAD_LIGHT, 0.5)
+        px[ex + ox, ey] = AEYE  # NOT wrap(): that mods by the 16px block SIZE,
+                                 # not this 64px-wide armor texture (would fold
+                                 # x=20-1=19 back to x=3 and hit the other eye).
+        px[ex, ey - 1] = EYE_GLOW
+    # a pale mandible-tip hint peeking out under the brow on the front face
+    px[11, 13] = lerp_color(AJAW_TIP, AHEAD_DARK, 0.3)
+    px[12, 13] = lerp_color(AJAW_TIP, AHEAD_DARK, 0.3)
     # skull cap with a crest ridge running front-to-back
-    flat_plate(img, "helm_top", 8, 0, 8, 8, AHEAD_BASE, AHEAD_MID, AHEAD_DARK)
+    flat_plate(img, "helm_top", 8, 0, 8, 8, AHEAD_BASE, AHEAD_RIM, AHEAD_DARK)
     for yy in range(0, 8):
         px[11, yy] = AHEAD_MID
         px[12, yy] = AHEAD_LIGHT
