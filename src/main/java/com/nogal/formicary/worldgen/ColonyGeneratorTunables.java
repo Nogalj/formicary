@@ -615,6 +615,101 @@ public final class ColonyGeneratorTunables {
     public static final double GARDEN_FUNGAL_CARPET_CHANCE = 0.50;
 
     // ------------------------------------------------------------------
+    // Larder chambers (Ep2 D3) -- the colony's food storage rooms, cloned end to end from
+    // the nursery/garden chambers above onto their own 96-block grid, this time in the
+    // Upper Galleries tier (tier 3). Wall/dome/shell/corridor numbers are again cloned
+    // VERBATIM from the nursery's own constants -- see the garden section above for why
+    // that is the right default. LARDER_APPROACH_DISTANCE = 24.0 for the identical reason
+    // GARDEN_APPROACH_DISTANCE is: it clears the lower bound
+    // ({@code LARDER_RADIUS + LARDER_SHELL_THICKNESS + SHAFT_MAX_REACH} = 7 + 2 + 13.1 =
+    // 22.1, with MORE margin than the garden's own 0.9 since the larder's radius is
+    // smaller) with room to spare against the neighbouring-cell separation bound too.
+    // ------------------------------------------------------------------
+
+    /** One larder chamber per this many blocks on each axis. */
+    public static final int LARDER_SPACING = 96;
+
+    /** Interior radius: 7 gives a 14-block-wide room, between the nursery's 12 and garden's 16. */
+    public static final double LARDER_RADIUS = 7.0;
+
+    /** Cloned verbatim from {@link #NURSERY_WALL_HEIGHT}. */
+    public static final int LARDER_WALL_HEIGHT = NURSERY_WALL_HEIGHT;
+
+    /** Cloned verbatim from {@link #NURSERY_DOME_HEIGHT}. Interior clearance is the sum: 7. */
+    public static final int LARDER_DOME_HEIGHT = NURSERY_DOME_HEIGHT;
+
+    /** Cloned verbatim from {@link #NURSERY_SHELL_THICKNESS}. */
+    public static final double LARDER_SHELL_THICKNESS = NURSERY_SHELL_THICKNESS;
+
+    /** See the section javadoc above; the same 24.0 nursery/garden already use. */
+    public static final double LARDER_APPROACH_DISTANCE = 24.0;
+
+    /** Cloned verbatim from {@link #NURSERY_CORRIDOR_HALF_WIDTH}; 3-block-wide passage. */
+    public static final double LARDER_CORRIDOR_HALF_WIDTH = NURSERY_CORRIDOR_HALF_WIDTH;
+
+    /** Cloned verbatim from {@link #NURSERY_CORRIDOR_HEIGHT}. */
+    public static final int LARDER_CORRIDOR_HEIGHT = NURSERY_CORRIDOR_HEIGHT;
+
+    /** Cloned verbatim from {@link #NURSERY_CORRIDOR_START}. */
+    public static final double LARDER_CORRIDOR_START = NURSERY_CORRIDOR_START;
+
+    /** Where it stops -- just inside the chamber's shell, which is already air. */
+    public static final double LARDER_CORRIDOR_END = LARDER_APPROACH_DISTANCE - LARDER_RADIUS + 2.0;
+
+    /**
+     * Lowest floor the chamber will sit at -- tier 3 (Upper Galleries) rather than the
+     * nursery's tier 1, same landing-clearance reasoning as {@link #NURSERY_FLOOR_MIN_Y}
+     * (see its javadoc). The ramp turn chosen is the first one at or above this, and the
+     * ramp descends 24 blocks per turn, so the floor lands in {@code [150, 174)} -- the
+     * interior ({@code floor + 7}) plus its shell stays comfortably under both the tier's
+     * own ceiling ({@code y < 192}) and the actual carvable roof
+     * ({@link #CEILING_BOTTOM} = 186), the tighter of the two.
+     */
+    public static final int LARDER_FLOOR_MIN_Y = MIN_Y + 3 * TIER_HEIGHT + LANDING_HEIGHT;
+
+    /**
+     * Widest a chamber's carve can reach from its centre; used to prune the per-column
+     * search. As with the nursery and garden it is the corridor, not the dome, that sets it.
+     */
+    public static final double LARDER_MAX_REACH = Math.max(
+            LARDER_RADIUS + LARDER_SHELL_THICKNESS,
+            LARDER_APPROACH_DISTANCE - LARDER_CORRIDOR_START + LARDER_CORRIDOR_HALF_WIDTH) + 1.0;
+
+    // --- wall decoration inside the chamber (ColonyChunkGenerator#decorateLarderSurface) ---
+    //
+    // Same two-entry, rarer-first shape decorateNurserySurface/decorateThroneSurface use.
+    // Provision Comb is what makes this room worth finding: the affordability floor's own
+    // pearls live inside it (see ModBlockLootSubProvider#provisionCombTable).
+
+    public static final double LARDER_PROVISION_COMB_CHANCE = 0.18;
+    public static final double LARDER_BROOD_COMB_CHANCE = 0.50;
+
+    // --- the guaranteed minimum (spec: "a deterministic minimum of 2 per larder from the
+    // chamber's own seeded random") -- see ColonyNoise.Larder's own javadoc for why this
+    // has to be a dedicated seeded placement rather than a probabilistic top-up: the
+    // per-column wall decorator that rolls LARDER_PROVISION_COMB_CHANCE above never sees
+    // the whole room, so it has no way to count what it already placed. ---
+
+    /** How many Provision Comb blocks every larder is guaranteed, independent of the roll. */
+    public static final int LARDER_GUARANTEED_PROVISION_COMB = 2;
+
+    /**
+     * Distance from the chamber centre for a guaranteed comb slot: one block outside
+     * {@link #LARDER_RADIUS}, so it always lands inside the forced-solid shell
+     * ({@code (RADIUS, RADIUS + SHELL_THICKNESS]} = {@code (7, 9]}) and never punches a
+     * hole in the room's own air, even after the +-0.5 rounding two independent integer
+     * coordinates from a non-integer centre can introduce.
+     */
+    public static final double LARDER_COMB_RADIUS = LARDER_RADIUS + 1.0;
+
+    /**
+     * Height above the floor for a guaranteed comb slot: comfortably inside
+     * {@code [1, LARDER_WALL_HEIGHT]} so it sits on the cylindrical wall, never under the
+     * dome's curve or in the floor slab.
+     */
+    public static final int LARDER_COMB_HEIGHT = 2;
+
+    // ------------------------------------------------------------------
     // Mob spawning at chunk generation (see ColonyChunkGenerator#spawnOriginalMobs)
     //
     // Play-test round 1: "the colony felt too empty". Two changes, one cause each.

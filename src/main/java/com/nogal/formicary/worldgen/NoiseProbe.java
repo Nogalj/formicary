@@ -56,6 +56,7 @@ public final class NoiseProbe {
             thrones(noise);
             nurseries(noise);
             gardens(noise);
+            larders(noise);
             combPatches(noise);
             spawnDensity(noise);
         }
@@ -70,6 +71,9 @@ public final class NoiseProbe {
         }
         if (what.equals("garden")) {
             gardens(noise);
+        }
+        if (what.equals("larder")) {
+            larders(noise);
         }
         if (what.equals("comb")) {
             combPatches(noise);
@@ -151,7 +155,7 @@ public final class NoiseProbe {
                 boolean stacked = true;
                 for (int layer = 0; layer < MEMBRANE_THICKNESS; layer++) {
                     stacked &= noise.isDaylightMembrane(col.shafts(), col.thrones(), col.nurseries(), col.gardens(),
-                            x, CEILING_BOTTOM + layer, z);
+                            col.larders(), x, CEILING_BOTTOM + layer, z);
                 }
                 if (exposed) {
                     exposedCount++;
@@ -570,9 +574,9 @@ public final class NoiseProbe {
     // Play-test round 1 sections
     // ------------------------------------------------------------------
 
-    /** The four per-column feature arrays {@link ColonyNoise#isAir} needs, resolved once. */
+    /** The five per-column feature arrays {@link ColonyNoise#isAir} needs, resolved once. */
     private record Col(ColonyNoise.Shaft[] shafts, ColonyNoise.Throne[] thrones,
-            ColonyNoise.Nursery[] nurseries, ColonyNoise.Garden[] gardens) {
+            ColonyNoise.Nursery[] nurseries, ColonyNoise.Garden[] gardens, ColonyNoise.Larder[] larders) {
     }
 
     private static Col col(ColonyNoise noise, int x, int z) {
@@ -581,11 +585,12 @@ public final class NoiseProbe {
         return new Col(noise.shaftsForColumn(noise.shaftsNear(chunkX, chunkZ), x, z),
                 noise.thronesForColumn(noise.thronesNear(chunkX, chunkZ), x, z),
                 noise.nurseriesForColumn(noise.nurseriesNear(chunkX, chunkZ), x, z),
-                noise.gardensForColumn(noise.gardensNear(chunkX, chunkZ), x, z));
+                noise.gardensForColumn(noise.gardensNear(chunkX, chunkZ), x, z),
+                noise.lardersForColumn(noise.lardersNear(chunkX, chunkZ), x, z));
     }
 
     private static boolean air(ColonyNoise noise, Col col, int x, int y, int z) {
-        return noise.isAir(col.shafts(), col.thrones(), col.nurseries(), col.gardens(), x, y, z);
+        return noise.isAir(col.shafts(), col.thrones(), col.nurseries(), col.gardens(), col.larders(), x, y, z);
     }
 
     /**
@@ -775,6 +780,147 @@ public final class NoiseProbe {
                     garden.floorY() + ColonyGeneratorTunables.GARDEN_WALL_HEIGHT
                             + ColonyGeneratorTunables.GARDEN_DOME_HEIGHT,
                     "the garden floor")) {
+                reached++;
+            }
+        }
+        System.out.printf(Locale.ROOT, "  %d of %d chambers around the origin are walkable from their ramp%n",
+                reached, near.length);
+    }
+
+    /**
+     * Larder chambers (D3): how many, where, does one join the ramp on foot, do neighbours
+     * ever overlap, and does every generated larder actually carry its guaranteed
+     * Provision Comb?
+     *
+     * <p>The overlap bound here is the literal "the two shells can't touch" geometry
+     * ({@code 2 * (LARDER_RADIUS + LARDER_SHELL_THICKNESS)}) rather than the garden
+     * section's 32-block safety margin -- the task only asks for "no overlap", and this is
+     * the same standard {@code WorldgenGameTests#nursery_chambers_never_overlap} already
+     * holds nursery chambers to.
+     *
+     * <p>The comb-count check reads {@link ColonyNoise.Larder#combX1()}/{@code combZ1()}
+     * and the second pair back out of the SAME chamber object the generator would build,
+     * and asks {@link ColonyNoise#larderState} whether each one is solid -- i.e. that the
+     * guaranteed position {@code ColonyChunkGenerator#buildSurface}'s force-write pass
+     * targets actually lands inside this larder's own forced-solid shell, never in open
+     * air (its own room, its own corridor) or outside the shell entirely. That is the
+     * geometric half of "at least 2 per larder"; the write itself is unconditional (see
+     * {@code ColonyChunkGenerator}), so a PASS here is the guarantee.
+     */
+    private static void larders(ColonyNoise noise) {
+        System.out.printf(Locale.ROOT,
+                "%nlarder chambers (one per %d-block cell, radius %.0f, interior %d tall):%n",
+                ColonyGeneratorTunables.LARDER_SPACING, ColonyGeneratorTunables.LARDER_RADIUS,
+                ColonyGeneratorTunables.LARDER_WALL_HEIGHT + ColonyGeneratorTunables.LARDER_DOME_HEIGHT);
+
+        double perNursery = Math.pow((double) ColonyGeneratorTunables.NURSERY_SPACING
+                / ColonyGeneratorTunables.LARDER_SPACING, 2.0);
+        System.out.printf(Locale.ROOT, "  density: %.2f per 1000x1000 blocks, i.e. %.1fx the nursery chambers%n",
+                1.0e6 / Math.pow(ColonyGeneratorTunables.LARDER_SPACING, 2.0), perNursery);
+
+        // Band containment.
+        int cells = 8;
+        int inBand = 0;
+        int total = 0;
+        int minFloor = Integer.MAX_VALUE;
+        int maxTop = Integer.MIN_VALUE;
+        int shell = (int) Math.ceil(ColonyGeneratorTunables.LARDER_SHELL_THICKNESS);
+        int combChecked = 0;
+        int combSolid = 0;
+        for (int cx = -cells; cx <= cells; cx++) {
+            for (int cz = -cells; cz <= cells; cz++) {
+                ColonyNoise.Larder[] near = noise.lardersNear(cx * ColonyGeneratorTunables.LARDER_SPACING,
+                        cz * ColonyGeneratorTunables.LARDER_SPACING);
+                ColonyNoise.Larder larder = near[4];
+                int top = larder.floorY() + ColonyGeneratorTunables.LARDER_WALL_HEIGHT
+                        + ColonyGeneratorTunables.LARDER_DOME_HEIGHT + shell;
+                total++;
+                minFloor = Math.min(minFloor, larder.floorY());
+                maxTop = Math.max(maxTop, top);
+                if (larder.floorY() - shell >= tierMinY(3) && top < tierMaxY(3)) {
+                    inBand++;
+                }
+
+                ColonyNoise.Larder[] justThis = {larder};
+                combChecked += 2;
+                combSolid += noise.larderState(justThis, larder.combX1(), larder.combY(), larder.combZ1())
+                        == ColonyNoise.LARDER_SOLID ? 1 : 0;
+                combSolid += noise.larderState(justThis, larder.combX2(), larder.combY(), larder.combZ2())
+                        == ColonyNoise.LARDER_SOLID ? 1 : 0;
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "  %d chambers sampled: floor y in [%d, %d], highest shell top y=%d; %d of %d wholly inside "
+                        + "the Upper Galleries band y[%d,%d)%n",
+                total, minFloor, maxTop - ColonyGeneratorTunables.LARDER_WALL_HEIGHT
+                        - ColonyGeneratorTunables.LARDER_DOME_HEIGHT - shell,
+                maxTop, inBand, total, tierMinY(3), tierMaxY(3));
+        System.out.println(inBand == total
+                ? "  PASS: every sampled chamber sits wholly inside the Upper Galleries tier."
+                : "  FAIL: a chamber crosses a tier boundary.");
+
+        System.out.printf(Locale.ROOT,
+                "  guaranteed Provision Comb: %d of %d positions (%d chambers x %d each) land solid%n",
+                combSolid, combChecked, total, ColonyGeneratorTunables.LARDER_GUARANTEED_PROVISION_COMB);
+        System.out.println(combSolid == combChecked
+                ? "  PASS: every sampled larder's guaranteed comb positions are inside its own solid shell."
+                : "  FAIL: a guaranteed comb position missed the shell -- it would land in open air.");
+
+        // Overlap: the literal "shells don't touch" bound.
+        double requiredSeparation = 2.0 * (ColonyGeneratorTunables.LARDER_RADIUS
+                + ColonyGeneratorTunables.LARDER_SHELL_THICKNESS);
+        double minSeparation = Double.MAX_VALUE;
+        int pairs = 0;
+        int violations = 0;
+        for (int cx = -cells; cx < cells; cx++) {
+            for (int cz = -cells; cz < cells; cz++) {
+                ColonyNoise.Larder here = noise.lardersNear(cx * ColonyGeneratorTunables.LARDER_SPACING,
+                        cz * ColonyGeneratorTunables.LARDER_SPACING)[4];
+                for (int dx = 0; dx <= 1; dx++) {
+                    for (int dz = 0; dz <= 1; dz++) {
+                        if (dx == 0 && dz == 0) {
+                            continue;
+                        }
+                        ColonyNoise.Larder other = noise.lardersNear(
+                                (cx + dx) * ColonyGeneratorTunables.LARDER_SPACING,
+                                (cz + dz) * ColonyGeneratorTunables.LARDER_SPACING)[4];
+                        double distance =
+                                Math.hypot(here.centreX() - other.centreX(), here.centreZ() - other.centreZ());
+                        minSeparation = Math.min(minSeparation, distance);
+                        pairs++;
+                        if (distance < requiredSeparation) {
+                            violations++;
+                        }
+                    }
+                }
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "  neighbouring-cell separation over %d pairs: minimum %.1f blocks (required >= %.1f)%n",
+                pairs, minSeparation, requiredSeparation);
+        System.out.println(violations == 0
+                ? "  PASS: no two sampled larder chambers overlap."
+                : "  FAIL: " + violations + " pair(s) overlap.");
+
+        ColonyNoise.Larder[] near = noise.lardersNear(0, 0);
+        ColonyNoise.Larder closest = near[0];
+        for (ColonyNoise.Larder larder : near) {
+            double distance = Math.hypot(larder.centreX(), larder.centreZ());
+            System.out.printf(Locale.ROOT,
+                    "  centre (%7.1f, %7.1f)  floorY %3d  ramp axis (%7.1f, %7.1f)  %6.1f blocks from origin%n",
+                    larder.centreX(), larder.centreZ(), larder.floorY(), larder.axisX(), larder.axisZ(), distance);
+            if (distance < Math.hypot(closest.centreX(), closest.centreZ())) {
+                closest = larder;
+            }
+        }
+
+        int reached = 0;
+        for (ColonyNoise.Larder larder : near) {
+            if (chamberWalk(noise, "larder", larder.centreX(), larder.centreZ(), larder.axisX(),
+                    larder.axisZ(), larder.floorY(), larder.floorY() + 1, ColonyGeneratorTunables.LARDER_RADIUS,
+                    larder.floorY() + ColonyGeneratorTunables.LARDER_WALL_HEIGHT
+                            + ColonyGeneratorTunables.LARDER_DOME_HEIGHT,
+                    "the larder floor")) {
                 reached++;
             }
         }

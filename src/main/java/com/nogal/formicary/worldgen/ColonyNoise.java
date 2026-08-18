@@ -28,6 +28,20 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_WALL_H
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.HARDENED_ACCENT_THRESHOLD_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_APPROACH_DISTANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_COMB_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_COMB_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_CORRIDOR_END;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_CORRIDOR_HALF_WIDTH;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_CORRIDOR_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_CORRIDOR_START;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_DOME_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_FLOOR_MIN_Y;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_MAX_REACH;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_SHELL_THICKNESS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_SPACING;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_WALL_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_THICKNESS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_XZ_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MIN_Y;
@@ -662,6 +676,144 @@ public final class ColonyNoise {
     }
 
     // ------------------------------------------------------------------
+    // Larder chambers (Ep2 D3) -- cloned end to end from the Nursery/Garden sections
+    // above; see ColonyGeneratorTunables' larder section for the constant derivation.
+    // ------------------------------------------------------------------
+
+    /**
+     * One food-storage chamber: a small domed room in the Upper Galleries tier, built
+     * exactly like {@link Garden} -- centred at ({@code centreX}, {@code centreZ}) with its
+     * floor at {@code floorY}, joined to the connectivity ramp at
+     * ({@code axisX}, {@code axisZ}) by a straight corridor along the unit vector
+     * ({@code dirX}, {@code dirZ}).
+     *
+     * <p>{@code comb1}/{@code comb2} are the two guaranteed Provision Comb positions (spec:
+     * "a deterministic minimum of 2 per larder from the chamber's own seeded random"),
+     * drawn from the SAME random stream as the chamber's own geometry, immediately after
+     * the approach bearing -- so a larder's shape and its guaranteed loot are one seeded
+     * draw, not two that could silently disagree on a re-derivation. They cannot be a
+     * probabilistic top-up: {@code ColonyChunkGenerator#decorateLarderSurface} sees one
+     * wall block at a time as the per-chunk decoration pass visits it and has no way to
+     * count what it has already placed across a room that can span several chunks, so the
+     * only way to GUARANTEE a count is to pick the positions up front and force-write them
+     * regardless of what the probabilistic roll does elsewhere in the room. Each position
+     * sits {@link ColonyGeneratorTunables#LARDER_COMB_RADIUS} out (one block past the
+     * interior radius, safely inside the forced-solid shell even after independent
+     * per-axis rounding from a non-integer centre) at a fixed
+     * {@link ColonyGeneratorTunables#LARDER_COMB_HEIGHT} above the floor (well inside the
+     * cylindrical wall, clear of the dome's curve).
+     */
+    public record Larder(double centreX, double centreZ, double axisX, double axisZ,
+            double dirX, double dirZ, int floorY, int combX1, int combZ1, int combX2, int combZ2, int combY) {
+    }
+
+    /** {@link #larderState} verdicts. */
+    public static final int LARDER_NONE = 0;
+    public static final int LARDER_AIR = 1;
+    public static final int LARDER_SOLID = -1;
+
+    public static final Larder[] NO_LARDERS = new Larder[0];
+
+    /**
+     * The chamber belonging to one {@link ColonyGeneratorTunables#LARDER_SPACING} cell.
+     *
+     * <p>Structurally identical to {@link #gardenForCell}: the ramp whose own cell contains
+     * this cell's centre is resolved first, and the room then hangs off that ramp at a
+     * seed-chosen bearing with its floor set to the ramp's own walkway height there.
+     *
+     * <p>The floor is the first ramp turn at or above
+     * {@link ColonyGeneratorTunables#LARDER_FLOOR_MIN_Y}, which puts it in
+     * {@code [150, 174)} -- the room and its shell therefore stay inside the Upper
+     * Galleries band, and can never collide with a throne, nursery or garden chamber
+     * (whose floors live in the disjoint bands {@code [8, 33)}, {@code [54, 78)} and
+     * {@code [102, 126)}).
+     */
+    private Larder larderForCell(int cellX, int cellZ) {
+        // y = 4: a fifth independent stream, so this never draws the same numbers as
+        // shaftForCell (y = 0), throneForCell (y = 1), nurseryForCell (y = 2) or
+        // gardenForCell (y = 3).
+        RandomSource random = this.factory.at(cellX, 4, cellZ);
+        int centreX = cellX * LARDER_SPACING + LARDER_SPACING / 2;
+        int centreZ = cellZ * LARDER_SPACING + LARDER_SPACING / 2;
+        Shaft shaft = shaftForCell(Math.floorDiv(centreX, SHAFT_SPACING), Math.floorDiv(centreZ, SHAFT_SPACING));
+
+        double approach = random.nextDouble() * TWO_PI;
+        double dirX = Math.cos(approach);
+        double dirZ = Math.sin(approach);
+
+        double bearing = approach - shaft.phase();
+        bearing -= Math.floor(bearing / TWO_PI) * TWO_PI;
+        double base = MIN_Y + bearing / RAMP_RADIANS_PER_BLOCK;
+        int turn = (int) Math.ceil((LARDER_FLOOR_MIN_Y - base) / RAMP_PERIOD);
+        int floorY = (int) Math.floor(base + turn * RAMP_PERIOD);
+
+        double centreXd = shaft.axisX() + LARDER_APPROACH_DISTANCE * dirX;
+        double centreZd = shaft.axisZ() + LARDER_APPROACH_DISTANCE * dirZ;
+
+        // The two guaranteed comb slots -- same stream, drawn right after the bearing.
+        // NOT a free choice of angle: the corridor punches through the shell at the
+        // bearing facing back toward the ramp axis (`approach + PI`, seen from the
+        // centre), and an early version of this method drew both angles uniformly over
+        // the full circle -- NoiseProbe's larder section caught 22 of 578 sampled slots
+        // (3.8%) landing inside that doorway, where they would have blocked the room's
+        // only entrance instead of decorating its shell. Anchoring both slots 90 degrees
+        // off the doorway bearing, with only +-30 degrees of jitter for variety, keeps
+        // them at least 60 degrees from a doorway whose own angular width at this radius
+        // is under 10 degrees (`atan(LARDER_CORRIDOR_HALF_WIDTH / LARDER_COMB_RADIUS)`) --
+        // comfortable margin, not a coincidence of the two particular seeds tested.
+        double doorwayBearing = approach + Math.PI;
+        double combJitter = Math.PI / 6.0;
+        double combAngle1 = doorwayBearing + Math.PI / 2.0 + (random.nextDouble() * 2.0 - 1.0) * combJitter;
+        double combAngle2 = doorwayBearing - Math.PI / 2.0 + (random.nextDouble() * 2.0 - 1.0) * combJitter;
+        int combX1 = (int) Math.round(centreXd + LARDER_COMB_RADIUS * Math.cos(combAngle1));
+        int combZ1 = (int) Math.round(centreZd + LARDER_COMB_RADIUS * Math.sin(combAngle1));
+        int combX2 = (int) Math.round(centreXd + LARDER_COMB_RADIUS * Math.cos(combAngle2));
+        int combZ2 = (int) Math.round(centreZd + LARDER_COMB_RADIUS * Math.sin(combAngle2));
+
+        return new Larder(centreXd, centreZd, shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY,
+                combX1, combZ1, combX2, combZ2, floorY + LARDER_COMB_HEIGHT);
+    }
+
+    /**
+     * Every larder chamber that can possibly reach into the 16x16 area rooted at
+     * ({@code blockMinX}, {@code blockMinZ}). Same 3x3 justification as
+     * {@link #gardensNear}: LARDER_SPACING matches NURSERY_SPACING/GARDEN_SPACING exactly
+     * and LARDER_MAX_REACH is close to their own values, so the margin argument carries
+     * over unchanged.
+     */
+    public Larder[] lardersNear(int blockMinX, int blockMinZ) {
+        int cellX = Math.floorDiv(blockMinX, LARDER_SPACING);
+        int cellZ = Math.floorDiv(blockMinZ, LARDER_SPACING);
+        Larder[] out = new Larder[9];
+        int i = 0;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                out[i++] = larderForCell(cellX + dx, cellZ + dz);
+            }
+        }
+        return out;
+    }
+
+    /** Chambers from {@code candidates} whose carve can reach the column at (x, z). */
+    public Larder[] lardersForColumn(Larder[] candidates, int x, int z) {
+        int count = 0;
+        Larder[] scratch = new Larder[candidates.length];
+        for (Larder larder : candidates) {
+            double dx = x - larder.centreX();
+            double dz = z - larder.centreZ();
+            if (dx * dx + dz * dz <= LARDER_MAX_REACH * LARDER_MAX_REACH) {
+                scratch[count++] = larder;
+            }
+        }
+        if (count == 0) {
+            return NO_LARDERS;
+        }
+        Larder[] out = new Larder[count];
+        System.arraycopy(scratch, 0, out, 0, count);
+        return out;
+    }
+
+    // ------------------------------------------------------------------
     // Nearest-chamber queries -- the seam the dev tooling reads
     // (/formicary dev locate|tp|state). Deliberately here rather than duplicated in the
     // command class: the cell arithmetic is the generator's, and a second copy of it would
@@ -730,6 +882,25 @@ public final class ColonyNoise {
         for (int dx = -NEAREST_QUERY_CELL_RADIUS; dx <= NEAREST_QUERY_CELL_RADIUS; dx++) {
             for (int dz = -NEAREST_QUERY_CELL_RADIUS; dz <= NEAREST_QUERY_CELL_RADIUS; dz++) {
                 Garden candidate = gardenForCell(cellX + dx, cellZ + dz);
+                double distanceSq = distanceSq(x, z, candidate.centreX(), candidate.centreZ());
+                if (distanceSq < bestDistanceSq) {
+                    bestDistanceSq = distanceSq;
+                    best = candidate;
+                }
+            }
+        }
+        return best;
+    }
+
+    /** The larder chamber whose centre is horizontally nearest (x, z). */
+    public Larder nearestLarder(int x, int z) {
+        int cellX = Math.floorDiv(x, LARDER_SPACING);
+        int cellZ = Math.floorDiv(z, LARDER_SPACING);
+        Larder best = larderForCell(cellX, cellZ);
+        double bestDistanceSq = distanceSq(x, z, best.centreX(), best.centreZ());
+        for (int dx = -NEAREST_QUERY_CELL_RADIUS; dx <= NEAREST_QUERY_CELL_RADIUS; dx++) {
+            for (int dz = -NEAREST_QUERY_CELL_RADIUS; dz <= NEAREST_QUERY_CELL_RADIUS; dz++) {
+                Larder candidate = larderForCell(cellX + dx, cellZ + dz);
                 double distanceSq = distanceSq(x, z, candidate.centreX(), candidate.centreZ());
                 if (distanceSq < bestDistanceSq) {
                     bestDistanceSq = distanceSq;
@@ -882,6 +1053,70 @@ public final class ColonyNoise {
         return false;
     }
 
+    /**
+     * What a larder chamber says about (x, y, z): the hollow interior, the approach
+     * corridor and its walkway, the shell, or nothing. Same precedence as
+     * {@link #gardenState}/{@link #nurseryState}: the corridor's own floor is forced solid.
+     */
+    public int larderState(Larder[] larders, int x, int y, int z) {
+        for (Larder larder : larders) {
+            double dx = x - larder.centreX();
+            double dz = z - larder.centreZ();
+            double distance = Math.sqrt(dx * dx + dz * dz);
+            int height = y - larder.floorY();
+
+            if (height >= 0 && height <= LARDER_CORRIDOR_HEIGHT && isInLarderCorridor(larder, x, z)) {
+                return height == 0 ? LARDER_SOLID : LARDER_AIR;
+            }
+            if (isInsideLarder(distance, height, 0.0)) {
+                return LARDER_AIR;
+            }
+            if (isInsideLarder(distance, height, LARDER_SHELL_THICKNESS)) {
+                return LARDER_SOLID;
+            }
+        }
+        return LARDER_NONE;
+    }
+
+    /** The room's shape, exactly as {@link #isInsideGarden} but with the larder's numbers. */
+    private static boolean isInsideLarder(double distance, double height, double grow) {
+        double radius = LARDER_RADIUS + grow;
+        double dome = LARDER_DOME_HEIGHT + grow;
+        if (height < 1.0 - grow || height > LARDER_WALL_HEIGHT + dome) {
+            return false;
+        }
+        if (height <= LARDER_WALL_HEIGHT) {
+            return distance <= radius;
+        }
+        double t = (height - LARDER_WALL_HEIGHT) / dome;
+        return distance <= radius * Math.sqrt(Math.max(0.0, 1.0 - t * t));
+    }
+
+    /** Whether (x, z) is inside the corridor's footprint, measured along the axis ray. */
+    private static boolean isInLarderCorridor(Larder larder, int x, int z) {
+        double px = x - larder.axisX();
+        double pz = z - larder.axisZ();
+        double along = px * larder.dirX() + pz * larder.dirZ();
+        if (along < LARDER_CORRIDOR_START || along > LARDER_CORRIDOR_END) {
+            return false;
+        }
+        return Math.abs(px * larder.dirZ() - pz * larder.dirX()) <= LARDER_CORRIDOR_HALF_WIDTH;
+    }
+
+    /** Whether (x, y, z) is inside a larder chamber's hollow (used to pick decoration). */
+    public boolean isInLarderRoom(Larder[] larders, int x, int y, int z) {
+        for (Larder larder : larders) {
+            double dx = x - larder.centreX();
+            double dz = z - larder.centreZ();
+            double distance = Math.sqrt(dx * dx + dz * dz);
+            double height = y - larder.floorY();
+            if (isInsideLarder(distance, height, LARDER_SHELL_THICKNESS)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ------------------------------------------------------------------
     // Noise carve
     // ------------------------------------------------------------------
@@ -921,16 +1156,17 @@ public final class ColonyNoise {
      * walkway wherever a big room crosses it and the descent becomes a one-way drop, which
      * is a soft-lock: mining the fabric is gated behind a full set of Chitin Armor.
      *
-     * <p>The throne chamber (M7), the nursery chambers, and (Ep2 D2) the garden chambers
-     * sit <em>below</em> the spine in that order, deliberately: they may carve through the
-     * noise and force their own shells solid, but never override a ramp floor or a ramp
-     * walkway. That keeps M4a's walkability guarantee exactly as it was -- the rooms hang
-     * off the spine, they do not cut into it. The three chamber kinds cannot interact:
-     * their floors live in disjoint Y bands ({@code [8, 33)}, {@code [52, 76)},
-     * {@code [102, 126)}), so their order relative to each other is arbitrary.
+     * <p>The throne chamber (M7), the nursery chambers, and (Ep2) the garden and larder
+     * chambers sit <em>below</em> the spine in that order, deliberately: they may carve
+     * through the noise and force their own shells solid, but never override a ramp floor
+     * or a ramp walkway. That keeps M4a's walkability guarantee exactly as it was -- the
+     * rooms hang off the spine, they do not cut into it. The four chamber kinds cannot
+     * interact: their floors live in disjoint Y bands ({@code [8, 33)}, {@code [52, 76)},
+     * {@code [102, 126)}, {@code [150, 174)}), so their order relative to each other is
+     * arbitrary.
      */
     public boolean isAir(Shaft[] columnShafts, Throne[] columnThrones, Nursery[] columnNurseries,
-            Garden[] columnGardens, int x, int y, int z) {
+            Garden[] columnGardens, Larder[] columnLarders, int x, int y, int z) {
         if (y < FLOOR_TOP || y >= CEILING_BOTTOM) {
             return false;
         }
@@ -970,6 +1206,15 @@ public final class ColonyNoise {
                 return false;
             }
         }
+        if (columnLarders.length > 0) {
+            int state = larderState(columnLarders, x, y, z);
+            if (state == LARDER_AIR) {
+                return true;
+            }
+            if (state != LARDER_NONE) {
+                return false;
+            }
+        }
         return isTunnelCarved(x, y, z) || isChamberCarved(x, y, z);
     }
 
@@ -1006,11 +1251,12 @@ public final class ColonyNoise {
      * looking at the other's output.
      */
     public boolean isDaylightMembrane(Shaft[] columnShafts, Throne[] columnThrones,
-            Nursery[] columnNurseries, Garden[] columnGardens, int x, int y, int z) {
+            Nursery[] columnNurseries, Garden[] columnGardens, Larder[] columnLarders, int x, int y, int z) {
         if (y < CEILING_BOTTOM || y >= CEILING_BOTTOM + MEMBRANE_THICKNESS) {
             return false;
         }
-        return isAir(columnShafts, columnThrones, columnNurseries, columnGardens, x, CEILING_BOTTOM - 1, z);
+        return isAir(columnShafts, columnThrones, columnNurseries, columnGardens, columnLarders,
+                x, CEILING_BOTTOM - 1, z);
     }
 
     // ------------------------------------------------------------------

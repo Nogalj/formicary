@@ -213,13 +213,16 @@ public class WorldgenGameTests {
                     ColonyNoise.Throne[] thrones = thronesAt(noise, x, z);
                     ColonyNoise.Nursery[] nurseries = nurseriesAt(noise, x, z);
                     ColonyNoise.Garden[] gardens = gardensAt(noise, x, z);
+                    ColonyNoise.Larder[] larders = lardersAt(noise, x, z);
 
-                    helper.assertFalse(noise.isAir(shafts, thrones, nurseries, gardens, x, nursery.floorY(), z),
+                    helper.assertFalse(
+                            noise.isAir(shafts, thrones, nurseries, gardens, larders, x, nursery.floorY(), z),
                             "a nursery chamber's floor slab at (" + x + ", " + nursery.floorY() + ", " + z
                                     + ") on seed " + seed + " should be solid");
                     for (int above = 1; above <= 2; above++) {
                         helper.assertTrue(
-                                noise.isAir(shafts, thrones, nurseries, gardens, x, nursery.floorY() + above, z),
+                                noise.isAir(shafts, thrones, nurseries, gardens, larders, x,
+                                        nursery.floorY() + above, z),
                                 "a nursery chamber's air at (" + x + ", " + (nursery.floorY() + above) + ", "
                                         + z + ") on seed " + seed + " should be clear for a larva to stand in");
                     }
@@ -452,5 +455,10 @@ public class WorldgenGameTests {
     private static ColonyNoise.Garden[] gardensAt(ColonyNoise noise, int x, int z) {
         return noise.gardensForColumn(
                 noise.gardensNear(x - Math.floorMod(x, 16), z - Math.floorMod(z, 16)), x, z);
+    }
+
+    private static ColonyNoise.Larder[] lardersAt(ColonyNoise noise, int x, int z) {
+        return noise.lardersForColumn(
+                noise.lardersNear(x - Math.floorMod(x, 16), z - Math.floorMod(z, 16)), x, z);
     }
 }
