@@ -553,6 +553,72 @@ public final class ColonyNoise {
         return out;
     }
 
+    // ------------------------------------------------------------------
+    // Nearest-chamber queries -- the seam the dev tooling reads
+    // (/formicary dev locate|tp|state). Deliberately here rather than duplicated in the
+    // command class: the cell arithmetic is the generator's, and a second copy of it would
+    // be a copy that can silently disagree with the terrain it claims to describe.
+    // ------------------------------------------------------------------
+
+    /**
+     * Cell rings searched by {@link #nearestThrone} / {@link #nearestNursery}.
+     *
+     * <p>Two, not the one that {@link #thronesNear} and {@link #nurseriesNear} use, because
+     * this is a different question. Those ask "whose carve can touch this chunk", which the
+     * 3x3 ring provably answers. "Whose centre is closest to this point" has to look
+     * further: a nursery centre lands anywhere within 56 blocks of its 96-block cell centre,
+     * so the nearest of the 3x3 can be up to {@code 48*sqrt(2) + 56} = 124 blocks away while
+     * a chamber two cells out can sit as close as {@code 2*96 + 48 - 56 - 96} = 88. Two
+     * rings settle it in both directions -- three cells out is at least 184 blocks for a
+     * nursery and 494 for a throne, both beyond any candidate the search can already see --
+     * and 25 cells of closed-form arithmetic is nothing for a command that runs on demand.
+     */
+    private static final int NEAREST_QUERY_CELL_RADIUS = 2;
+
+    /** The throne chamber whose centre is horizontally nearest (x, z). */
+    public Throne nearestThrone(int x, int z) {
+        int cellX = Math.floorDiv(x, THRONE_SPACING);
+        int cellZ = Math.floorDiv(z, THRONE_SPACING);
+        Throne best = throneForCell(cellX, cellZ);
+        double bestDistanceSq = distanceSq(x, z, best.centreX(), best.centreZ());
+        for (int dx = -NEAREST_QUERY_CELL_RADIUS; dx <= NEAREST_QUERY_CELL_RADIUS; dx++) {
+            for (int dz = -NEAREST_QUERY_CELL_RADIUS; dz <= NEAREST_QUERY_CELL_RADIUS; dz++) {
+                Throne candidate = throneForCell(cellX + dx, cellZ + dz);
+                double distanceSq = distanceSq(x, z, candidate.centreX(), candidate.centreZ());
+                if (distanceSq < bestDistanceSq) {
+                    bestDistanceSq = distanceSq;
+                    best = candidate;
+                }
+            }
+        }
+        return best;
+    }
+
+    /** The nursery chamber whose centre is horizontally nearest (x, z). */
+    public Nursery nearestNursery(int x, int z) {
+        int cellX = Math.floorDiv(x, NURSERY_SPACING);
+        int cellZ = Math.floorDiv(z, NURSERY_SPACING);
+        Nursery best = nurseryForCell(cellX, cellZ);
+        double bestDistanceSq = distanceSq(x, z, best.centreX(), best.centreZ());
+        for (int dx = -NEAREST_QUERY_CELL_RADIUS; dx <= NEAREST_QUERY_CELL_RADIUS; dx++) {
+            for (int dz = -NEAREST_QUERY_CELL_RADIUS; dz <= NEAREST_QUERY_CELL_RADIUS; dz++) {
+                Nursery candidate = nurseryForCell(cellX + dx, cellZ + dz);
+                double distanceSq = distanceSq(x, z, candidate.centreX(), candidate.centreZ());
+                if (distanceSq < bestDistanceSq) {
+                    bestDistanceSq = distanceSq;
+                    best = candidate;
+                }
+            }
+        }
+        return best;
+    }
+
+    private static double distanceSq(int x, int z, double centreX, double centreZ) {
+        double dx = x - centreX;
+        double dz = z - centreZ;
+        return dx * dx + dz * dz;
+    }
+
     /**
      * What a nursery chamber says about (x, y, z): the hollow interior, the approach
      * corridor and its walkway, the shell, or nothing.

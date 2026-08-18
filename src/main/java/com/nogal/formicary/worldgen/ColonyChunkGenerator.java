@@ -154,7 +154,15 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         return CODEC;
     }
 
-    private ColonyNoise noise(RandomState randomState) {
+    /**
+     * The shape functions for a level, cached per {@link RandomState}.
+     *
+     * <p>Public so the dev tooling can ask the live world where its chambers are without
+     * re-deriving the {@link #SHAPE_SEED} fork itself -- a second call to
+     * {@code getOrCreateRandomFactory} with a mistyped name would produce a perfectly
+     * plausible set of coordinates for a colony that does not exist.
+     */
+    public ColonyNoise noise(RandomState randomState) {
         return this.noiseByRandomState.computeIfAbsent(randomState,
                 state -> new ColonyNoise(state.getOrCreateRandomFactory(SHAPE_SEED)));
     }
