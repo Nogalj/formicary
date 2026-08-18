@@ -15,11 +15,12 @@ import net.minecraft.world.entity.ai.goal.Goal;
  * Work mode's delivery half (spec section 4): carry the pack back to the bound chest and
  * empty it.
  *
- * <p>Runs at a higher priority than {@link HarvestCropsGoal}, so a worker that has filled
- * up stops cutting until it has made the trip. Three things start a trip, and one counter
- * covers all of them: the pack being full, the field having no more ripe crops (nothing
- * resets {@code idleHarvestTicks}, so it climbs), and simple elapsed time (a field that is
- * still producing resets the counter constantly, so the trip lands during a lull).
+ * <p>Runs at a higher priority than {@link HarvestCropsGoal}, and Ep2 makes that ordering
+ * the whole shape of work mode: the only precondition is <b>anything in the pack at all</b>,
+ * so the act after a harvest is always the trip home. One crop out, one trip back. The
+ * three-trigger arrangement it replaces (pack full, or a field-gone-quiet counter, or
+ * elapsed time) let a worker clear a whole field before it ever walked anywhere, which made
+ * one ant out-produce a real farm -- the nerf is the point, not a side effect.
  *
  * <p>A missing or blocked chest is not a reason to drop anything. The worker keeps the load
  * and idles by the anchor, and this goal simply cannot start again until a container is
@@ -60,9 +61,6 @@ public class DepositToChestGoal extends Goal {
         }
         BlockPos chest = this.ant.getBoundChest();
         if (chest == null || this.ant.getPack().isEmpty()) {
-            return false;
-        }
-        if (!this.ant.isPackFull() && this.ant.getIdleHarvestTicks() < TamedWorkerAntEntity.DEPOSIT_AFTER_IDLE_TICKS) {
             return false;
         }
         return this.ant.getBoundContainer(this.ant.level()) != null;

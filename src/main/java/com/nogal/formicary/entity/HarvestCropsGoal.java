@@ -9,15 +9,16 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.goal.Goal;
 
 /**
- * Work mode's cutting half (spec section 4): find a ripe crop inside the patrol radius,
- * walk to it, harvest and replant it.
+ * Work mode's cutting half (spec section 4): find the nearest ripe crop inside the patrol
+ * radius, walk to it, harvest and replant it -- once. The load then goes home
+ * ({@link DepositToChestGoal} outranks this goal and needs nothing but a non-empty pack),
+ * and the next crop is chosen on the next trip.
  *
- * <p>Search cost is bounded by {@link CropScanner}, which reads a fixed slice of the
- * patrol area per call and remembers where it stopped -- the spec's "tick-budget the
- * search, don't scan the full radius every tick". The scan runs inside {@link #canUse()},
- * so it is only paid for while the worker has nothing better to do: once this goal or the
- * higher-priority {@link DepositToChestGoal} is running, {@code GoalSelector} stops calling
- * {@code canUse} and the scanning stops with it.
+ * <p>{@link CropScanner} sweeps the whole patrol area on every call rather than a slice of
+ * it. That is affordable because of where the call happens: the scan runs inside
+ * {@link #canUse()}, and once this goal or the higher-priority deposit goal is running
+ * {@code GoalSelector} stops asking, so under the one-crop loop a full sweep is paid for
+ * about once per round trip instead of continuously.
  */
 public class HarvestCropsGoal extends Goal {
     /** How close the worker has to be before it can cut: 2 blocks, squared. */
@@ -43,12 +44,11 @@ public class HarvestCropsGoal extends Goal {
         this.ant = ant;
         this.speedModifier = speedModifier;
         this.scanner = new CropScanner(TamedWorkerAntEntity.PATROL_RADIUS,
-                TamedWorkerAntEntity.SCAN_COLUMNS_PER_CALL,
                 TamedWorkerAntEntity.PATROL_VERTICAL_REACH);
         this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
     }
 
-    /** The scanner backing this goal -- exposed so its budget can be asserted in a test. */
+    /** The scanner backing this goal -- exposed so its choice can be asserted in a test. */
     public CropScanner getScanner() {
         return this.scanner;
     }

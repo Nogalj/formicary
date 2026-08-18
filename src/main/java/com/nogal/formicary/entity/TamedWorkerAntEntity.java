@@ -55,8 +55,10 @@ import net.minecraft.world.phys.AABB;
  *   <li><b>Follow mode</b> ({@code boundChest == null}) -- wolf-style: it tags along, and
  *       teleports to you when it falls too far behind.</li>
  *   <li><b>Work mode</b> -- it patrols {@link #PATROL_RADIUS} blocks around the chest it is
- *       bound to, harvests ripe crops ({@link HarvestCropsGoal}), replants from the
- *       harvested seed and carries the rest back ({@link DepositToChestGoal}).</li>
+ *       bound to and runs a one-crop shuttle: cut the nearest ripe crop
+ *       ({@link HarvestCropsGoal}), replant it, walk the load back to the chest
+ *       ({@link DepositToChestGoal}), then go again. Ep2 deliberately slowed this down --
+ *       clearing a whole field on one trip made a single ant worth more than a farm.</li>
  * </ul>
  * Sneak-right-clicking the ant toggles between the two: a bound worker goes back to follow
  * mode, and a following worker takes the nearest storage block it can see as its anchor
@@ -77,14 +79,6 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
     /** How far above/below the chest a patrol column is read. Terraced gardens still work. */
     public static final int PATROL_VERTICAL_REACH = 3;
 
-    /**
-     * Columns read per scan call. {@code (2*16+1)^2 = 1089} columns exist, so this is ~2%
-     * of the patrol area per call and a full sweep takes {@code ceil(1089/24) = 46} calls.
-     * Goal {@code canUse} runs on alternating ticks (see {@code Mob.serverAiStep}), so a
-     * sweep lands in roughly 92 ticks -- under five seconds -- for 120 block reads a call.
-     */
-    public static final int SCAN_COLUMNS_PER_CALL = 24;
-
     /** How far from the player a chest click reaches to find a follower to bind. */
     public static final double BIND_RANGE = 8.0;
 
@@ -101,14 +95,6 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
      */
     public static final double GROUND_PICKUP_RADIUS = 10.0;
 
-    /**
-     * How long the worker may go without harvesting before it takes what it has back to
-     * the chest. Covers both of the spec's non-full deposit triggers at once: an empty
-     * field never resets the counter, and a field that still has crops resets it on every
-     * harvest, which makes the counter behave as the "periodic timer" too.
-     */
-    public static final int DEPOSIT_AFTER_IDLE_TICKS = 40;
-
     private static final String TAG_BOUND_CHEST = "BoundChest";
     private static final String TAG_INVENTORY = "Pack";
 
@@ -123,8 +109,6 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
 
     @Nullable
     private BlockPos boundChest;
-
-    private int idleHarvestTicks;
 
     public TamedWorkerAntEntity(EntityType<? extends TamedWorkerAntEntity> entityType, Level level) {
         super(entityType, level);
@@ -197,7 +181,6 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
     public void bindTo(BlockPos chest) {
         this.boundChest = chest.immutable();
         this.restrictTo(this.boundChest, PATROL_RADIUS + 4);
-        this.idleHarvestTicks = 0;
     }
 
     /** Back to follow mode. Whatever is in the pack stays in the pack. */
@@ -316,14 +299,8 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
         return true;
     }
 
-    /** Ticks since this worker last cut something. Drives the deposit trip. */
-    public int getIdleHarvestTicks() {
-        return this.idleHarvestTicks;
-    }
-
     /**
-     * Cuts the crop at {@code pos}, replants one seed out of its own drops and pockets the
-     * rest.
+     * Cuts the crop at {@code pos}, replants it and pockets the drops.
      *
      * <p>The drops are computed with {@code Block.getDrops} and the block is then removed
      * with {@code destroyBlock(pos, false)} -- deliberately <em>not</em> the
@@ -331,6 +308,15 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
      * physical item that can roll into a hole, bounce off a hopper or be picked up by
      * someone else mid-flight, so what the worker banks is exactly what the loot table
      * rolled. The {@code false} keeps the break particles and sound without the drops.
+     *
+     * <p>Ep2: the replant is <em>guaranteed</em>, not conditional on the loot roll. A seed
+     * is still taken out of the drops whenever the roll produced one -- that is what makes
+     * the replant paid for rather than conjured, and it is why a bumper harvest yields one
+     * fewer seed than a player's would -- but a roll that produced none (wheat rolls zero
+     * seeds about 9% of the time; see {@code CropHarvest#takeSeed}) no longer leaves the
+     * tile bare. Conceptually the seed never left the ground: an ant that tills a row and
+     * silently loses one plant in eleven is a farm that decays, which is exactly the
+     * failure a player cannot see happening until the field is gone.
      *
      * @return {@code true} if something was actually harvested
      */
@@ -344,21 +330,18 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
         level.destroyBlock(pos, false);
 
         ItemStack seed = CropHarvest.takeSeed(drops, state.getBlock());
-        if (!seed.isEmpty()) {
-            BlockState replant = CropHarvest.replantState(state);
-            if (level.getBlockState(pos).isAir() && replant.canSurvive(level, pos)) {
-                level.setBlock(pos, replant, Block.UPDATE_ALL);
-                level.playSound(null, pos, SoundEvents.CROP_PLANTED, SoundSource.BLOCKS, 0.7F, 1.0F);
-            } else {
-                // Nowhere to put it back -- carry the seed home rather than lose it.
-                drops.add(seed);
-            }
+        BlockState replant = CropHarvest.replantState(state);
+        if (level.getBlockState(pos).isAir() && replant.canSurvive(level, pos)) {
+            level.setBlock(pos, replant, Block.UPDATE_ALL);
+            level.playSound(null, pos, SoundEvents.CROP_PLANTED, SoundSource.BLOCKS, 0.7F, 1.0F);
+        } else if (!seed.isEmpty()) {
+            // Nowhere to put it back -- carry the seed home rather than lose it.
+            drops.add(seed);
         }
 
         for (ItemStack stack : drops) {
             this.store(level, stack);
         }
-        this.idleHarvestTicks = 0;
         this.syncCarriedItem();
         return true;
     }
@@ -427,14 +410,6 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
     }
 
     // -------------------------------------------------------------- entity --
-
-    @Override
-    protected void customServerAiStep() {
-        super.customServerAiStep();
-        if (this.idleHarvestTicks < Integer.MAX_VALUE) {
-            this.idleHarvestTicks++;
-        }
-    }
 
     @Override
     public InteractionResult mobInteract(Player player, InteractionHand hand) {

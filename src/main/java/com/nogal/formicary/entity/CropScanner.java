@@ -6,41 +6,40 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockGetter;
 
 /**
- * The tick budget for a tamed worker's crop search (spec section 4: "throttle its
- * scanning -- don't scan the full radius every tick").
+ * Picks the crop a tamed worker cuts next: the <em>nearest</em> ripe one to its bound
+ * chest, anywhere inside the patrol area.
  *
- * <p>A full patrol area is {@code (2r+1)^2} block columns -- 1089 of them at the spec's
- * ~16-block radius -- and reading all of them, several Y levels deep, once per tick would
- * be tens of thousands of {@code getBlockState} calls a second per ant. Instead the
- * scanner keeps a persistent cursor into that grid and each call advances it by
- * {@link #columnsPerScan()} columns only, wrapping round to column 0 at the end. Work is
- * therefore constant per call and a whole sweep is spread over
- * {@code ceil(columns / budget)} calls.
+ * <p>Ep2 replaced a tick-budgeted cursor with this flat sweep, and the reason is the
+ * one-crop shuttle loop it now serves. The old scanner read a 24-column slice per call and
+ * remembered where it stopped, which kept per-tick cost constant while a worker cut its way
+ * around a field without ever walking home. Under the shuttle rule a scan happens once per
+ * <em>trip</em> -- the worker cuts one crop, walks to the chest, empties out, and only then
+ * looks again -- so the search runs at deposit-trip cadence, not tick cadence, and the
+ * budget bought nothing but a wrong answer: an incremental cursor returns the first ripe
+ * crop it happens to land on, which is routinely across the field from a worker standing at
+ * its chest. {@code (2*16+1)^2 * 7 = 7623} block reads once every few seconds is cheap;
+ * making it cheaper before anything measures it is not worth the arithmetic.
  *
- * <p>The cursor deliberately does <em>not</em> reset when a crop is found: the next search
- * carries on from where this one stopped, so a worker standing in a big field works its
- * way around the field instead of re-reading the same corner every time.
+ * <p>"Nearest" is measured from the anchor rather than from the ant, and those are the same
+ * point at the only moment that matters: the shuttle always chooses its next crop just
+ * after a deposit, standing at the chest.
  *
- * <p>No entity, no level mutation and no randomness -- a GameTest drives this directly.
+ * <p>No entity, no level mutation, no randomness and no state at all -- a GameTest drives
+ * this directly.
  */
 public class CropScanner {
     private final int radius;
-    private final int columnsPerScan;
     private final int verticalReach;
 
-    private int cursor;
-
     /**
-     * @param radius         patrol radius in blocks around the anchor
-     * @param columnsPerScan how many columns a single {@link #scan} call may read
-     * @param verticalReach  how far above and below the anchor's Y each column is read
+     * @param radius        patrol radius in blocks around the anchor
+     * @param verticalReach how far above and below the anchor's Y each column is read
      */
-    public CropScanner(int radius, int columnsPerScan, int verticalReach) {
-        if (radius < 0 || columnsPerScan < 1 || verticalReach < 0) {
-            throw new IllegalArgumentException("radius/verticalReach must be >= 0 and columnsPerScan >= 1");
+    public CropScanner(int radius, int verticalReach) {
+        if (radius < 0 || verticalReach < 0) {
+            throw new IllegalArgumentException("radius/verticalReach must be >= 0");
         }
         this.radius = radius;
-        this.columnsPerScan = columnsPerScan;
         this.verticalReach = verticalReach;
     }
 
@@ -50,50 +49,36 @@ public class CropScanner {
         return width * width;
     }
 
-    /** How many columns one {@link #scan} call reads. */
-    public int columnsPerScan() {
-        return this.columnsPerScan;
-    }
-
-    /** How many {@link #scan} calls a full sweep of the patrol area takes. */
-    public int scansPerSweep() {
-        return (this.columnCount() + this.columnsPerScan - 1) / this.columnsPerScan;
-    }
-
-    /** Where the cursor currently sits, in {@code [0, columnCount())}. Test seam. */
-    public int cursor() {
-        return this.cursor;
-    }
-
-    /** Sends the cursor back to the start -- used when the worker's anchor changes. */
-    public void reset() {
-        this.cursor = 0;
-    }
-
     /**
-     * Reads the next {@link #columnsPerScan()} columns around {@code anchor} and returns
-     * the first ripe crop found, or {@code null} if this slice of the sweep held none.
+     * Reads every column around {@code anchor} and returns the ripe crop closest to it, or
+     * {@code null} if the patrol area holds none.
      *
-     * <p>Each column is read top-down so a worker under a two-level garden takes the upper
-     * crop first rather than tunnelling to the lowest one.
+     * <p>Each column is read top-down and contributes at most its topmost ripe crop, so a
+     * worker under a two-level garden takes the upper plant rather than tunnelling to the
+     * lowest one. Between columns the tie-break is squared distance to the anchor, and an
+     * exact tie keeps the first column read -- deterministic either way, which is what lets
+     * a test assert on the choice.
      */
     @Nullable
     public BlockPos scan(BlockGetter level, BlockPos anchor) {
-        int width = this.radius * 2 + 1;
-        int total = width * width;
-        for (int step = 0; step < this.columnsPerScan; step++) {
-            int column = this.cursor;
-            this.cursor = (this.cursor + 1) % total;
-
-            int dx = column % width - this.radius;
-            int dz = column / width - this.radius;
-            for (int dy = this.verticalReach; dy >= -this.verticalReach; dy--) {
-                BlockPos pos = anchor.offset(dx, dy, dz);
-                if (CropHarvest.isHarvestable(level.getBlockState(pos))) {
-                    return pos;
+        BlockPos best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (int dz = -this.radius; dz <= this.radius; dz++) {
+            for (int dx = -this.radius; dx <= this.radius; dx++) {
+                for (int dy = this.verticalReach; dy >= -this.verticalReach; dy--) {
+                    BlockPos pos = anchor.offset(dx, dy, dz);
+                    if (!CropHarvest.isHarvestable(level.getBlockState(pos))) {
+                        continue;
+                    }
+                    double distance = pos.distSqr(anchor);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        best = pos;
+                    }
+                    break;
                 }
             }
         }
-        return null;
+        return best;
     }
 }
