@@ -215,6 +215,14 @@ TEMPLATES = {
     # falling. 25x25 puts that whole ring inside the arena with a block to spare,
     # and 7 tall clears her 1.8-block hitbox with room to jump.
     "arena_platform": (25, 7, 25),
+    # Ep2's ender-ant arena. Sized by the teleport, not by taste: a blink is
+    # EnderAntEntity.TELEPORT_MAX_DISTANCE = 16 blocks at most, so an ant standing
+    # at the middle of a 37-wide floor (index 18) can land anywhere in [2, 34] and
+    # still be inside the arena, whatever bearing it picks. Anything narrower and a
+    # legitimate teleport puts the mob through the GameTest framework's barrier
+    # walls and out into the shared test level, where it would be both unassertable
+    # and other tests' problem. 5 tall clears a 0.7-high ant with headroom.
+    "ender_arena": (37, 5, 37),
 }
 
 
