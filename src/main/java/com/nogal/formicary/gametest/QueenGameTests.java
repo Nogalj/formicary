@@ -25,6 +25,8 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.Pig;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -494,6 +496,66 @@ public class QueenGameTests {
                 helper.succeed();
             });
         });
+    }
+
+    // --------------------------------------------------------------- frenzy --
+
+    /**
+     * Ep2, task F4: "the end is the hardest part." Under 30% she gets faster, bites faster,
+     * and summons five at a time instead of three.
+     *
+     * <p>The speed half is asserted on the real {@code AttributeInstance} -- the modifier's
+     * presence AND the value it produces -- rather than on a boolean. The value is what
+     * catches an {@code ADD_VALUE} where an {@code ADD_MULTIPLIED_BASE} was meant, which is
+     * a mistake that leaves every flag in this class saying the right thing.
+     *
+     * <p>The burst half fires {@code fireBurst} explicitly instead of leaning on the phase
+     * thresholds {@code setHealth} trips on the way down. Quarter health crosses all three
+     * at once, so counting soldiers afterwards would be counting three waves and calling the
+     * total evidence about one; a burst driven by hand is the only way to say "a burst
+     * summons five" and mean it.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform", timeoutTicks = 200)
+    public static void a_queen_under_thirty_percent_is_faster_and_summons_five(GameTestHelper helper) {
+        QueenAntEntity queen = helper.spawn(ModEntities.QUEEN_ANT.get(), ARENA_CENTRE);
+        Player intruder = mockPlayerAt(helper, ARENA_SIDE);
+        queen.setTarget(intruder);
+
+        helper.assertFalse(queen.isFrenzied(), "an unhurt queen must not be frenzied");
+        helper.assertFalse(hasFrenzySpeed(queen), "and must carry no frenzy speed modifier");
+        helper.assertValueEqual(queen.getBurstSoldierCount(), QueenAntEntity.BURST_SOLDIERS,
+                "burst size before the frenzy");
+        helper.assertValueEqual(queen.getMeleeAttackInterval(), QueenAntEntity.MELEE_ATTACK_INTERVAL,
+                "melee interval before the frenzy");
+
+        queen.setHealth(queen.getMaxHealth() * 0.25F);
+
+        helper.runAfterDelay(4, () -> {
+            helper.assertTrue(queen.isFrenzied(), "quarter health should have latched the frenzy");
+            helper.assertTrue(hasFrenzySpeed(queen),
+                    "the frenzy must add its movement-speed modifier");
+            double expected = QueenAntEntity.MOVEMENT_SPEED * (1.0 + QueenAntEntity.FRENZY_SPEED_BONUS);
+            double actual = queen.getAttributeValue(Attributes.MOVEMENT_SPEED);
+            helper.assertTrue(Math.abs(actual - expected) < 1.0E-6,
+                    "a frenzied queen should move at " + expected + ", not " + actual);
+            helper.assertValueEqual(queen.getMeleeAttackInterval(),
+                    QueenAntEntity.FRENZY_MELEE_ATTACK_INTERVAL, "melee interval while frenzied");
+            helper.assertValueEqual(queen.getBurstSoldierCount(),
+                    QueenAntEntity.FRENZY_BURST_SOLDIERS, "burst size while frenzied");
+
+            int before = soldiersNear(helper, queen).size();
+            queen.fireBurst(helper.getLevel());
+            helper.assertValueEqual(soldiersNear(helper, queen).size() - before,
+                    QueenAntEntity.FRENZY_BURST_SOLDIERS, "soldiers summoned by a frenzied burst");
+            helper.succeed();
+        });
+    }
+
+    /** Whether the frenzy's movement-speed modifier is actually on her speed attribute. */
+    private static boolean hasFrenzySpeed(QueenAntEntity queen) {
+        AttributeInstance speed = queen.getAttribute(Attributes.MOVEMENT_SPEED);
+        return speed != null && speed.hasModifier(QueenAntEntity.FRENZY_SPEED_ID);
     }
 
     // ------------------------------------------------------------- boss bar --

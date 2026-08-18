@@ -7,6 +7,7 @@ import java.util.List;
 
 import javax.annotation.Nullable;
 
+import com.nogal.formicary.Formicary;
 import com.nogal.formicary.colony.ColonyAnger;
 import com.nogal.formicary.effect.ModMobEffects;
 
@@ -14,6 +15,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -28,6 +30,8 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
@@ -209,6 +213,46 @@ public class QueenAntEntity extends PathfinderMob {
     /** Upward impulse the eruption adds, in blocks/tick. Tunable. */
     public static final double SLAM_KNOCK_UP = 0.8;
 
+    // --------------------------------------------------------------- frenzy --
+
+    /** Health fraction that latches the frenzy on, for good. Tunable. */
+    public static final float FRENZY_UNLOCK_FRACTION = 0.30F;
+
+    /** Movement-speed bonus while frenzied, as a fraction of her base speed. Tunable. */
+    public static final double FRENZY_SPEED_BONUS = 0.30;
+
+    /**
+     * Identity of the frenzy's movement-speed modifier. Public because asserting on the
+     * real {@code AttributeInstance} is a better test than asserting on a mirror flag.
+     */
+    public static final ResourceLocation FRENZY_SPEED_ID =
+            ResourceLocation.fromNamespaceAndPath(Formicary.MODID, "queen_frenzy");
+
+    /**
+     * {@code ADD_MULTIPLIED_BASE}, so the bonus is "+30% of her own base speed" rather than
+     * a flat number that would mean something different the moment {@link #MOVEMENT_SPEED}
+     * is retuned.
+     */
+    private static final AttributeModifier FRENZY_SPEED_MODIFIER = new AttributeModifier(
+            FRENZY_SPEED_ID, FRENZY_SPEED_BONUS, AttributeModifier.Operation.ADD_MULTIPLIED_BASE);
+
+    /** Soldiers per burst once she is frenzied. Tunable. */
+    public static final int FRENZY_BURST_SOLDIERS = 5;
+
+    /**
+     * Ticks between her bites normally. This is vanilla's own {@code MeleeAttackGoal}
+     * number, restated here because {@link QueenMeleeAttackGoal} needs it to express the
+     * frenzied one as an offset (the goal's {@code ticksUntilNextAttack} is private, so a
+     * subclass shortens the wait by moving the trigger, not the counter).
+     */
+    public static final int MELEE_ATTACK_INTERVAL = 20;
+
+    /** Ticks between her bites while frenzied: 40% faster. Tunable. */
+    public static final int FRENZY_MELEE_ATTACK_INTERVAL = 12;
+
+    /** {@link #unlockedMoves} bit for the frenzy. */
+    public static final int UNLOCK_FRENZY = 2;
+
     /**
      * XP reward on death (play-test round 1, spec item 2: "queen ~50-60, boss-tier,
      * wither-class"). Already matched {@code WitherBoss.xpReward} exactly before this round
@@ -294,7 +338,7 @@ public class QueenAntEntity extends PathfinderMob {
         // which one wins in the tick a target crosses the boundary, and a spit that is
         // already off cooldown should not be swallowed by a lunge that cannot land yet.
         this.goalSelector.addGoal(2, new AcidSpitGoal(this));
-        this.goalSelector.addGoal(3, new MeleeAttackGoal(this, 1.0, true));
+        this.goalSelector.addGoal(3, new QueenMeleeAttackGoal(this));
         this.goalSelector.addGoal(4, new MoveTowardsRestrictionGoal(this, 1.0));
         this.goalSelector.addGoal(5, new RandomStrollGoal(this, 0.6, 200));
         this.goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 16.0F, 0.4F));
@@ -354,8 +398,13 @@ public class QueenAntEntity extends PathfinderMob {
             this.getNavigation().stop();
         }
 
-        this.checkPhaseThresholds(level);
+        // Unlocks BEFORE thresholds, and the order is a design decision rather than an
+        // accident of writing: a hit that takes her under 25% takes her under 30% in the
+        // same instant, so the wave that hit fires is the FIRST frenzied one. The other
+        // order would spend her last threshold on a three-soldier burst and only start
+        // summoning five afterwards -- when there are no thresholds left.
         this.checkMoveUnlocks();
+        this.checkPhaseThresholds(level);
     }
 
     /**
@@ -370,6 +419,11 @@ public class QueenAntEntity extends PathfinderMob {
         float fraction = this.getHealth() / this.getMaxHealth();
         if ((this.unlockedMoves & UNLOCK_BURROW_SLAM) == 0 && fraction < BURROW_UNLOCK_FRACTION) {
             this.unlockedMoves |= UNLOCK_BURROW_SLAM;
+        }
+        if ((this.unlockedMoves & UNLOCK_FRENZY) == 0 && fraction < FRENZY_UNLOCK_FRACTION) {
+            this.unlockedMoves |= UNLOCK_FRENZY;
+            this.applyFrenzySpeed();
+            this.playSound(SoundEvents.WARDEN_ROAR, 2.5F, 0.7F);
         }
     }
 
@@ -423,8 +477,12 @@ public class QueenAntEntity extends PathfinderMob {
      */
     private void summonWave(ServerLevel level) {
         Player offender = this.getTarget() instanceof Player player ? player : null;
-        for (int i = 0; i < BURST_SOLDIERS; i++) {
-            double angle = (Math.PI * 2.0 / BURST_SOLDIERS) * i + this.random.nextDouble() * 0.5;
+        // Count, not constant: the frenzy raises it (F4) without touching the thresholds
+        // that decide WHEN a wave fires. The ring spacing is derived from the same number,
+        // so five soldiers come up evenly spread rather than three spread plus two stacked.
+        int count = this.getBurstSoldierCount();
+        for (int i = 0; i < count; i++) {
+            double angle = (Math.PI * 2.0 / count) * i + this.random.nextDouble() * 0.5;
             double x = this.getX() + Math.cos(angle) * BURST_SPAWN_RADIUS;
             double z = this.getZ() + Math.sin(angle) * BURST_SPAWN_RADIUS;
             SoldierAntEntity soldier = ModEntities.SOLDIER_ANT.get().create(level);
@@ -724,6 +782,68 @@ public class QueenAntEntity extends PathfinderMob {
         }
     }
 
+    // --------------------------------------------------------------- frenzy --
+
+    /** Whether her health has ever dropped under {@link #FRENZY_UNLOCK_FRACTION}. */
+    public boolean isFrenzied() {
+        return (this.unlockedMoves & UNLOCK_FRENZY) != 0;
+    }
+
+    /** Soldiers her next burst will summon. Read by {@link #summonWave}; a test seam. */
+    public int getBurstSoldierCount() {
+        return this.isFrenzied() ? FRENZY_BURST_SOLDIERS : BURST_SOLDIERS;
+    }
+
+    /** Ticks between her bites right now. Read by {@link QueenMeleeAttackGoal}. */
+    public int getMeleeAttackInterval() {
+        return this.isFrenzied() ? FRENZY_MELEE_ATTACK_INTERVAL : MELEE_ATTACK_INTERVAL;
+    }
+
+    /**
+     * Adds the frenzy's speed modifier, once.
+     *
+     * <p>A <em>permanent</em> modifier, so it is written into her attribute data and comes
+     * back with her on load -- the same durability {@link #unlockedMoves} has, which is the
+     * point: a latch that survives a relog and a buff that does not would be two different
+     * answers to the same question.
+     *
+     * <p>Guarded by {@code hasModifier} and re-run from
+     * {@link #readAdditionalSaveData} rather than assumed: {@code addPermanentModifier}
+     * throws on a duplicate id, and a queen saved before this feature existed loads with
+     * neither the bit nor the modifier while one saved mid-fight loads with both.
+     */
+    private void applyFrenzySpeed() {
+        AttributeInstance speed = this.getAttribute(Attributes.MOVEMENT_SPEED);
+        if (speed != null && !speed.hasModifier(FRENZY_SPEED_ID)) {
+            speed.addPermanentModifier(FRENZY_SPEED_MODIFIER);
+        }
+    }
+
+    /**
+     * Her melee goal, identical to vanilla's except that the frenzy shortens the swing.
+     *
+     * <p>{@code MeleeAttackGoal.ticksUntilNextAttack} is <b>private</b> and
+     * {@code resetAttackCooldown} is the only thing that writes it, so a subclass cannot
+     * shorten the interval by setting a smaller number. It moves the trigger instead:
+     * vanilla fires when the counter reaches 0 after {@link #MELEE_ATTACK_INTERVAL} ticks,
+     * and this fires when it reaches {@code MELEE_ATTACK_INTERVAL - interval}, which is the
+     * same thing said from the other end. Unfrenzied that offset is 0, i.e. vanilla exactly.
+     */
+    public static class QueenMeleeAttackGoal extends MeleeAttackGoal {
+        private final QueenAntEntity queen;
+
+        public QueenMeleeAttackGoal(QueenAntEntity queen) {
+            super(queen, 1.0, true);
+            this.queen = queen;
+        }
+
+        @Override
+        protected boolean isTimeToAttack() {
+            return this.getTicksUntilNextAttack()
+                    <= MELEE_ATTACK_INTERVAL - this.queen.getMeleeAttackInterval();
+        }
+    }
+
     // ------------------------------------------------------------ death grace --
 
     /**
@@ -922,6 +1042,12 @@ public class QueenAntEntity extends PathfinderMob {
         super.readAdditionalSaveData(compound);
         this.firedPhases = compound.getInt(TAG_FIRED_PHASES);
         this.unlockedMoves = compound.getInt(TAG_UNLOCKED_MOVES);
+        // super has already restored her attribute data, so a queen saved after the frenzy
+        // latched brings her modifier back with her and this is a no-op; one saved before
+        // this feature existed gets it applied here instead of never.
+        if (this.isFrenzied()) {
+            this.applyFrenzySpeed();
+        }
         // Mob does not persist its restriction, so the leash has to be re-planted here or
         // a relog would set her free.
         if (compound.contains(TAG_HOME)) {
