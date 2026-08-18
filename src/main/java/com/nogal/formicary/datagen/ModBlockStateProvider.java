@@ -42,6 +42,7 @@ public class ModBlockStateProvider extends BlockStateProvider {
         // 2026-08-13 review).
         combBlock(ModBlocks.BROOD_COMB.get(), "brood_comb");
         combBlock(ModBlocks.ROYAL_COMB.get(), "royal_comb");
+        combBlock(ModBlocks.PROVISION_COMB.get(), "provision_comb");
         simpleBlock(ModBlocks.EGG_CLUSTER.get());
         simpleBlock(ModBlocks.DAYLIGHT_MEMBRANE.get());
         simpleBlock(ModBlocks.ANTHILL_SOIL.get());

@@ -439,6 +439,20 @@ def royal_comb():
                 cap_shade=(198, 144, 24, 255))
 
 
+def provision_comb():
+    """Provision Comb (Ep2 D1): a straight recolor of brood_comb's own
+    palette (same `comb()` call shape, same cell size) -- deliberately a
+    placeholder, not hand-pixeled, per the task brief. Shifted toward a
+    duller burnt-orange/brown so it reads as "stored food" rather than
+    "brood" next to brood_comb's yellow and royal_comb's bright gold; an
+    art package refines this later."""
+    return comb("provision_comb",
+                line=(120, 78, 34, 255),
+                hollow=(84, 54, 20, 255), hollow_lit=(168, 118, 48, 255),
+                cap=(202, 142, 66, 255), cap_rim=(230, 178, 100, 255),
+                cap_shade=(158, 108, 40, 255))
+
+
 def egg_cluster():
     """Pale ant eggs bedded on dark wax -- 3-tone shells, top-left lit."""
     img = value_noise_fill("egg_cluster",
@@ -1118,6 +1132,111 @@ def chitin_boots_item():
     return from_mask(CHITIN_BOOTS_MASK)
 
 
+# ---------------------------------------------------------------------------
+# Provisions (Ep2 D1) -- the three colony foods (spec section 8)
+# ---------------------------------------------------------------------------
+
+def honeyed_comb_item():
+    """Honeyed Comb: a bite-sized hunk of comb, sugar-glazed -- the same
+    tilted-ellipse SDF technique chitin_item uses, in provision_comb's
+    honey-gold palette, with a couple of dark hex-cell notches so it reads
+    as broken-off comb rather than a smooth biscuit."""
+    img = blank()
+    px = img.load()
+    core = (240, 188, 66, 255)
+    mid = (206, 148, 40, 255)
+    rim = (144, 96, 24, 255)
+
+    def sdf(x, y):
+        dx, dy = x + 0.5 - 8.0, y + 0.5 - 8.5
+        u = dx * 0.92 + dy * 0.30
+        v = -dx * 0.30 + dy * 0.92
+        return (u * u) / 32.0 + (v * v) / 20.0
+
+    for y in range(SIZE):
+        for x in range(SIZE):
+            d = sdf(x, y)
+            if d < 1.0:
+                px[x, y] = lerp_color(core, mid, min(1.0, d))
+    outline(img, rim)
+    # broken hex-cell notches -- a hint of comb structure, not a full grid
+    for (x, y) in [(6, 5), (10, 7), (7, 11)]:
+        if px[x, y][3] != 0:
+            px[x, y] = rim
+    # honey glaze highlight, upper-left
+    px[5, 4] = (255, 226, 140, 255)
+    if px[6, 4][3] != 0:
+        px[6, 4] = (255, 226, 140, 255)
+    return img
+
+
+def fungal_stew_item():
+    """Fungal Stew: a wooden bowl (vanilla mushroom-stew silhouette) filled
+    with luminous fungal broth -- FUNGAL_GLOW/FUNGAL_BRIGHT from
+    fungal_bloom's own palette, so the stew visibly comes from the garden
+    crop rather than reading as generic soup."""
+    img = blank()
+    px = img.load()
+    wood_rim = (120, 84, 40, 255)
+    wood_dark = (84, 58, 26, 255)
+    broth_deep = (28, 77, 61, 255)
+    broth = (46, 121, 96, 255)
+
+    # bowl: a wide shallow arc, rim two pixels thick
+    bowl_rows = {
+        11: range(2, 14), 12: range(1, 15), 13: range(1, 15),
+        14: range(2, 14), 15: range(3, 13),
+    }
+    for y, xs in bowl_rows.items():
+        for x in xs:
+            px[x, y] = wood_dark
+    for (x, y) in [(1, 12), (2, 11), (13, 11), (14, 12)]:
+        px[x, y] = wood_rim
+    # broth pool inside the rim
+    broth_rows = {10: range(3, 13), 11: range(2, 14), 12: range(2, 14)}
+    for y, xs in broth_rows.items():
+        for x in xs:
+            px[x, y] = broth
+    for (x, y) in [(4, 10), (11, 10), (7, 11), (8, 12)]:
+        px[x, y] = broth_deep
+    # a fleck of bright glow, off-centre, echoing fungal_bloom's cap highlight
+    px[9, 10] = FUNGAL_BRIGHT
+    px[8, 11] = FUNGAL_GLOW
+    return img
+
+
+def royal_jelly_treat_item():
+    """Royal Jelly Treat: royal_jelly_item's own droplet SDF, sized down and
+    seated on a short comb-brown wafer base -- "jelly + comb" as the two
+    halves of the sprite, distinguishing it from the plain jelly item at a
+    glance in the hotbar."""
+    img = blank()
+    px = img.load()
+    cx, cy = 8.0, 8.5
+
+    def sdf(x, y):
+        dx, dy = x + 0.5 - cx, y + 0.5 - cy
+        return dx * dx + dy * dy
+
+    for y in range(SIZE):
+        for x in range(SIZE):
+            d = sdf(x, y)
+            if d < 14:
+                px[x, y] = lerp_color(JELLY_CORE, JELLY_MID, min(1.0, d / 14))
+    # comb wafer base beneath the droplet
+    for y in range(12, 15):
+        for x in range(4, 12):
+            if px[x, y][3] == 0:
+                px[x, y] = (150, 104, 40, 255)
+    for x in range(4, 12):
+        px[x, 12] = (192, 140, 62, 255)
+    outline(img, JELLY_RIM)
+    # specular, upper-left shoulder
+    if px[5, 6][3] != 0:
+        px[5, 6] = (255, 253, 240, 255)
+    return img
+
+
 # --- Soldier-ant palette, mirrored from models.py S_* constants: the armor is
 # --- literally plates of soldier chitin, so it reuses the exact tones.
 SOLD_DARKEST = (26, 10, 8, 255)
@@ -1298,6 +1417,7 @@ BLOCK_TEXTURES = {
     "fungal_spore_crop_stage2": fungal_spore_crop_stage2,
     "brood_comb": brood_comb,
     "royal_comb": royal_comb,
+    "provision_comb": provision_comb,
     "egg_cluster": egg_cluster,
     "daylight_membrane": daylight_membrane,
     "anthill_core": anthill_core,
@@ -1318,6 +1438,9 @@ ITEM_TEXTURES = {
     "chitin_chestplate": chitin_chestplate_item,
     "chitin_leggings": chitin_leggings_item,
     "chitin_boots": chitin_boots_item,
+    "honeyed_comb": honeyed_comb_item,
+    "fungal_stew": fungal_stew_item,
+    "royal_jelly_treat": royal_jelly_treat_item,
 }
 
 

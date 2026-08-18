@@ -13,6 +13,7 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.loot.BlockLootSubProvider;
 import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Block;
@@ -112,6 +113,36 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
         add(ModBlocks.ROYAL_COMB.get(),
                 createSingleItemTableWithSilkTouch(ModBlocks.ROYAL_COMB.get(), ModItems.ROYAL_JELLY.get(),
                         ConstantValue.exactly(ROYAL_COMB_JELLY)));
+
+        // D1: the larder's stockpile block -- see provisionCombTable() for the reasoning.
+        add(ModBlocks.PROVISION_COMB.get(), provisionCombTable());
+    }
+
+    /**
+     * Provision Comb's loot (spec section 2/3, Ep2 D1): the affordability floor for the
+     * exit economy. Every break -- no Silk Touch special case, per the task brief --
+     * guarantees 1-2 ender pearls (so a player can always find a way out, even having
+     * arrived on their last one) plus 1-2 of the three new colony foods, picked at random
+     * from an equal-weight pool of the three entries: one roll draws one entry, so a
+     * {@code UniformGenerator(1, 2)} roll count over three equally-weighted
+     * {@code LootItem} entries is "1-2 of the three foods" exactly, the same
+     * rolls-over-weighted-entries shape {@code fungalSporeCropTable}'s mature pool uses
+     * for a single item's count. Deliberately not wrapped in {@code applyExplosionDecay}/
+     * {@code applyExplosionCondition} -- {@code fungalSporeCropTable} (multi-item, like
+     * this one) sets that precedent in this same file; {@code resinWeepTable} (single
+     * item) is the one that wraps.
+     */
+    private LootTable.Builder provisionCombTable() {
+        return LootTable.lootTable()
+                .withPool(LootPool.lootPool()
+                        .setRolls(ConstantValue.exactly(1.0F))
+                        .add(LootItem.lootTableItem(Items.ENDER_PEARL)
+                                .apply(SetItemCountFunction.setCount(UniformGenerator.between(1.0F, 2.0F)))))
+                .withPool(LootPool.lootPool()
+                        .setRolls(UniformGenerator.between(1.0F, 2.0F))
+                        .add(LootItem.lootTableItem(ModItems.HONEYED_COMB.get()))
+                        .add(LootItem.lootTableItem(ModItems.FUNGAL_STEW.get()))
+                        .add(LootItem.lootTableItem(ModItems.ROYAL_JELLY_TREAT.get())));
     }
 
     /**

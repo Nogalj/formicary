@@ -10,6 +10,7 @@ import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemNameBlockItem;
+import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -44,6 +45,38 @@ public class ModItems {
             .effect(() -> new MobEffectInstance(MobEffects.NIGHT_VISION, FUNGAL_BLOOM_NIGHT_VISION_TICKS), 1.0F)
             .build();
 
+    /** D1: quick, good food (spec section 8) -- {@code .fast()} halves the vanilla eat time. */
+    private static final FoodProperties HONEYED_COMB_FOOD = new FoodProperties.Builder()
+            .nutrition(4)
+            .saturationModifier(0.6F)
+            .fast()
+            .build();
+
+    /**
+     * D1: bowl food from Fungus Garden crops (spec section 8). {@code usingConvertsTo}
+     * is the verified {@code FoodProperties.Builder} method (see {@code reference/}) that
+     * gives vanilla's Mushroom/Rabbit Stew their "returns a bowl" behaviour -- the same
+     * shape this reuses. Night Vision duration matches {@link #FUNGAL_BLOOM_NIGHT_VISION_TICKS}
+     * exactly: that is the play-test round 1 retuned fungus precedent (10s), not the
+     * spec's original 30s reading, and the task brief asks for the same 10s here.
+     */
+    private static final FoodProperties FUNGAL_STEW_FOOD = new FoodProperties.Builder()
+            .nutrition(8)
+            .saturationModifier(0.6F)
+            .usingConvertsTo(Items.BOWL)
+            .effect(() -> new MobEffectInstance(MobEffects.NIGHT_VISION, FUNGAL_BLOOM_NIGHT_VISION_TICKS), 1.0F)
+            .build();
+
+    /** D1: brief Absorption I (20s) -- jelly + comb, always edible even at full hunger. */
+    private static final int ROYAL_JELLY_TREAT_ABSORPTION_TICKS = 400;
+
+    private static final FoodProperties ROYAL_JELLY_TREAT_FOOD = new FoodProperties.Builder()
+            .nutrition(4)
+            .saturationModifier(0.6F)
+            .alwaysEdible()
+            .effect(() -> new MobEffectInstance(MobEffects.ABSORPTION, ROYAL_JELLY_TREAT_ABSORPTION_TICKS, 0), 1.0F)
+            .build();
+
     public static final DeferredItem<Item> RESIN = ITEMS.registerSimpleItem("resin");
     public static final DeferredItem<Item> CHITIN = ITEMS.registerSimpleItem("chitin");
     public static final DeferredItem<Item> SCENT_GLAND = ITEMS.registerSimpleItem("scent_gland");
@@ -73,6 +106,15 @@ public class ModItems {
     /** M7: reusable summon, two allied soldiers a blow, on a long cooldown. */
     public static final DeferredItem<PheromoneHornItem> PHEROMONE_HORN =
             ITEMS.registerItem("pheromone_horn", PheromoneHornItem::new);
+
+    // --- D1: colony foods (spec section 8) ---
+
+    public static final DeferredItem<Item> HONEYED_COMB = ITEMS.registerItem("honeyed_comb",
+            props -> new Item(props.food(HONEYED_COMB_FOOD)));
+    public static final DeferredItem<Item> FUNGAL_STEW = ITEMS.registerItem("fungal_stew",
+            props -> new Item(props.food(FUNGAL_STEW_FOOD).stacksTo(1)));
+    public static final DeferredItem<Item> ROYAL_JELLY_TREAT = ITEMS.registerItem("royal_jelly_treat",
+            props -> new Item(props.food(ROYAL_JELLY_TREAT_FOOD)));
 
     // --- Chitin Armor (spec section 5). No recipes until M8: creative-only for now. ---
 
@@ -108,6 +150,7 @@ public class ModItems {
             props -> new ItemNameBlockItem(ModBlocks.FUNGAL_SPORE_CROP.get(), props));
     public static final DeferredItem<BlockItem> BROOD_COMB = ITEMS.registerSimpleBlockItem(ModBlocks.BROOD_COMB);
     public static final DeferredItem<BlockItem> ROYAL_COMB = ITEMS.registerSimpleBlockItem(ModBlocks.ROYAL_COMB);
+    public static final DeferredItem<BlockItem> PROVISION_COMB = ITEMS.registerSimpleBlockItem(ModBlocks.PROVISION_COMB);
     public static final DeferredItem<BlockItem> EGG_CLUSTER = ITEMS.registerSimpleBlockItem(ModBlocks.EGG_CLUSTER);
     public static final DeferredItem<BlockItem> DAYLIGHT_MEMBRANE = ITEMS.registerSimpleBlockItem(ModBlocks.DAYLIGHT_MEMBRANE);
     public static final DeferredItem<BlockItem> ANTHILL_SOIL = ITEMS.registerSimpleBlockItem(ModBlocks.ANTHILL_SOIL);

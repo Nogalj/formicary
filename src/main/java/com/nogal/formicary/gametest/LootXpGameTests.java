@@ -13,6 +13,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -143,5 +144,28 @@ public class LootXpGameTests {
             helper.assertEntityPresent(EntityType.EXPERIENCE_ORB);
             helper.assertEntityNotPresent(EntityType.ITEM);
         });
+    }
+
+    // ----------------------------------------------------------------- provision comb --
+
+    /**
+     * D1: Provision Comb's loot always includes at least one ender pearl (the §2
+     * affordability floor -- see {@code ModBlockLootSubProvider#provisionCombTable}).
+     *
+     * <p>Broken with {@code level.destroyBlock(pos, true)}, exactly like
+     * {@link #egg_cluster_break_pops_experience_and_no_items} -- {@code
+     * GameTestHelper#destroyBlock} hardcodes {@code dropBlock=false} and would skip the
+     * loot table entirely (banked in {@code docs/gotchas/gametest.md}), making this test
+     * pass for the wrong reason (nothing dropping at all).
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void provision_comb_break_always_drops_an_ender_pearl(GameTestHelper helper) {
+        BlockPos pos = new BlockPos(2, STAND_Y, 2);
+        helper.setBlock(pos, ModBlocks.PROVISION_COMB.get());
+
+        helper.getLevel().destroyBlock(helper.absolutePos(pos), true);
+
+        helper.succeedWhen(() -> helper.assertItemEntityPresent(Items.ENDER_PEARL));
     }
 }

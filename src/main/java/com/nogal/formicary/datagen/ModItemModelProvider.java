@@ -36,6 +36,7 @@ public class ModItemModelProvider extends ItemModelProvider {
         blockItem("fungal_carpet");
         blockItem("brood_comb");
         blockItem("royal_comb");
+        blockItem("provision_comb");
         blockItem("egg_cluster");
         blockItem("daylight_membrane");
         blockItem("anthill_soil");
@@ -53,6 +54,9 @@ public class ModItemModelProvider extends ItemModelProvider {
         basicItem(ModItems.TRAIL_PHEROMONE.get());
         basicItem(ModItems.ROYAL_PHEROMONE_GLAND.get());
         basicItem(ModItems.PHEROMONE_HORN.get());
+        basicItem(ModItems.HONEYED_COMB.get());
+        basicItem(ModItems.FUNGAL_STEW.get());
+        basicItem(ModItems.ROYAL_JELLY_TREAT.get());
 
         basicItem(ModItems.CHITIN_HELMET.get());
         basicItem(ModItems.CHITIN_CHESTPLATE.get());

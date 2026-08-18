@@ -32,6 +32,7 @@ public class ModLanguageProvider extends LanguageProvider {
         addBlock(ModBlocks.FUNGAL_CARPET, "Fungal Carpet");
         addBlock(ModBlocks.BROOD_COMB, "Brood Comb");
         addBlock(ModBlocks.ROYAL_COMB, "Royal Comb");
+        addBlock(ModBlocks.PROVISION_COMB, "Provision Comb");
         addBlock(ModBlocks.EGG_CLUSTER, "Egg Cluster");
         addBlock(ModBlocks.DAYLIGHT_MEMBRANE, "Daylight Membrane");
         addBlock(ModBlocks.ANTHILL_SOIL, "Anthill Soil");
@@ -49,6 +50,10 @@ public class ModLanguageProvider extends LanguageProvider {
 
         addItem(ModItems.ROYAL_PHEROMONE_GLAND, "Royal Pheromone Gland");
         addItem(ModItems.PHEROMONE_HORN, "Pheromone Horn");
+
+        addItem(ModItems.HONEYED_COMB, "Honeyed Comb");
+        addItem(ModItems.FUNGAL_STEW, "Fungal Stew");
+        addItem(ModItems.ROYAL_JELLY_TREAT, "Royal Jelly Treat");
 
         addItem(ModItems.FUNGAL_SPORES, "Fungal Spores");
 

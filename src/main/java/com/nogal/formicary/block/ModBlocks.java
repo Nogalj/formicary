@@ -136,6 +136,19 @@ public class ModBlocks {
                     .strength(0.6F)
                     .lightLevel(state -> 6));
 
+    /**
+     * D1: the larder's stockpile block -- carries the guaranteed exit pearls (see
+     * {@code ModBlockLootSubProvider}). Hardness matches Brood Comb per the task brief;
+     * texture is a recolor of the brood comb texture for now ({@code assets-src/blocks.py}).
+     */
+    public static final DeferredBlock<Block> PROVISION_COMB = BLOCKS.registerSimpleBlock(
+            "provision_comb",
+            BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_ORANGE)
+                    .sound(SoundType.HONEY_BLOCK)
+                    .strength(0.6F)
+                    .lightLevel(state -> 3));
+
     /** Egg Cluster's break-XP range (play-test round 1, spec item 3: "~3-7"). */
     private static final int EGG_CLUSTER_XP_MIN = 3;
     private static final int EGG_CLUSTER_XP_MAX = 7;
