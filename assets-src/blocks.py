@@ -8,7 +8,13 @@ aimed at reading like vanilla resources rather than flat speckle:
     * value-noise fills: a coarse 8x8 tone grid (5-tone palette) upscaled 2x
       with per-pixel +/-1 tone jitter -- noise arrives in connected clumps,
       the way vanilla dirt/stone does, and tiles seamlessly (grid cells are
-      independent, clump stamps wrap mod 16).
+      independent, clump stamps wrap mod 16). Used by everything EXCEPT the
+      soil family, which needs finer grain than a 2x2 flat cell can give.
+    * soil fills (`soil_texture`): smoothstep-interpolated wrapping value noise
+      at two lattices, gradient-cored elliptical blotches, and a fine speck
+      layer, quantised to a 12-tone ramp only at the end -- gradients all the
+      way down, so nothing reads as a flat chunk that the tile repeat can turn
+      into a grid.
     * directional bevels: combs and the trophy use light top-left / dark
       bottom-right edges like vanilla's chiseled blocks.
     * glow is dithered patches (glowstone-style), not smooth radial gradients.
@@ -20,8 +26,11 @@ src/main/resources/assets/formicary/textures/block/ (and textures/item/ for
 the item sprites), the two 64x32 Chitin Armor overlays into
 textures/models/armor/, the 18x18 mob-effect icons (M4b) into
 textures/mob_effect/, plus labelled contact sheets at
-assets-src/previews/blocks_sheet.png, previews/armor_layers_sheet.png and
-previews/effect_icons_sheet.png for QA.
+assets-src/previews/blocks_sheet.png, previews/armor_layers_sheet.png,
+previews/effect_icons_sheet.png, previews/decorative_families_wall_sheet.png and
+previews/soil_family_wall_sheet.png for QA. The two *_wall_sheet.png files tile
+each texture into a sample wall -- the only way to see the repeat, which is what
+a single 16x16 swatch hides.
 """
 
 import random
@@ -73,22 +82,6 @@ def value_noise_fill(name, palette, weights=None, jitter=0.22):
             if r.random() < jitter:
                 t = max(0, min(n - 1, t + r.choice((-1, 1))))
             px[x, y] = palette[t]
-    return img
-
-
-def stamp_clumps(img, name, count, color, highlight=None, size_range=(2, 3)):
-    """Small rectangular clumps (pebbles/inclusions) with an optional 1px
-    top-left highlight. Wraps mod 16 so the texture still tiles."""
-    r = rng(name + ":clumps")
-    px = img.load()
-    for _ in range(count):
-        cx, cy = r.randrange(SIZE), r.randrange(SIZE)
-        w, h = r.randint(*size_range), r.randint(*size_range)
-        for dy in range(h):
-            for dx in range(w):
-                px[wrap(cx + dx), wrap(cy + dy)] = color
-        if highlight:
-            px[wrap(cx), wrap(cy)] = highlight
     return img
 
 
@@ -145,72 +138,202 @@ def lerp_color(a, b, t):
 # rotates the same texture differently on top/bottom faces. The soils therefore keep
 # their value range TIGHT (mid three tones dominate, extremes are subtle) and their
 # features small and isotropic -- nothing directional, nothing eye-catching.
+#
+# Detail rework (Logan's 2026-08-18 review, Ep2 task I1): the first pass built the
+# soils out of `value_noise_fill` + `stamp_clumps`, and BOTH of those paint FLAT
+# colour -- an 8x8 tone grid upscaled 2x is a field of 2x2 same-colour squares, and
+# adjacent equal cells merge into 4x2 lumps, so the darkest cluster in the tile reads
+# as one chunky same-colour blotch. Because every copy of the tile is identical, that
+# one blotch is what the eye locks onto and the wall turns into a grid of it (see
+# run/screenshots/i-pass/before/i_soil_packed.png -- a repeating dark "L").
+#
+# The replacement (`soil_texture` below) fixes the three things that caused it:
+#   1. SMALLER BLOTCH SCALE -- the base is smoothly interpolated wrapping value noise
+#      at 4px and 2px lattices, so the dominant feature is ~2-4px, not ~4-8px.
+#   2. PER-BLOTCH INTERNAL GRADIENT -- both the base ramp (12 tones, not 5) and the
+#      blotch stamps carry a falloff, so no feature is a flat slab of one colour.
+#   3. A FINE SPECK LAYER on top -- dense single-pixel +/-1-tone grit that breaks the
+#      remaining smooth areas without adding any large shape to lock onto.
+# The block models then take vanilla `dirt`'s 4 random y-rotation variants
+# (assets/minecraft/blockstates/dirt.json in the client-extra jar -- verified, not
+# recalled) so floors and ceilings stop repeating one orientation as well.
 
 PACKED_SOIL_PAL = [(103, 78, 51, 255), (119, 90, 60, 255), (139, 107, 74, 255),
                    (153, 119, 83, 255), (166, 131, 93, 255)]
+AMBER_EARTH_PAL = [(124, 63, 28, 255), (139, 73, 34, 255), (163, 89, 43, 255),
+                   (178, 101, 51, 255), (193, 114, 61, 255)]
+DEEP_LOAM_PAL = [(54, 27, 17, 255), (64, 33, 21, 255), (82, 44, 28, 255),
+                 (93, 51, 33, 255), (104, 59, 38, 255)]
+HARDENED_SOIL_PAL = [(82, 74, 65, 255), (92, 83, 73, 255), (110, 100, 89, 255),
+                     (119, 109, 97, 255), (129, 119, 106, 255)]
+ANTHILL_SOIL_PAL = [(150, 117, 74, 255), (161, 128, 84, 255),
+                    (172, 139, 92, 255), (183, 150, 103, 255)]
+
+
+def tone_ramp(colors, steps):
+    """Resample a short palette into a longer, evenly-spaced ramp.
+
+    The old fills quantised to five tones, which is what made a blotch a flat slab:
+    two neighbouring pixels either shared a tone exactly or jumped a visible step.
+    A 12-step ramp over the same endpoints keeps the palette's value range identical
+    while giving every soft feature somewhere to fade through."""
+    out = []
+    last = len(colors) - 1
+    for i in range(steps):
+        t = i * last / (steps - 1)
+        lo = min(int(t), last - 1)
+        out.append(lerp_color(colors[lo], colors[lo + 1], t - lo))
+    return out
+
+
+def _noise_field(name, cell):
+    """Wrapping value noise on a `cell`-pixel lattice, smoothstep-interpolated.
+
+    Wrapping is not decoration: the lattice indices are taken mod (SIZE // cell), so
+    the right edge interpolates back into the left one and the tile stays seamless --
+    the same property `value_noise_fill` got for free by making grid cells
+    independent, kept here while the flat cells become gradients."""
+    r = rng(name)
+    n = SIZE // cell
+    lattice = [[r.random() for _ in range(n)] for _ in range(n)]
+    field = [[0.0] * SIZE for _ in range(SIZE)]
+    for y in range(SIZE):
+        gy, fy = divmod(y, cell)
+        ty = (fy / cell) * (fy / cell) * (3 - 2 * (fy / cell))
+        for x in range(SIZE):
+            gx, fx = divmod(x, cell)
+            tx = (fx / cell) * (fx / cell) * (3 - 2 * (fx / cell))
+            a = lattice[gy][gx]
+            b = lattice[gy][(gx + 1) % n]
+            c = lattice[(gy + 1) % n][gx]
+            d = lattice[(gy + 1) % n][(gx + 1) % n]
+            field[y][x] = (a + (b - a) * tx) * (1.0 - ty) + (c + (d - c) * tx) * ty
+    return field
+
+
+def soil_texture(name, colors, steps=12, octaves=((2, 1.0),), contrast=1.35,
+                 blotches=((18, -0.7, (0.8, 1.4)), (15, 0.65, (0.8, 1.3))), speck_rate=0.5,
+                 speck_amp=1.7):
+    """The soil family's shared fill: smooth multi-octave base, gradient blotches,
+    fine speck layer. Works in continuous tone-index space and only quantises to the
+    ramp at the very end, so every layer composes as a gradient rather than as a
+    stamp of flat colour.
+
+    `blotches` is a list of (count, signed amplitude in ramp steps, radius range).
+    A negative amplitude darkens. Each blotch is an ellipse with a 1 - d^2 falloff --
+    that falloff IS the per-blotch internal gradient; the old `stamp_clumps` painted
+    a solid rectangle plus one highlight pixel instead, which is the chunky-blotch
+    complaint. Every layer wraps mod 16, so the tile is still seamless.
+
+    The defaults are tuned against two numbers, not by eye alone: the spread of the
+    tile's 4x4 BLOCK MEANS (call it coarse) and its per-pixel spread (fine). Coarse
+    is what survives being repeated -- it is the motif the eye grids up -- so it has
+    to come DOWN; fine is the grain, which has to stay UP or the soil goes plasticky.
+    Hence the weighting toward the 2px octave, the >1 contrast (a mean of two uniform
+    fields is over-concentrated around mid grey), and a speck layer big enough to
+    matter."""
+    tones = tone_ramp(colors, steps)
+    fields = [(_noise_field(f"{name}:oct{cell}", cell), weight) for cell, weight in octaves]
+    total = sum(weight for _, weight in octaves)
+
+    level = [[0.0] * SIZE for _ in range(SIZE)]
+    for y in range(SIZE):
+        for x in range(SIZE):
+            v = sum(field[y][x] * weight for field, weight in fields) / total
+            level[y][x] = (0.5 + (v - 0.5) * contrast) * (steps - 1)
+
+    r = rng(name + ":blotches")
+    for count, amplitude, radius_range in blotches:
+        for _ in range(count):
+            cx, cy = r.randrange(SIZE), r.randrange(SIZE)
+            rad = r.uniform(*radius_range)
+            # deliberately elliptical and jittered: a run of identical circles is a
+            # stamp, and a stamp is exactly what reads as a motif at world scale
+            ax, ay = rad * r.uniform(0.75, 1.3), rad * r.uniform(0.75, 1.3)
+            reach = int(max(ax, ay)) + 1
+            for dy in range(-reach, reach + 1):
+                for dx in range(-reach, reach + 1):
+                    d = (dx / ax) ** 2 + (dy / ay) ** 2
+                    if d >= 1.0:
+                        continue
+                    level[wrap(cy + dy)][wrap(cx + dx)] += amplitude * (1.0 - d)
+
+    r = rng(name + ":specks")
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if r.random() < speck_rate:
+                level[y][x] += speck_amp * r.choice((-1.0, -0.55, 0.55, 1.0))
+
+    # Ordered dither at the quantisation step. Without it the ramp turns every smooth
+    # gradient into banded regions, and a band has an OUTLINE -- which is exactly the
+    # recognisable shape that a repeated tile grids up. Half a step of 4x4 Bayer
+    # noise scatters the band edge into grain instead.
+    bayer = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
+    img = blank()
+    px = img.load()
+    for y in range(SIZE):
+        for x in range(SIZE):
+            v = level[y][x] + (bayer[y % 4][x % 4] / 16.0 - 0.47)
+            px[x, y] = tones[max(0, min(steps - 1, int(round(v))))]
+    return img
 
 
 def packed_soil():
-    img = value_noise_fill("packed_soil", PACKED_SOIL_PAL)
-    # a single grit clump, kept close to the base tones so repeats stay quiet
-    stamp_clumps(img, "packed_soil", 1, (110, 83, 55, 255),
-                 highlight=(158, 124, 87, 255), size_range=(2, 2))
-    return img
+    return soil_texture("packed_soil", PACKED_SOIL_PAL)
 
 
 def amber_earth():
-    img = value_noise_fill("amber_earth",
-                           [(124, 63, 28, 255), (139, 73, 34, 255), (163, 89, 43, 255),
-                            (178, 101, 51, 255), (193, 114, 61, 255)])
-    # a single subdued resin fleck per tile
-    stamp_clumps(img, "amber_earth", 1, (212, 138, 62, 255),
-                 highlight=(228, 164, 90, 255), size_range=(1, 1))
-    return img
+    # one extra bright blotch family: the resin flecks this tier is named for, now
+    # gradient-cored instead of a single flat pixel
+    return soil_texture("amber_earth", AMBER_EARTH_PAL,
+                        blotches=((13, -1.0, (0.8, 1.4)), (9, 0.9, (0.8, 1.3)),
+                                  (4, 2.0, (0.6, 0.95))))
 
 
 def deep_loam():
-    img = value_noise_fill("deep_loam",
-                           [(54, 27, 17, 255), (64, 33, 21, 255), (82, 44, 28, 255),
-                            (93, 51, 33, 255), (104, 59, 38, 255)])
-    stamp_clumps(img, "deep_loam", 2, (46, 23, 15, 255),
-                 highlight=(96, 54, 34, 255), size_range=(2, 2))
-    return img
+    # the darkest tier reads muddier: a touch more contrast, slightly bigger dark
+    # blotches, and the same speck layer to keep the repeat from showing
+    return soil_texture("deep_loam", DEEP_LOAM_PAL, contrast=1.7,
+                        blotches=((14, -1.1, (0.8, 1.4)), (11, 1.0, (0.8, 1.3))),
+                        speck_rate=0.52, speck_amp=1.9)
 
 
 def hardened_soil():
-    img = value_noise_fill("hardened_soil",
-                           [(82, 74, 65, 255), (92, 83, 73, 255), (110, 100, 89, 255),
-                            (119, 109, 97, 255), (129, 119, 106, 255)])
-    # embedded stones, low contrast so the repeat stays quiet
-    stamp_clumps(img, "hardened_soil", 3, (73, 66, 58, 255),
-                 highlight=(133, 123, 110, 255), size_range=(2, 2))
-    return img
+    # embedded stones: bright-cored blotches over a stony ramp, low amplitude so
+    # the repeat stays quiet
+    return soil_texture("hardened_soil", HARDENED_SOIL_PAL,
+                        blotches=((14, -1.1, (0.8, 1.4)), (12, 1.1, (0.8, 1.3))),
+                        speck_rate=0.52, speck_amp=1.8)
 
 
 def anthill_soil():
     """Excavated-pellet look: an anthill is thousands of carried soil granules.
     Dense 2x2 pellets (lit top-left, shaded bottom-right) packed over a sandy
-    base, with a few dark pore openings the ants come and go by."""
-    img = value_noise_fill("anthill_soil",
-                           [(150, 117, 74, 255), (161, 128, 84, 255),
-                            (172, 139, 92, 255), (183, 150, 103, 255)],
-                           weights=[2, 5, 5, 2], jitter=0.15)
+    base, with a few dark pore openings the ants come and go by.
+
+    The pellets survive the I1 rework unchanged in spirit -- a 2x2 that runs
+    light/mid/mid/dark already IS a per-blotch internal gradient, which is the
+    thing the other soils were missing -- but they now sit on the smooth
+    `soil_texture` base instead of the flat 2x2 grid, and there are more of them
+    at lower contrast so no single pellet cluster carries the tile."""
+    img = soil_texture("anthill_soil", ANTHILL_SOIL_PAL, contrast=1.2,
+                       blotches=((9, -0.9, (0.8, 1.3)),), speck_rate=0.34, speck_amp=1.3)
     px = img.load()
     r = rng("anthill_soil:pellets")
-    for _ in range(26):
+    for _ in range(34):
         x, y = r.randrange(SIZE), r.randrange(SIZE)
         mid = r.choice([(166, 133, 88, 255), (176, 143, 96, 255), (186, 152, 104, 255)])
-        lite = (min(mid[0] + 26, 255), min(mid[1] + 24, 255), min(mid[2] + 20, 255), 255)
-        dark = (max(mid[0] - 30, 0), max(mid[1] - 28, 0), max(mid[2] - 24, 0), 255)
+        lite = (min(mid[0] + 20, 255), min(mid[1] + 18, 255), min(mid[2] + 15, 255), 255)
+        dark = (max(mid[0] - 24, 0), max(mid[1] - 22, 0), max(mid[2] - 19, 0), 255)
         px[x, y] = lite
         px[wrap(x + 1), y] = mid
         px[x, wrap(y + 1)] = mid
         px[wrap(x + 1), wrap(y + 1)] = dark
     for _ in range(3):
         x, y = r.randrange(SIZE), r.randrange(SIZE)
-        px[x, y] = (82, 60, 36, 255)
-        px[wrap(x + 1), y] = (102, 76, 46, 255)
-        px[x, wrap(y + 1)] = (102, 76, 46, 255)
+        px[x, y] = (92, 68, 42, 255)
+        px[wrap(x + 1), y] = (110, 83, 51, 255)
+        px[x, wrap(y + 1)] = (110, 83, 51, 255)
     return img
 
 
@@ -543,8 +666,14 @@ def anthill_core():
 def packed_soil_bricks():
     """Packed Soil cut into bricks: same soil palette (so the material reads
     through), laid in a running-bond mortar grid -- two courses of two bricks,
-    joints offset on alternate rows, the way vanilla's own bricks.png reads."""
-    img = value_noise_fill("packed_soil_bricks", PACKED_SOIL_PAL, jitter=0.14)
+    joints offset on alternate rows, the way vanilla's own bricks.png reads.
+
+    Carried onto `soil_texture` by the I1 rework for the same reason it borrows the
+    palette: "the material reads through" only holds while the brick face is made of
+    the same stuff as the parent block. Low contrast and no blotches -- a cut brick
+    is a dressed face, and the mortar grid is already all the structure it needs."""
+    img = soil_texture("packed_soil_bricks", PACKED_SOIL_PAL, contrast=0.7,
+                       blotches=((3, -1.1, (1.1, 1.7)),), speck_rate=0.2)
     px = img.load()
     mortar = (74, 56, 37, 255)
     for y in range(SIZE):
@@ -563,10 +692,10 @@ def packed_soil_bricks():
 def hardened_soil_tiles():
     """Hardened Soil cut into flat tiles: same stony palette, a straight
     (non-offset) 4x4 grout grid -- the straight grid is what tells it apart
-    from the bricks' running bond at a glance."""
-    img = value_noise_fill("hardened_soil_tiles",
-                           [(82, 74, 65, 255), (92, 83, 73, 255), (110, 100, 89, 255),
-                            (119, 109, 97, 255), (129, 119, 106, 255)], jitter=0.14)
+    from the bricks' running bond at a glance. Same `soil_texture` base as its parent
+    block for the same material-continuity reason as packed_soil_bricks."""
+    img = soil_texture("hardened_soil_tiles", HARDENED_SOIL_PAL, contrast=0.7,
+                       blotches=((3, -1.1, (1.1, 1.7)),), speck_rate=0.22)
     px = img.load()
     grout = (56, 50, 44, 255)
     for i in range(0, SIZE, 4):
@@ -1731,6 +1860,18 @@ def main():
     wall_sheet_path = PREVIEW_DIR / "decorative_families_wall_sheet.png"
     wall_sheet.save(wall_sheet_path)
     print(f"wrote {wall_sheet_path.relative_to(REPO_ROOT)}")
+
+    # Ep2 task I1: the same tiled-wall check for the soil family, which is the
+    # family the repeat actually bites on -- soils are what the whole dimension is
+    # built out of, so "does the repeat show a grid" is their only real acceptance
+    # test and it cannot be judged from a single 16x16 tile.
+    soil_names = ["packed_soil", "amber_earth", "deep_loam", "hardened_soil",
+                  "anthill_soil"]
+    soils = [(name, img) for (name, img) in generated if name in soil_names]
+    soil_sheet = family_wall_sheet(soils, cols=5, rows=5, scale=5)
+    soil_sheet_path = PREVIEW_DIR / "soil_family_wall_sheet.png"
+    soil_sheet.save(soil_sheet_path)
+    print(f"wrote {soil_sheet_path.relative_to(REPO_ROOT)}")
 
     effect_icons = []
     for name, make in EFFECT_ICONS.items():
