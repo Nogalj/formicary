@@ -73,12 +73,20 @@ public final class FormicaryDevCommands {
                                 .then(Commands.literal("throne")
                                         .executes(context -> locate(context.getSource(), Chamber.THRONE)))
                                 .then(Commands.literal("nursery")
-                                        .executes(context -> locate(context.getSource(), Chamber.NURSERY))))
+                                        .executes(context -> locate(context.getSource(), Chamber.NURSERY)))
+                                .then(Commands.literal("garden")
+                                        .executes(context -> locate(context.getSource(), Chamber.GARDEN)))
+                                .then(Commands.literal("larder")
+                                        .executes(context -> locate(context.getSource(), Chamber.LARDER))))
                         .then(Commands.literal("tp")
                                 .then(Commands.literal("throne")
                                         .executes(context -> teleport(context.getSource(), Chamber.THRONE)))
                                 .then(Commands.literal("nursery")
-                                        .executes(context -> teleport(context.getSource(), Chamber.NURSERY))))
+                                        .executes(context -> teleport(context.getSource(), Chamber.NURSERY)))
+                                .then(Commands.literal("garden")
+                                        .executes(context -> teleport(context.getSource(), Chamber.GARDEN)))
+                                .then(Commands.literal("larder")
+                                        .executes(context -> teleport(context.getSource(), Chamber.LARDER))))
                         .then(Commands.literal("state")
                                 .executes(context -> state(context.getSource())))
                         .then(Commands.literal("kit")
@@ -91,10 +99,12 @@ public final class FormicaryDevCommands {
     // locate / tp
     // ------------------------------------------------------------------
 
-    /** The two chamber kinds the cell math can answer for. Garden/larder arrive in D4. */
+    /** The four chamber kinds the cell math can answer for. */
     private enum Chamber {
         THRONE("throne chamber"),
-        NURSERY("nursery chamber");
+        NURSERY("nursery chamber"),
+        GARDEN("fungus garden chamber"),
+        LARDER("larder chamber");
 
         private final String label;
 
@@ -160,20 +170,39 @@ public final class FormicaryDevCommands {
         }
         int x = player.blockPosition().getX();
         int z = player.blockPosition().getZ();
-        if (chamber == Chamber.THRONE) {
-            ColonyNoise.Throne throne = noise.nearestThrone(x, z);
-            // The chamber's centre column IS the dais, so its floor is the plinth's top --
-            // the exact block ColonyChunkGenerator seats the queen on.
-            BlockPos stand = new BlockPos((int) Math.round(throne.centreX()),
-                    throne.floorY() + THRONE_DAIS_HEIGHT + 1, (int) Math.round(throne.centreZ()));
-            return new Found(chamber, stand, Math.hypot(x - throne.centreX(), z - throne.centreZ()));
-        }
-        ColonyNoise.Nursery nursery = noise.nearestNursery(x, z);
-        // A nursery's floor slab is at floorY, forced solid by the same function that carved
-        // the room, so floorY + 1 is standable without reading a block.
-        BlockPos stand = new BlockPos((int) Math.round(nursery.centreX()), nursery.floorY() + 1,
-                (int) Math.round(nursery.centreZ()));
-        return new Found(chamber, stand, Math.hypot(x - nursery.centreX(), z - nursery.centreZ()));
+        return switch (chamber) {
+            case THRONE -> {
+                ColonyNoise.Throne throne = noise.nearestThrone(x, z);
+                // The chamber's centre column IS the dais, so its floor is the plinth's
+                // top -- the exact block ColonyChunkGenerator seats the queen on.
+                BlockPos stand = new BlockPos((int) Math.round(throne.centreX()),
+                        throne.floorY() + THRONE_DAIS_HEIGHT + 1, (int) Math.round(throne.centreZ()));
+                yield new Found(chamber, stand, Math.hypot(x - throne.centreX(), z - throne.centreZ()));
+            }
+            case NURSERY -> {
+                ColonyNoise.Nursery nursery = noise.nearestNursery(x, z);
+                // A nursery's floor slab is at floorY, forced solid by the same function
+                // that carved the room, so floorY + 1 is standable without reading a block.
+                BlockPos stand = new BlockPos((int) Math.round(nursery.centreX()), nursery.floorY() + 1,
+                        (int) Math.round(nursery.centreZ()));
+                yield new Found(chamber, stand, Math.hypot(x - nursery.centreX(), z - nursery.centreZ()));
+            }
+            case GARDEN -> {
+                // Same "floor is forced solid" guarantee the nursery case relies on --
+                // ColonyNoise.gardenState forces the corridor/interior floor exactly the
+                // way nurseryState does.
+                ColonyNoise.Garden garden = noise.nearestGarden(x, z);
+                BlockPos stand = new BlockPos((int) Math.round(garden.centreX()), garden.floorY() + 1,
+                        (int) Math.round(garden.centreZ()));
+                yield new Found(chamber, stand, Math.hypot(x - garden.centreX(), z - garden.centreZ()));
+            }
+            case LARDER -> {
+                ColonyNoise.Larder larder = noise.nearestLarder(x, z);
+                BlockPos stand = new BlockPos((int) Math.round(larder.centreX()), larder.floorY() + 1,
+                        (int) Math.round(larder.centreZ()));
+                yield new Found(chamber, stand, Math.hypot(x - larder.centreX(), z - larder.centreZ()));
+            }
+        };
     }
 
     // ------------------------------------------------------------------
