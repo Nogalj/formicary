@@ -118,7 +118,8 @@ subsystem, and bank new rules there, not here.
   a hit that provokes damage handlers but records no grudge/knockback/damage (the
   `invulnerableTime` early return -- bites 1.0F GameTest swings), retaliation invisible
   when the hit lands on the mob's spawn tick, `xpReward` set on a `TamableAnimal` but the
-  mob still drops 1-3 XP -> `entity-ai.md`
+  mob still drops 1-3 XP, a mob that parks next to what it wants and never closes the last
+  step (`moveTo`'s arrival is looser than a goal's own reach) -> `entity-ai.md`
 - **Any entity model/render work**: held item invisible, `renderToBuffer` signature,
   UV/texture-resolution mismatch, `setupAnim` drift; full art pipeline -> `entity-models.md`
 - **Which 1.21 event replaced `LivingHurtEvent` / `PlayerTickEvent`**; `javap` can't find

@@ -114,14 +114,17 @@ public class EnderAntGameTests {
                     ant.hurt(helper.getLevel().damageSources().playerAttack(attacker), TEST_HIT_DAMAGE),
                     "setup: the swing has to actually land, or there is nothing to blink away from");
 
-            helper.runAfterDelay(10, () -> {
-                double moved = ant.position().distanceTo(origin);
-                helper.assertTrue(moved >= EnderAntEntity.TELEPORT_MIN_DISTANCE,
-                        "a hurt ender ant must blink at least " + EnderAntEntity.TELEPORT_MIN_DISTANCE
-                                + " blocks; it moved " + String.format("%.2f", moved));
-                helper.assertTrue(ant.isAlive(), "the blink must not have killed it");
-                helper.succeed();
-            });
+            // The blink is synchronous inside hurt() (EnderAntEntity.hurt -> teleportRandomly),
+            // so measure NOW. A 10-tick-later measurement sampled the swing's residual
+            // knockback on top of the blink: the drift ran +-1.8 blocks in that window and
+            // occasionally dragged an 8.4-block blink under the 8.0 assertion (observed
+            // 2026-08-18: moved 7.87 and 7.22 on otherwise-green runs).
+            double moved = ant.position().distanceTo(origin);
+            helper.assertTrue(moved >= EnderAntEntity.TELEPORT_MIN_DISTANCE,
+                    "a hurt ender ant must blink at least " + EnderAntEntity.TELEPORT_MIN_DISTANCE
+                            + " blocks; it moved " + String.format("%.2f", moved));
+            helper.assertTrue(ant.isAlive(), "the blink must not have killed it");
+            helper.succeed();
         });
     }
 
