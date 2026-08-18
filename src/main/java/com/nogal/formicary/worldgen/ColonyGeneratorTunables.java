@@ -430,20 +430,21 @@ public final class ColonyGeneratorTunables {
     }
 
     // ------------------------------------------------------------------
-    // The queen's throne chamber (M7) -- a rare domed room in the Royal Depths
+    // The queen's throne chamber (M7, re-anchored in Ep2) -- a domed room in the Royal
+    // Depths, one per COLONY.
     //
-    // Rarity is a grid, like the connectivity shafts: one chamber per THRONE_SPACING
-    // cell, so a committed explorer always finds one and most entry points have none.
+    // Rarity used to be a grid of its own (one per 224-block cell). It is now the colony
+    // cell: the chamber hangs off the connectivity ramp whose cell contains the COLONY
+    // CENTRE, so "one queen per colony" is true by construction rather than by two grids
+    // happening to have similar periods. THRONE_SPACING is gone rather than aliased --
+    // a constant nothing reads is a constant that will be retuned by mistake.
     //
-    // The chamber is deliberately NOT placed at a free XZ. It hangs off the nearest
-    // connectivity ramp at a fixed offset, and its floor is set to the exact Y that
-    // ramp's walkway reaches at the approach bearing -- which is what makes the
-    // approach corridor meet the spine at a walkable height by construction rather
-    // than by luck. See ColonyNoise#throneForCell for the arithmetic.
+    // The chamber is still deliberately NOT placed at a free XZ. It hangs off that ramp at
+    // a fixed offset, and its floor is set to the exact Y that ramp's walkway reaches at
+    // the approach bearing -- which is what makes the approach corridor meet the spine at a
+    // walkable height by construction rather than by luck. The floor-Y arithmetic is
+    // ramp-relative and did not change with the re-anchor. See ColonyNoise#throneForCell.
     // ------------------------------------------------------------------
-
-    /** One throne chamber per this many blocks on each axis. */
-    public static final int THRONE_SPACING = 224;
 
     /** Interior radius of the chamber: 14 gives a 28-block-wide room. */
     public static final double THRONE_RADIUS = 14.0;

@@ -857,6 +857,11 @@ places, more in them.
   noise would eventually produce a doorway over a void. The forced floor cannot conflict
   with the ramp, which is checked first and agrees with it by construction: the
   chamber's floor Y *is* the ramp's walkway height at that bearing.
+  **REVERSED by the Ep2 colony field (see the Ep2 section at the end of this file):**
+  the exemption rested on a 17% air fraction measured over the whole dimension, and every
+  throne now sits inside a colony core, where the measured Royal Depths air fraction is
+  21-22%. The number the argument was made from no longer describes anywhere a throne
+  exists, so both corridor floors are forced and the asymmetry is gone.
 
 - **Larvae and egg clusters both become chamber-only, and it is the same argument.** The
   larva row is gone from the Nurseries biome; `EGG_CLUSTER_CHANCE_BY_TIER` is deleted
@@ -1367,6 +1372,14 @@ jittered 384-block grid, sparse wilds between them.
   the only larva source and arrival XZ is uncorrelated with colonies, so core-only
   (~21% of the area) would land half of all first entries in empty tunnels. At 0.2 about
   36% of 96-block cells generate their chamber -- measured, 105 of 289 larder cells.
+- **One throne per colony, by construction.** `THRONE_SPACING` (224) is retired outright
+  rather than aliased: the throne now keys off the colony cell and hangs off the ramp
+  whose cell contains the colony *centre*. The floor-Y arithmetic is ramp-relative and did
+  not change. The offset that introduces is bounded: the ramp axis is at most
+  `24*sqrt(2) + SHAFT_JITTER/2` = 41.9 blocks from the colony centre and the room hangs
+  `THRONE_APPROACH_DISTANCE` = 34 beyond it, so a throne centre is always within 76 blocks
+  of its colony -- inside the 100-block core. Measured worst offset across 507 colonies on
+  three seeds: 67.4.
 - **`nearest*` for the three gated chamber kinds searches 6 cell rings, not 2.** The old
   radius assumed every cell had a chamber. It now has to reach the nearest colony (at most
   320 blocks) plus its eligible radius (134) = 454, which 6 rings of 96 (576) covers.

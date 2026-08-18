@@ -388,8 +388,8 @@ public final class NoiseProbe {
      */
     private static void thrones(ColonyNoise noise) {
         System.out.printf(Locale.ROOT,
-                "%nthrone chambers (one per %d-block cell, radius %.0f, interior %d tall):%n",
-                ColonyGeneratorTunables.THRONE_SPACING, ColonyGeneratorTunables.THRONE_RADIUS,
+                "%nthrone chambers (one per %d-block COLONY cell, radius %.0f, interior %d tall):%n",
+                ColonyGeneratorTunables.COLONY_SPACING, ColonyGeneratorTunables.THRONE_RADIUS,
                 ColonyGeneratorTunables.THRONE_WALL_HEIGHT + ColonyGeneratorTunables.THRONE_DOME_HEIGHT);
 
         ColonyNoise.Throne[] near = noise.thronesNear(0, 0);
@@ -633,7 +633,7 @@ public final class NoiseProbe {
                 ColonyGeneratorTunables.NURSERY_SPACING, ColonyGeneratorTunables.NURSERY_RADIUS,
                 ColonyGeneratorTunables.NURSERY_WALL_HEIGHT + ColonyGeneratorTunables.NURSERY_DOME_HEIGHT);
 
-        double perThrone = Math.pow((double) ColonyGeneratorTunables.THRONE_SPACING
+        double perThrone = Math.pow((double) ColonyGeneratorTunables.COLONY_SPACING
                 / ColonyGeneratorTunables.NURSERY_SPACING, 2.0);
         System.out.printf(Locale.ROOT,
                 "  grid density: %.2f cells per 1000x1000 blocks, i.e. %.1f cells per throne chamber"

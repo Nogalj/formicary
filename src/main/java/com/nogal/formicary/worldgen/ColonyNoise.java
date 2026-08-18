@@ -82,7 +82,6 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_FLOOR_
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_MAX_REACH;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_SHELL_THICKNESS;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_SPACING;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_WALL_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.TIER_COUNT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.TIER_HEIGHT;
@@ -404,7 +403,7 @@ public final class ColonyNoise {
     }
 
     // ------------------------------------------------------------------
-    // The queen's throne chamber (M7)
+    // The queen's throne chamber (M7, re-anchored to the colony in Ep2)
     // ------------------------------------------------------------------
 
     /**
@@ -427,7 +426,11 @@ public final class ColonyNoise {
     public static final Throne[] NO_THRONES = new Throne[0];
 
     /**
-     * The chamber belonging to one {@link ColonyGeneratorTunables#THRONE_SPACING} cell.
+     * The chamber belonging to one colony -- one per
+     * {@link ColonyGeneratorTunables#COLONY_SPACING} cell, which is the same cell the colony
+     * itself lives in, so <b>exactly one throne (and one queen) per colony by
+     * construction</b>. Before Ep2 this was its own 224-block grid whose relationship to
+     * anything else was a coincidence of periods.
      *
      * <p>Its XZ is <em>derived from a connectivity ramp</em> rather than jittered freely,
      * and that is the whole trick: the chamber sits {@code THRONE_APPROACH_DISTANCE} from
@@ -438,16 +441,28 @@ public final class ColonyNoise {
      * "can the player get in?" a property of the noise, which is exactly the sort of thing
      * the M4a walkability work established cannot be assumed.
      *
+     * <p>What the Ep2 re-anchor changed is only <em>which</em> ramp: the one whose own cell
+     * contains the COLONY CENTRE, instead of the one containing an abstract 224-grid point.
+     * The floor-Y arithmetic below is ramp-relative and is untouched. The offset that
+     * introduces is bounded and small: the ramp axis is at most
+     * {@code 24*sqrt(2) + SHAFT_JITTER/2} = 41.9 blocks from the colony centre and the room
+     * hangs {@code THRONE_APPROACH_DISTANCE} = 34 beyond it, so a throne centre is always
+     * within 76 blocks of its colony centre -- inside
+     * {@link ColonyGeneratorTunables#COLONY_CORE_RADIUS} = 100, i.e. always at full density.
+     * {@link NoiseProbe}'s colony section asserts exactly that rather than trusting it.
+     *
      * <p>The ramp floor at bearing {@code t} is {@code MIN_Y + t / RAMP_RADIANS_PER_BLOCK}
      * plus any whole number of {@link #RAMP_PERIOD}s; the turn taken is the first one at or
      * above {@link ColonyGeneratorTunables#THRONE_FLOOR_MIN_Y}, which keeps the whole room
      * (13 of interior plus its shell) inside the Royal Depths band.
      */
     private Throne throneForCell(int cellX, int cellZ) {
-        // y = 1 rather than 0 so this never draws the same stream as shaftForCell.
+        // y = 1 rather than 0 so this never draws the same stream as shaftForCell -- and
+        // rather than 5, so the approach bearing is independent of the colony's own jitter.
         RandomSource random = this.factory.at(cellX, 1, cellZ);
-        int centreX = cellX * THRONE_SPACING + THRONE_SPACING / 2;
-        int centreZ = cellZ * THRONE_SPACING + THRONE_SPACING / 2;
+        Colony colony = colonyCenterForCell(cellX, cellZ);
+        int centreX = Mth.floor(colony.centreX());
+        int centreZ = Mth.floor(colony.centreZ());
         Shaft shaft = shaftForCell(Math.floorDiv(centreX, SHAFT_SPACING), Math.floorDiv(centreZ, SHAFT_SPACING));
 
         double approach = random.nextDouble() * TWO_PI;
@@ -471,14 +486,14 @@ public final class ColonyNoise {
      * ({@code blockMinX}, {@code blockMinZ}).
      *
      * <p>A 3x3 cell neighbourhood is far more than enough -- a chamber's centre lands
-     * within 66 blocks of its cell centre (24 to the ramp cell, 8 of ramp jitter, 34 of
-     * approach) and reaches {@link ColonyGeneratorTunables#THRONE_MAX_REACH} from there,
-     * so no chamber ever crosses a 224-block cell boundary -- but it is kept at 3x3 so the
+     * within 124 blocks of its cell centre (48 of colony jitter, 42 to the ramp axis, 34 of
+     * approach) and reaches {@link ColonyGeneratorTunables#THRONE_MAX_REACH} from there, so
+     * no chamber ever crosses a 384-block cell boundary -- but it is kept at 3x3 so the
      * pruning stays correct if those numbers are retuned.
      */
     public Throne[] thronesNear(int blockMinX, int blockMinZ) {
-        int cellX = Math.floorDiv(blockMinX, THRONE_SPACING);
-        int cellZ = Math.floorDiv(blockMinZ, THRONE_SPACING);
+        int cellX = Math.floorDiv(blockMinX, COLONY_SPACING);
+        int cellZ = Math.floorDiv(blockMinZ, COLONY_SPACING);
         Throne[] out = new Throne[9];
         int i = 0;
         for (int dx = -1; dx <= 1; dx++) {
@@ -514,6 +529,13 @@ public final class ColonyNoise {
      *
      * <p>Order matters. The dais outranks the interior (it is a plinth standing in the
      * room), and the corridor outranks the shell (it is the doorway through it).
+     *
+     * <p><b>The corridor's own floor is forced solid (Ep2)</b>, exactly as
+     * {@link #nurseryState} has always done it: {@code height == 0} inside the corridor
+     * footprint is {@link #THRONE_SOLID}, not left to the noise. See that method's javadoc
+     * for why the old asymmetry no longer holds. Still subordinate to {@link #shaftState},
+     * which {@link #isAir} consults first and which agrees with it by construction -- the
+     * chamber's floor Y <em>is</em> the ramp's walkway height at that bearing.
      */
     public int throneState(Throne[] thrones, int x, int y, int z) {
         for (Throne throne : thrones) {
@@ -529,8 +551,8 @@ public final class ColonyNoise {
             if (height == 1 && distance <= THRONE_DAIS_STEP_RADIUS) {
                 return THRONE_DAIS;
             }
-            if (height >= 1 && height <= THRONE_CORRIDOR_HEIGHT && isInCorridor(throne, x, z)) {
-                return THRONE_AIR;
+            if (height >= 0 && height <= THRONE_CORRIDOR_HEIGHT && isInCorridor(throne, x, z)) {
+                return height == 0 ? THRONE_SOLID : THRONE_AIR;
             }
             if (isInsideThrone(distance, height, 0.0)) {
                 return THRONE_AIR;
@@ -969,10 +991,10 @@ public final class ColonyNoise {
      * <p>Two, not the one that {@link #thronesNear} uses, because this is a different
      * question. That one asks "whose carve can touch this chunk", which the 3x3 ring
      * provably answers. "Whose centre is closest to this point" has to look further: a
-     * throne centre lands anywhere within 66 blocks of its 224-block cell centre, so the
-     * nearest of the 3x3 can be up to {@code 112*sqrt(2) + 66} = 224 blocks away while a
-     * chamber two cells out can sit as close as {@code 2*224 + 112 - 66 - 224} = 270.
-     * Two rings settle it in both directions.
+     * throne centre lands anywhere within 124 blocks of its 384-block cell centre, so the
+     * nearest of the 3x3 can be up to {@code 192*sqrt(2) + 124} = 396 blocks away while a
+     * chamber two cells out can sit as close as {@code 2*384 + 192 - 124 - 384} = 452 --
+     * close enough to matter. Two rings settle it in both directions.
      */
     private static final int NEAREST_QUERY_CELL_RADIUS = 2;
 
@@ -993,8 +1015,8 @@ public final class ColonyNoise {
 
     /** The throne chamber whose centre is horizontally nearest (x, z). */
     public Throne nearestThrone(int x, int z) {
-        int cellX = Math.floorDiv(x, THRONE_SPACING);
-        int cellZ = Math.floorDiv(z, THRONE_SPACING);
+        int cellX = Math.floorDiv(x, COLONY_SPACING);
+        int cellZ = Math.floorDiv(z, COLONY_SPACING);
         Throne best = throneForCell(cellX, cellZ);
         double bestDistanceSq = distanceSq(x, z, best.centreX(), best.centreZ());
         for (int dx = -NEAREST_QUERY_CELL_RADIUS; dx <= NEAREST_QUERY_CELL_RADIUS; dx++) {
@@ -1095,11 +1117,19 @@ public final class ColonyNoise {
      * What a nursery chamber says about (x, y, z): the hollow interior, the approach
      * corridor and its walkway, the shell, or nothing.
      *
-     * <p>One difference from {@link #throneState}: the corridor's own floor is forced solid.
-     * The throne's is not, and gets away with it because the noise happens to leave ground
-     * under a 34-block approach; a nursery hangs 24 blocks out in the Nurseries tier, which
-     * is the airiest band in the dimension (24% air), so leaving the floor to the noise
-     * would eventually produce a doorway opening onto a drop.
+     * <p>The corridor's own floor is forced solid, because a nursery hangs 24 blocks out in
+     * the Nurseries tier -- the airiest band in the dimension (24% air) -- so leaving the
+     * floor to the noise would eventually produce a doorway opening onto a drop.
+     *
+     * <p><b>This used to be an asymmetry with {@link #throneState}, and Ep2 ended it.</b>
+     * The throne's corridor floor was left unforced on the strength of one measurement: the
+     * Royal Depths were 17% air (DECISIONS.md), and the probe had always shown the throne's
+     * 34-block approach landing on ground. The colony field (spec section 1) invalidates
+     * that argument rather than refining it -- every throne now sits inside a colony core,
+     * which is precisely where the field pushes carve density <em>up</em> from the measured
+     * average, and the air fraction the exemption rested on is no longer the air fraction
+     * anywhere a throne exists. Forcing both floors is now the rule with no exception to
+     * remember.
      *
      * <p>Chambers whose {@link Nursery#inColony()} is false are skipped outright: outside a
      * colony the room does not generate, so it says nothing about any position.
