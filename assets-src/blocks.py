@@ -368,24 +368,73 @@ AMBER_PALE = (250, 205, 120, 255)
 AMBER_SPARK = (255, 238, 190, 255)
 
 
+# Ep2 task I3 retexture (2026-08-18): the original background was the full
+# packed-soil palette, which is busy and mid-value across its own 5 tones --
+# fine for a soil block that has to fill a whole wall, but here it competed
+# with the amber for attention instead of setting it off. This is a quieter,
+# darker rock fill: narrow value range, weighted hard toward the two darkest
+# tones, so nothing in the background is bright enough to challenge the
+# drips for "what does the eye land on first."
+RESIN_WEEP_ROCK_PAL = [(44, 35, 28, 255), (56, 45, 36, 255), (70, 57, 45, 255),
+                       (84, 69, 55, 255), (98, 81, 65, 255)]
+
+
+def _wrap_dist(a, b):
+    """Shortest distance between two columns on the seamless 16-wide tile."""
+    d = abs(a - b) % SIZE
+    return min(d, SIZE - d)
+
+
 def resin_weep():
-    """Packed-soil face with amber drips running down it -- the 'weep'."""
-    img = value_noise_fill("resin_weep", PACKED_SOIL_PAL)
+    """Dark rock face weeping amber -- the 'weep'.
+
+    Ep2 task I3 retexture (2026-08-18): the original drips were a single
+    1px-wide column of AMBER_MID at 4 fixed, evenly-spaced x positions. A
+    1px-wide feature is exactly what mip-mapping erases first, and a fixed
+    spacing is exactly what reads as a stamped grid once the tile repeats
+    across a wall -- both are the opposite of "readable at distance." This
+    version widens each drip to a 2px core (one side glossy-light, one side
+    mid-tone, so it still reads as round rather than as a flat ribbon),
+    randomises count/position/length off the seeded RNG so no two drips on
+    one tile -- or across two adjacent copies of it -- line up the same
+    way, and closes each drip with a 2x2 bead plus a single SPARK pixel
+    that stays legible even after the mip chain has eaten everything else."""
+    img = value_noise_fill("resin_weep_rock", RESIN_WEEP_ROCK_PAL,
+                           weights=[5, 5, 3, 1, 1])
     px = img.load()
     r = rng("resin_weep:drips")
-    for x0 in (2, 6, 10, 13):
-        y0 = r.randint(0, 3)
-        length = r.randint(5, 9)
-        # dark seep hole at the source
-        px[x0, y0] = (84, 60, 38, 255)
-        for y in range(y0 + 1, min(SIZE - 1, y0 + length)):
-            px[x0, y] = AMBER_MID
-            if r.random() < 0.4:
-                px[wrap(x0 + 1), y] = AMBER_BASE
-        # glossy bead at the bottom of the drip
+    placed = []
+    for _ in range(r.randint(3, 4)):
+        x0 = r.randrange(SIZE)
+        for _attempt in range(8):
+            if all(_wrap_dist(x0, u) >= 3 for u in placed):
+                break
+            x0 = r.randrange(SIZE)
+        placed.append(x0)
+        x1 = wrap(x0 + 1)
+        glossy, mid = (x0, x1) if r.random() < 0.5 else (x1, x0)
+        y0 = r.randint(0, 2)
+        length = r.randint(7, 12)
         yb = min(SIZE - 1, y0 + length)
-        px[x0, yb] = AMBER_PALE
-        px[wrap(x0 + 1), yb] = AMBER_LIGHT
+
+        # seep hole: two dark pixels so the source itself reads as a hole,
+        # not just the top of the drip.
+        px[x0, y0] = (54, 32, 19, 255)
+        px[x1, y0] = (66, 40, 23, 255)
+
+        for y in range(y0 + 1, yb):
+            px[mid, y] = AMBER_BASE
+            px[glossy, y] = AMBER_LIGHT if r.random() < 0.6 else AMBER_MID
+            # an occasional stray droplet breaking off the glossy edge
+            if r.random() < 0.12:
+                px[wrap(glossy + 1), y] = AMBER_BASE
+
+        # glossy bead at the bottom: 2x2 pale amber with one spark corner,
+        # sized to survive mip-mapping the way a single tip pixel would not.
+        yb1 = min(SIZE - 1, yb + 1)
+        for (bx, by) in ((x0, yb), (x1, yb), (x0, yb1), (x1, yb1)):
+            px[bx, by] = AMBER_PALE
+        px[glossy, yb] = AMBER_SPARK
     return img
 
 
