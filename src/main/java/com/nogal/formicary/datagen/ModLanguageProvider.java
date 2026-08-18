@@ -90,6 +90,9 @@ public class ModLanguageProvider extends LanguageProvider {
         // Play-test round 1, spec item 5: reverses the M7-era "no spawn egg" call.
         addItem(ModEntities.QUEEN_ANT_SPAWN_EGG, "Queen Ant Spawn Egg");
 
+        // Ep2, spec section 5. No spawn egg on purpose -- see ModEntities.ENDER_ANT.
+        addEntityType(ModEntities.ENDER_ANT, "Ender Ant");
+
         add("itemGroup.formicary.formicary", "Formicary");
 
         addEffect(ModMobEffects.PHEROMONAL_DISGUISE, "Pheromonal Disguise");

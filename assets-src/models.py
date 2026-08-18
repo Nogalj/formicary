@@ -176,6 +176,65 @@ SOLDIER_ANT = {
 }
 
 
+# Ender ant (Ep2): the worker's body plan, one notch taller on the legs.
+#
+# Deliberately NOT a new silhouette. This is the same species as the colony's
+# workers -- the spec's "ant body plan, near-black chitin + purple accents" --
+# so the read at gameplay distance has to come from the palette, not from a
+# shape nobody can resolve in a dark tunnel. Every part is the worker's, and
+# the only geometry change is legs one unit longer (3 -> 4, the soldier's
+# length), which raises the whole body 0.5 so the feet still reach the ground:
+# every absolute pose here is the worker's minus 0.5 in Y, and the leg poses
+# are the worker's minus 0.5 too, which leaves every parent-relative offset in
+# the Java LayerDefinition IDENTICAL to WorkerAntModel's. The one atlas change
+# that follows is the leg cube being 1x4x1, which grows its face rects from
+# v 0..4 to v 0..5 -- still clear of every other cube on the 64x64 sheet.
+ENDER_ANT = {
+    "name": "ender_ant",
+    "parts": [
+        {"name": "body", "pose": (0, 20.0, 0), "cubes": [
+            {"off": (0, 0), "box": (-2, -1.5, -2, 4, 3, 4)},          # thorax
+        ]},
+        {"name": "head", "pose": (0, 19.5, -2), "cubes": [
+            {"off": (0, 19), "box": (-2.5, -2, -4, 5, 4, 4)},         # skull
+            {"off": (34, 0), "box": (-2, 0.5, -5, 1, 1, 2)},          # mandible_r
+            {"off": (34, 0), "box": (1, 0.5, -5, 1, 1, 2)},           # mandible_l
+        ]},
+        {"name": "antenna_r", "pose": (-1.5, 18.0, -5.5),
+         "rot": (REST_ANT_X, 0, -REST_ANT_Z), "cubes": [
+            {"off": (42, 0), "box": (-0.5, -3, -0.5, 1, 3, 1)},
+        ]},
+        {"name": "antenna_l", "pose": (1.5, 18.0, -5.5),
+         "rot": (REST_ANT_X, 0, REST_ANT_Z), "cubes": [
+            {"off": (42, 0), "box": (-0.5, -3, -0.5, 1, 3, 1)},
+        ]},
+        {"name": "gaster", "pose": (0, 19.0, 0), "cubes": [
+            {"off": (24, 0), "box": (-1, 0.5, 1.5, 2, 2, 2)},         # petiole
+            {"off": (0, 8), "box": (-2.5, -1.5, 3.5, 5, 4, 6)},       # gaster
+        ]},
+        # --- six legs, one unit longer than the worker's --------------------
+        {"name": "leg_r1", "pose": (-2, 21.4, -1.5),
+         "rot": (0, REST_LEG_Y_FRONT, REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+        {"name": "leg_r2", "pose": (-2, 21.4, 0),
+         "rot": (0, 0, REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+        {"name": "leg_r3", "pose": (-2, 21.4, 1.5),
+         "rot": (0, REST_LEG_Y_HIND, REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+        {"name": "leg_l1", "pose": (2, 21.4, -1.5),
+         "rot": (0, -REST_LEG_Y_FRONT, -REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+        {"name": "leg_l2", "pose": (2, 21.4, 0),
+         "rot": (0, 0, -REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+        {"name": "leg_l3", "pose": (2, 21.4, 1.5),
+         "rot": (0, -REST_LEG_Y_HIND, -REST_LEG_Z),
+         "cubes": [{"off": (48, 0), "box": (-0.5, 0, -0.5, 1, 4, 1)}]},
+    ],
+}
+
+
 # Larva: a tiny legless, antenna-less grub -- three tapering segments (head
 # 3x3x2, mid 4x3x3, tail 3x2x3) resting flush on the ground. `mid` is the
 # root; `head`/`tail` are its children so setupAnim can flex them
@@ -382,6 +441,49 @@ S_BELLY_PAL = [S_BELLY_DARK, S_BELLY, S_BELLY, S_BELLY_LIGHT, S_BELLY_LIGHT]
 S_LIMB_PAL = [S_CHITIN_DARKEST, S_CHITIN_DARK, S_CHITIN_DARK, S_CHITIN_BASE, S_CHITIN_MID]
 S_HEAD_PAL = [S_HEAD_DARK, S_HEAD_BASE, S_HEAD_MID, S_HEAD_LIGHT, S_CHITIN_LIGHT]
 S_HEAD_BACK_PAL = [S_HEAD_DARKEST, S_HEAD_DARK, S_HEAD_BASE, S_HEAD_MID, S_HEAD_LIGHT]
+
+
+# -------------------------------------------------------- ender ant palette --
+# Spec section 5: "near-black chitin + purple accents". The two named accents
+# are exact -- E_ACCENT is #8A2BE2 and E_ACCENT_BRIGHT is #B26EE8 -- and the
+# chitin family is built around #1A1420 as its BASE tone, with the lighter
+# steps carrying a violet cast rather than going grey, so the shell reads as
+# "black with something in it" instead of as an unlit worker.
+#
+# The accents are used sparingly and only on the things a player tracks in a
+# dark tunnel: the eyes, the antenna tips, the gaster's segment sheen. A body
+# painted mostly in #8A2BE2 would out-glow every emissive block in the
+# dimension and stop reading as an ant at all.
+
+E_CHITIN_DARKEST = (10, 8, 14, 255)
+E_CHITIN_DARK = (18, 14, 22, 255)
+E_CHITIN_BASE = (26, 20, 32, 255)       # #1A1420 -- the named shell colour
+E_CHITIN_MID = (38, 28, 48, 255)
+E_CHITIN_LIGHT = (52, 38, 66, 255)
+E_CHITIN_PALE = (72, 52, 92, 255)
+
+E_BELLY_DARK = (30, 22, 38, 255)
+E_BELLY = (44, 32, 56, 255)
+E_BELLY_LIGHT = (58, 42, 74, 255)
+
+E_BAND = (12, 9, 16, 255)
+
+E_ACCENT = (138, 43, 226, 255)          # #8A2BE2
+E_ACCENT_BRIGHT = (178, 110, 232, 255)  # #B26EE8
+E_ACCENT_DEEP = (72, 22, 118, 255)      # half-lit #8A2BE2, for accent shadows
+
+E_EYE = E_ACCENT_BRIGHT
+E_EYE_DARK = E_ACCENT_DEEP
+
+E_JAW = (64, 40, 88, 255)
+E_JAW_DARK = (34, 20, 48, 255)
+
+E_ANTENNA_TIP = E_ACCENT
+
+E_BODY_PAL = [E_CHITIN_DARK, E_CHITIN_BASE, E_CHITIN_MID, E_CHITIN_LIGHT, E_CHITIN_PALE]
+E_BACK_PAL = [E_CHITIN_DARKEST, E_CHITIN_DARK, E_CHITIN_BASE, E_CHITIN_MID, E_CHITIN_LIGHT]
+E_BELLY_PAL = [E_BELLY_DARK, E_BELLY, E_BELLY, E_BELLY_LIGHT, E_BELLY_LIGHT]
+E_LIMB_PAL = [E_CHITIN_DARKEST, E_CHITIN_DARK, E_CHITIN_DARK, E_CHITIN_BASE, E_CHITIN_MID]
 
 
 # ------------------------------------------------------------- larva palette --
@@ -602,6 +704,126 @@ def paint_worker_ant(antenna_tip_color=ANTENNA_TIP):
         hband(d, r[f], 2, CHITIN_DARKEST)       # tarsus / foot
     fill(d, r["top"], CHITIN_DARK)
     fill(d, r["bottom"], CHITIN_DARKEST)
+
+    return img
+
+
+def paint_ender_ant():
+    """The worker's painter re-cut in the ender palette.
+
+    Deliberately a sibling of `paint_worker_ant` rather than a parameterised
+    call into it: the accents do not land in the same places the worker's
+    ambers do (the gaster gets a lit segment rim it has no equivalent of, the
+    eyes are twice the size, the mouth line is an accent rather than a shadow),
+    so threading five palettes plus three placement flags through the worker
+    would have made both harder to read than one honest copy. The `namespace`
+    argument to `noise_rect` keys the RNG per model, so this paints its own
+    clumps rather than a recoloured copy of the worker's.
+    """
+    img = Image.new("RGBA", (TEX, TEX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    parts = {p["name"]: p for p in ENDER_ANT["parts"]}
+    NS = "ender_ant"
+
+    def rects(cube):
+        u, v = cube["off"]
+        _, _, _, w, h, dd = cube["box"]
+        return face_rects(u, v, w, h, dd)
+
+    # ---- thorax: near-black shell, one accent spark on the back ------------
+    r = rects(parts["body"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "thorax:" + f, E_BODY_PAL, namespace=NS)
+    noise_rect(d, r["top"], "thorax:top", E_BACK_PAL, namespace=NS)
+    noise_rect(d, r["bottom"], "thorax:bottom", E_BELLY_PAL, namespace=NS)
+    hband(d, r["top"], 0, E_BAND)               # seam against the gaster (back)
+    hband(d, r["top"], 3, E_BAND)               # seam against the head (front)
+    for f in ("west", "east"):
+        vband(d, r[f], 0, E_CHITIN_DARK)        # front-edge shadow
+        vband(d, r[f], 3, E_BAND)               # rear-edge shadow
+    px(d, r["top"], 1, 1, E_ACCENT_DEEP)
+    px(d, r["top"], 2, 2, E_ACCENT)
+
+    # ---- gaster: banded, with the accent riding the segment rims -----------
+    petiole, gaster = parts["gaster"]["cubes"]
+    r = rects(petiole)
+    for f in ("west", "north", "east", "south", "top"):
+        fill(d, r[f], E_CHITIN_DARKEST)
+    fill(d, r["bottom"], E_BELLY_DARK)
+    for f in ("west", "east"):
+        hband(d, r[f], 0, E_ACCENT_DEEP)        # lit upper edge of the waist
+
+    r = rects(gaster)
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "gaster:" + f, E_BODY_PAL, namespace=NS)
+    noise_rect(d, r["top"], "gaster:top", E_BACK_PAL, namespace=NS)
+    noise_rect(d, r["bottom"], "gaster:bottom", E_BELLY_PAL, namespace=NS)
+    # segment banding: on the side faces rect-x runs front -> back
+    for f in ("west", "east"):
+        vband(d, r[f], 0, E_CHITIN_DARKEST)     # seam against the petiole
+        for bx in (2, 4):
+            vband(d, r[f], bx, E_BAND)
+        px(d, r[f], 3, 1, E_ACCENT)             # one spark per segment gap
+        px(d, r[f], 5, 2, E_ACCENT_DEEP)
+        hband(d, r[f], 0, E_CHITIN_DARKEST)     # dark upper rim
+    # on the world-top face rect-y runs back -> front
+    for by in (0, 2, 4):
+        hband(d, r["top"], by, E_BAND)
+    px(d, r["top"], 2, 3, E_ACCENT)
+    px(d, r["top"], 3, 1, E_ACCENT_DEEP)
+    hband(d, r["north"], 0, E_CHITIN_DARKEST)   # shaded where it meets the waist
+    fill(d, (r["south"][0], r["south"][1], r["south"][2], r["south"][1] + 1), E_CHITIN_DARKEST)
+    px(d, r["south"], 2, 2, E_ACCENT)           # tail tip glows
+
+    # ---- head: big accent eyes, accent mouth line -------------------------
+    skull, mandible = parts["head"]["cubes"][0], parts["head"]["cubes"][1]
+    r = rects(skull)
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "skull:" + f, E_BODY_PAL, namespace=NS)
+    noise_rect(d, r["top"], "skull:top", E_BACK_PAL, namespace=NS)
+    noise_rect(d, r["bottom"], "skull:bottom", E_BELLY_PAL, namespace=NS)
+    n = r["north"]                              # 5 wide x 4 tall front face
+    hband(d, n, 0, E_CHITIN_DARKEST)            # brow ridge
+    for ex in (0, 4):                           # two-texel eyes, not the worker's one
+        px(d, n, ex, 1, E_EYE)
+        px(d, n, ex, 2, E_EYE_DARK)
+    px(d, n, 1, 1, E_ACCENT_DEEP)               # inner corner of each eye
+    px(d, n, 3, 1, E_ACCENT_DEEP)
+    px(d, n, 2, 0, E_CHITIN_MID)                # frontal ocellus notch
+    d.rectangle([n[0] + 1, n[1] + 3, n[0] + 3, n[1] + 3], fill=E_ACCENT_DEEP)  # mouth line
+    # the compound eyes wrap onto the sides of the head
+    for f in ("west", "east"):
+        px(d, r[f], 0, 1, E_EYE)
+        px(d, r[f], 0, 2, E_EYE_DARK)
+    hband(d, r["top"], 3, E_CHITIN_DARKEST)     # shadow under the brow
+    px(d, r["top"], 2, 1, E_ACCENT_DEEP)
+
+    r = rects(mandible)
+    for f in ("west", "north", "east", "south", "top"):
+        fill(d, r[f], E_JAW)
+    fill(d, r["bottom"], E_JAW_DARK)
+    fill(d, r["north"], E_ACCENT_DEEP)          # the -Z face is the biting tip
+    for f in ("west", "east"):
+        vband(d, r[f], 0, E_JAW_DARK)           # darkened toward the tip
+    px(d, r["top"], 0, 1, E_JAW_DARK)
+
+    # ---- antennae: black shaft, accent tip (min-Y end is the tip) ---------
+    r = rects(parts["antenna_r"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "antenna:" + f, E_LIMB_PAL, cell=1, namespace=NS)
+        hband(d, r[f], 0, E_ANTENNA_TIP)
+        hband(d, r[f], 2, E_CHITIN_DARKEST)     # base joint
+    fill(d, r["top"], E_ANTENNA_TIP)
+    fill(d, r["bottom"], E_CHITIN_DARKEST)
+
+    # ---- legs: 4 long, so one more banded row than the worker's ----------
+    r = rects(parts["leg_r1"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "leg:" + f, E_LIMB_PAL, cell=1, namespace=NS)
+        hband(d, r[f], 1, E_ACCENT_DEEP)        # knee joint carries the accent
+        hband(d, r[f], 3, E_CHITIN_DARKEST)     # tarsus / foot
+    fill(d, r["top"], E_CHITIN_DARK)
+    fill(d, r["bottom"], E_CHITIN_DARKEST)
 
     return img
 
@@ -1078,6 +1300,7 @@ MODELS = [
     (TAMED_SOLDIER_ANT, paint_tamed_soldier_ant),
     (LARVA, paint_larva),
     (QUEEN_ANT, paint_queen_ant),
+    (ENDER_ANT, paint_ender_ant),
 ]
 
 
