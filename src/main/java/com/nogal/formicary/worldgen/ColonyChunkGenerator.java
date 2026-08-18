@@ -9,6 +9,9 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_WORKE
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FLOOR_TOP;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FUNGAL_BLOOM_CHANCE_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FUNGAL_CARPET_CHANCE_BY_TIER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_FUNGAL_BLOOM_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_FUNGAL_CARPET_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_SPORE_CROP_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MIN_Y;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_BROOD_COMB_CHANCE;
@@ -48,6 +51,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.nogal.formicary.Formicary;
+import com.nogal.formicary.block.FungalSporeCropBlock;
 import com.nogal.formicary.block.ModBlocks;
 import com.nogal.formicary.entity.LarvaEntity;
 import com.nogal.formicary.entity.ModEntities;
@@ -192,6 +196,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         ColonyNoise.Shaft[] chunkShafts = noise.shaftsNear(minX, minZ);
         ColonyNoise.Throne[] chunkThrones = noise.thronesNear(minX, minZ);
         ColonyNoise.Nursery[] chunkNurseries = noise.nurseriesNear(minX, minZ);
+        ColonyNoise.Garden[] chunkGardens = noise.gardensNear(minX, minZ);
         Heightmap oceanFloor = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.OCEAN_FLOOR_WG);
         Heightmap worldSurface = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.WORLD_SURFACE_WG);
 
@@ -209,10 +214,11 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                     ColonyNoise.Shaft[] columnShafts = noise.shaftsForColumn(chunkShafts, x, z);
                     ColonyNoise.Throne[] columnThrones = noise.thronesForColumn(chunkThrones, x, z);
                     ColonyNoise.Nursery[] columnNurseries = noise.nurseriesForColumn(chunkNurseries, x, z);
+                    ColonyNoise.Garden[] columnGardens = noise.gardensForColumn(chunkGardens, x, z);
                     int sectionIndex = -1;
                     LevelChunkSection section = null;
                     for (int y = top - 1; y >= bottom; y--) {
-                        if (noise.isAir(columnShafts, columnThrones, columnNurseries, x, y, z)) {
+                        if (noise.isAir(columnShafts, columnThrones, columnNurseries, columnGardens, x, y, z)) {
                             continue;
                         }
                         int index = chunk.getSectionIndex(y);
@@ -221,7 +227,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                             section = chunk.getSection(index);
                         }
                         BlockState state;
-                        if (noise.isDaylightMembrane(columnShafts, columnThrones, columnNurseries, x, y, z)) {
+                        if (noise.isDaylightMembrane(columnShafts, columnThrones, columnNurseries, columnGardens, x, y, z)) {
                             state = this.membraneState;
                         } else if (noise.isThroneDais(columnThrones, x, y, z)) {
                             // The queen's plinth: resin, so the dais reads as built rather
@@ -275,6 +281,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         byte[] airRun = airRunLengths(noise, chunk, minX, minZ, bottom, top);
         ColonyNoise.Throne[] chunkThrones = noise.thronesNear(minX, minZ);
         ColonyNoise.Nursery[] chunkNurseries = noise.nurseriesNear(minX, minZ);
+        ColonyNoise.Garden[] chunkGardens = noise.gardensNear(minX, minZ);
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 
         for (int localX = 0; localX < 16; localX++) {
@@ -283,15 +290,18 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                 int z = minZ + localZ;
                 ColonyNoise.Throne[] columnThrones = noise.thronesForColumn(chunkThrones, x, z);
                 ColonyNoise.Nursery[] columnNurseries = noise.nurseriesForColumn(chunkNurseries, x, z);
+                ColonyNoise.Garden[] columnGardens = noise.gardensForColumn(chunkGardens, x, z);
                 for (int y = bottom; y < top; y++) {
                     int tier = tierIndex(y);
                     boolean throne = columnThrones.length > 0 && noise.isInThroneRoom(columnThrones, x, y, z);
                     boolean nursery = !throne && columnNurseries.length > 0
                             && noise.isInNurseryRoom(columnNurseries, x, y, z);
+                    boolean garden = !throne && !nursery && columnGardens.length > 0
+                            && noise.isInGardenRoom(columnGardens, x, y, z);
                     boolean here = run(airRun, localX + 1, localZ + 1, y, bottom, top) > 0;
                     if (here) {
                         decorateFloorSpace(chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z, tier,
-                                throne, nursery, bottom, top);
+                                throne, nursery, garden, bottom, top);
                     } else {
                         decorateSurface(noise, chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z, tier,
                                 throne, nursery, bottom, top);
@@ -333,8 +343,9 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                     ColonyNoise.Throne[] thrones = noise.thronesForColumn(noise.thronesNear(chunkX, chunkZ), x, z);
                     ColonyNoise.Nursery[] nurseries =
                             noise.nurseriesForColumn(noise.nurseriesNear(chunkX, chunkZ), x, z);
+                    ColonyNoise.Garden[] gardens = noise.gardensForColumn(noise.gardensNear(chunkX, chunkZ), x, z);
                     for (int y = bottom; y < top; y++) {
-                        column[y - bottom] = noise.isAir(shafts, thrones, nurseries, x, y, z);
+                        column[y - bottom] = noise.isAir(shafts, thrones, nurseries, gardens, x, y, z);
                     }
                 }
 
@@ -378,7 +389,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
      */
     private void decorateFloorSpace(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
             PositionalRandomFactory randomFactory, byte[] airRun, int localX, int localZ,
-            int x, int y, int z, int tier, boolean throne, boolean nursery, int bottom, int top) {
+            int x, int y, int z, int tier, boolean throne, boolean nursery, boolean garden, int bottom, int top) {
         boolean solidBelow = run(airRun, localX + 1, localZ + 1, y - 1, bottom, top) == 0;
         if (!solidBelow || run(airRun, localX + 1, localZ + 1, y + 1, bottom, top) == 0) {
             return;
@@ -403,12 +414,52 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             }
             return;
         }
+        if (garden) {
+            // Same reasoning as the nursery branch above for not gating on `roomy`.
+            decorateGardenFloor(chunk, cursor, roll, x, y, z);
+            return;
+        }
         double cumulative = FUNGAL_BLOOM_CHANCE_BY_TIER[tier];
         if (roll < cumulative) {
             chunk.setBlockState(cursor.set(x, y, z), ModBlocks.FUNGAL_BLOOM.get().defaultBlockState(), false);
             return;
         }
         cumulative += FUNGAL_CARPET_CHANCE_BY_TIER[tier];
+        if (roll < cumulative) {
+            chunk.setBlockState(cursor.set(x, y, z), ModBlocks.FUNGAL_CARPET.get().defaultBlockState(), false);
+        }
+    }
+
+    /**
+     * A Fungus Garden chamber's floor (D2): three mutually exclusive overlays, rarer
+     * checked first -- the same convention {@link #decorateSurface} uses (royal comb
+     * before brood comb, resin weep before resin block).
+     *
+     * <p>The crop is planted at {@link FungalSporeCropBlock#MAX_AGE} unconditionally.
+     * {@code FungalSporeCropBlock.LIGHT_BY_AGE} is {@code {2, 4, 5, 7, 8}} -- only the
+     * mature stage (age 4) reaches the crop's own {@code CropBlock#canSurvive} bar
+     * ({@code hasSufficientLight}, {@code getRawBrightness(pos, 0) >= 8}, verified in
+     * {@code reference/}), and this dimension has no skylight to make up the difference
+     * at any lower age. Planted at any other age it would fail its own survival check the
+     * moment anything re-evaluates it -- the banked skyAccess trap in another coat. At
+     * max age {@code CropBlock#isRandomlyTicking} is false, so it never re-rolls growth
+     * and only ever needs to keep clearing that one bar with its own self-emitted light.
+     */
+    private void decorateGardenFloor(ChunkAccess chunk, BlockPos.MutableBlockPos cursor, double roll,
+            int x, int y, int z) {
+        double cumulative = GARDEN_SPORE_CROP_CHANCE;
+        if (roll < cumulative) {
+            BlockState matureCrop = ModBlocks.FUNGAL_SPORE_CROP.get().defaultBlockState()
+                    .setValue(FungalSporeCropBlock.AGE, FungalSporeCropBlock.MAX_AGE);
+            chunk.setBlockState(cursor.set(x, y, z), matureCrop, false);
+            return;
+        }
+        cumulative += GARDEN_FUNGAL_BLOOM_CHANCE;
+        if (roll < cumulative) {
+            chunk.setBlockState(cursor.set(x, y, z), ModBlocks.FUNGAL_BLOOM.get().defaultBlockState(), false);
+            return;
+        }
+        cumulative += GARDEN_FUNGAL_CARPET_CHANCE;
         if (roll < cumulative) {
             chunk.setBlockState(cursor.set(x, y, z), ModBlocks.FUNGAL_CARPET.get().defaultBlockState(), false);
         }
@@ -832,13 +883,14 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         ColonyNoise.Shaft[] shafts = noise.shaftsForColumn(noise.shaftsNear(chunkX, chunkZ), x, z);
         ColonyNoise.Throne[] thrones = noise.thronesForColumn(noise.thronesNear(chunkX, chunkZ), x, z);
         ColonyNoise.Nursery[] nurseries = noise.nurseriesForColumn(noise.nurseriesNear(chunkX, chunkZ), x, z);
+        ColonyNoise.Garden[] gardens = noise.gardensForColumn(noise.gardensNear(chunkX, chunkZ), x, z);
         int bottom = height.getMinBuildHeight();
         BlockState[] column = new BlockState[height.getHeight()];
         for (int i = 0; i < column.length; i++) {
             int y = bottom + i;
-            if (noise.isAir(shafts, thrones, nurseries, x, y, z)) {
+            if (noise.isAir(shafts, thrones, nurseries, gardens, x, y, z)) {
                 column[i] = AIR;
-            } else if (noise.isDaylightMembrane(shafts, thrones, nurseries, x, y, z)) {
+            } else if (noise.isDaylightMembrane(shafts, thrones, nurseries, gardens, x, y, z)) {
                 column[i] = this.membraneState;
             } else if (noise.isThroneDais(thrones, x, y, z)) {
                 column[i] = this.daisState;

@@ -13,6 +13,18 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SMALL
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SMALL_XZ_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SMALL_Y_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FLOOR_TOP;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_APPROACH_DISTANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_CORRIDOR_END;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_CORRIDOR_HALF_WIDTH;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_CORRIDOR_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_CORRIDOR_START;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_DOME_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_FLOOR_MIN_Y;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_MAX_REACH;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_SHELL_THICKNESS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_SPACING;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_WALL_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.HARDENED_ACCENT_THRESHOLD_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_RADIUS;
@@ -553,6 +565,103 @@ public final class ColonyNoise {
     }
 
     // ------------------------------------------------------------------
+    // Fungus Garden chambers (Ep2 D2) -- cloned end to end from the Nursery section
+    // above; see ColonyGeneratorTunables' garden section for the constant derivation.
+    // ------------------------------------------------------------------
+
+    /**
+     * One farm chamber: a small domed room in the Fungal Gardens tier, built exactly like
+     * {@link Nursery} -- centred at ({@code centreX}, {@code centreZ}) with its floor at
+     * {@code floorY}, joined to the connectivity ramp at ({@code axisX}, {@code axisZ}) by a
+     * straight corridor along the unit vector ({@code dirX}, {@code dirZ}).
+     */
+    public record Garden(double centreX, double centreZ, double axisX, double axisZ,
+            double dirX, double dirZ, int floorY) {
+    }
+
+    /** {@link #gardenState} verdicts. */
+    public static final int GARDEN_NONE = 0;
+    public static final int GARDEN_AIR = 1;
+    public static final int GARDEN_SOLID = -1;
+
+    public static final Garden[] NO_GARDENS = new Garden[0];
+
+    /**
+     * The chamber belonging to one {@link ColonyGeneratorTunables#GARDEN_SPACING} cell.
+     *
+     * <p>Structurally identical to {@link #nurseryForCell}: the ramp whose own cell
+     * contains this cell's centre is resolved first, and the room then hangs off that ramp
+     * at a seed-chosen bearing with its floor set to the ramp's own walkway height there.
+     *
+     * <p>The floor is the first ramp turn at or above
+     * {@link ColonyGeneratorTunables#GARDEN_FLOOR_MIN_Y}, which puts it in
+     * {@code [102, 126)} -- the room and its shell therefore stay inside the Fungal
+     * Gardens band, and can never collide with a throne or nursery chamber (whose floors
+     * live in the disjoint bands {@code [8, 33)} and {@code [54, 78)}).
+     */
+    private Garden gardenForCell(int cellX, int cellZ) {
+        // y = 3: a fourth independent stream, so this never draws the same numbers as
+        // shaftForCell (y = 0), throneForCell (y = 1) or nurseryForCell (y = 2).
+        RandomSource random = this.factory.at(cellX, 3, cellZ);
+        int centreX = cellX * GARDEN_SPACING + GARDEN_SPACING / 2;
+        int centreZ = cellZ * GARDEN_SPACING + GARDEN_SPACING / 2;
+        Shaft shaft = shaftForCell(Math.floorDiv(centreX, SHAFT_SPACING), Math.floorDiv(centreZ, SHAFT_SPACING));
+
+        double approach = random.nextDouble() * TWO_PI;
+        double dirX = Math.cos(approach);
+        double dirZ = Math.sin(approach);
+
+        double bearing = approach - shaft.phase();
+        bearing -= Math.floor(bearing / TWO_PI) * TWO_PI;
+        double base = MIN_Y + bearing / RAMP_RADIANS_PER_BLOCK;
+        int turn = (int) Math.ceil((GARDEN_FLOOR_MIN_Y - base) / RAMP_PERIOD);
+        int floorY = (int) Math.floor(base + turn * RAMP_PERIOD);
+
+        return new Garden(shaft.axisX() + GARDEN_APPROACH_DISTANCE * dirX,
+                shaft.axisZ() + GARDEN_APPROACH_DISTANCE * dirZ,
+                shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY);
+    }
+
+    /**
+     * Every garden chamber that can possibly reach into the 16x16 area rooted at
+     * ({@code blockMinX}, {@code blockMinZ}). Same 3x3 justification as
+     * {@link #nurseriesNear}: GARDEN_SPACING matches NURSERY_SPACING exactly and
+     * GARDEN_MAX_REACH is close to the nursery's own value, so the margin argument
+     * carries over unchanged.
+     */
+    public Garden[] gardensNear(int blockMinX, int blockMinZ) {
+        int cellX = Math.floorDiv(blockMinX, GARDEN_SPACING);
+        int cellZ = Math.floorDiv(blockMinZ, GARDEN_SPACING);
+        Garden[] out = new Garden[9];
+        int i = 0;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                out[i++] = gardenForCell(cellX + dx, cellZ + dz);
+            }
+        }
+        return out;
+    }
+
+    /** Chambers from {@code candidates} whose carve can reach the column at (x, z). */
+    public Garden[] gardensForColumn(Garden[] candidates, int x, int z) {
+        int count = 0;
+        Garden[] scratch = new Garden[candidates.length];
+        for (Garden garden : candidates) {
+            double dx = x - garden.centreX();
+            double dz = z - garden.centreZ();
+            if (dx * dx + dz * dz <= GARDEN_MAX_REACH * GARDEN_MAX_REACH) {
+                scratch[count++] = garden;
+            }
+        }
+        if (count == 0) {
+            return NO_GARDENS;
+        }
+        Garden[] out = new Garden[count];
+        System.arraycopy(scratch, 0, out, 0, count);
+        return out;
+    }
+
+    // ------------------------------------------------------------------
     // Nearest-chamber queries -- the seam the dev tooling reads
     // (/formicary dev locate|tp|state). Deliberately here rather than duplicated in the
     // command class: the cell arithmetic is the generator's, and a second copy of it would
@@ -602,6 +711,25 @@ public final class ColonyNoise {
         for (int dx = -NEAREST_QUERY_CELL_RADIUS; dx <= NEAREST_QUERY_CELL_RADIUS; dx++) {
             for (int dz = -NEAREST_QUERY_CELL_RADIUS; dz <= NEAREST_QUERY_CELL_RADIUS; dz++) {
                 Nursery candidate = nurseryForCell(cellX + dx, cellZ + dz);
+                double distanceSq = distanceSq(x, z, candidate.centreX(), candidate.centreZ());
+                if (distanceSq < bestDistanceSq) {
+                    bestDistanceSq = distanceSq;
+                    best = candidate;
+                }
+            }
+        }
+        return best;
+    }
+
+    /** The garden chamber whose centre is horizontally nearest (x, z). */
+    public Garden nearestGarden(int x, int z) {
+        int cellX = Math.floorDiv(x, GARDEN_SPACING);
+        int cellZ = Math.floorDiv(z, GARDEN_SPACING);
+        Garden best = gardenForCell(cellX, cellZ);
+        double bestDistanceSq = distanceSq(x, z, best.centreX(), best.centreZ());
+        for (int dx = -NEAREST_QUERY_CELL_RADIUS; dx <= NEAREST_QUERY_CELL_RADIUS; dx++) {
+            for (int dz = -NEAREST_QUERY_CELL_RADIUS; dz <= NEAREST_QUERY_CELL_RADIUS; dz++) {
+                Garden candidate = gardenForCell(cellX + dx, cellZ + dz);
                 double distanceSq = distanceSq(x, z, candidate.centreX(), candidate.centreZ());
                 if (distanceSq < bestDistanceSq) {
                     bestDistanceSq = distanceSq;
@@ -687,6 +815,73 @@ public final class ColonyNoise {
         return false;
     }
 
+    /**
+     * What a garden chamber says about (x, y, z): the hollow interior, the approach
+     * corridor and its walkway, the shell, or nothing. Same precedence as
+     * {@link #nurseryState}: the corridor's own floor is forced solid -- a 24-block
+     * approach through the Fungal Gardens tier (the second-airiest band after the
+     * Nurseries) cannot be trusted to leave a floor under it any more than the nursery's
+     * own approach could.
+     */
+    public int gardenState(Garden[] gardens, int x, int y, int z) {
+        for (Garden garden : gardens) {
+            double dx = x - garden.centreX();
+            double dz = z - garden.centreZ();
+            double distance = Math.sqrt(dx * dx + dz * dz);
+            int height = y - garden.floorY();
+
+            if (height >= 0 && height <= GARDEN_CORRIDOR_HEIGHT && isInGardenCorridor(garden, x, z)) {
+                return height == 0 ? GARDEN_SOLID : GARDEN_AIR;
+            }
+            if (isInsideGarden(distance, height, 0.0)) {
+                return GARDEN_AIR;
+            }
+            if (isInsideGarden(distance, height, GARDEN_SHELL_THICKNESS)) {
+                return GARDEN_SOLID;
+            }
+        }
+        return GARDEN_NONE;
+    }
+
+    /** The room's shape, exactly as {@link #isInsideNursery} but with the garden's numbers. */
+    private static boolean isInsideGarden(double distance, double height, double grow) {
+        double radius = GARDEN_RADIUS + grow;
+        double dome = GARDEN_DOME_HEIGHT + grow;
+        if (height < 1.0 - grow || height > GARDEN_WALL_HEIGHT + dome) {
+            return false;
+        }
+        if (height <= GARDEN_WALL_HEIGHT) {
+            return distance <= radius;
+        }
+        double t = (height - GARDEN_WALL_HEIGHT) / dome;
+        return distance <= radius * Math.sqrt(Math.max(0.0, 1.0 - t * t));
+    }
+
+    /** Whether (x, z) is inside the corridor's footprint, measured along the axis ray. */
+    private static boolean isInGardenCorridor(Garden garden, int x, int z) {
+        double px = x - garden.axisX();
+        double pz = z - garden.axisZ();
+        double along = px * garden.dirX() + pz * garden.dirZ();
+        if (along < GARDEN_CORRIDOR_START || along > GARDEN_CORRIDOR_END) {
+            return false;
+        }
+        return Math.abs(px * garden.dirZ() - pz * garden.dirX()) <= GARDEN_CORRIDOR_HALF_WIDTH;
+    }
+
+    /** Whether (x, y, z) is inside a garden chamber's hollow (used to pick decoration). */
+    public boolean isInGardenRoom(Garden[] gardens, int x, int y, int z) {
+        for (Garden garden : gardens) {
+            double dx = x - garden.centreX();
+            double dz = z - garden.centreZ();
+            double distance = Math.sqrt(dx * dx + dz * dz);
+            double height = y - garden.floorY();
+            if (isInsideGarden(distance, height, GARDEN_SHELL_THICKNESS)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ------------------------------------------------------------------
     // Noise carve
     // ------------------------------------------------------------------
@@ -726,16 +921,16 @@ public final class ColonyNoise {
      * walkway wherever a big room crosses it and the descent becomes a one-way drop, which
      * is a soft-lock: mining the fabric is gated behind a full set of Chitin Armor.
      *
-     * <p>The throne chamber (M7) and the nursery chambers sit <em>below</em> the spine in
-     * that order, deliberately: they may carve through the noise and force their own shells
-     * solid, but never override a ramp floor or a ramp walkway. That keeps M4a's walkability
-     * guarantee exactly as it was -- the rooms hang off the spine, they do not cut into it.
-     * The two chamber kinds cannot interact: their floors live in disjoint Y bands
-     * ({@code [8, 33)} against {@code [52, 76)}), so their order relative to each other is
-     * arbitrary.
+     * <p>The throne chamber (M7), the nursery chambers, and (Ep2 D2) the garden chambers
+     * sit <em>below</em> the spine in that order, deliberately: they may carve through the
+     * noise and force their own shells solid, but never override a ramp floor or a ramp
+     * walkway. That keeps M4a's walkability guarantee exactly as it was -- the rooms hang
+     * off the spine, they do not cut into it. The three chamber kinds cannot interact:
+     * their floors live in disjoint Y bands ({@code [8, 33)}, {@code [52, 76)},
+     * {@code [102, 126)}), so their order relative to each other is arbitrary.
      */
     public boolean isAir(Shaft[] columnShafts, Throne[] columnThrones, Nursery[] columnNurseries,
-            int x, int y, int z) {
+            Garden[] columnGardens, int x, int y, int z) {
         if (y < FLOOR_TOP || y >= CEILING_BOTTOM) {
             return false;
         }
@@ -763,6 +958,15 @@ public final class ColonyNoise {
                 return true;
             }
             if (state != NURSERY_NONE) {
+                return false;
+            }
+        }
+        if (columnGardens.length > 0) {
+            int state = gardenState(columnGardens, x, y, z);
+            if (state == GARDEN_AIR) {
+                return true;
+            }
+            if (state != GARDEN_NONE) {
                 return false;
             }
         }
@@ -802,11 +1006,11 @@ public final class ColonyNoise {
      * looking at the other's output.
      */
     public boolean isDaylightMembrane(Shaft[] columnShafts, Throne[] columnThrones,
-            Nursery[] columnNurseries, int x, int y, int z) {
+            Nursery[] columnNurseries, Garden[] columnGardens, int x, int y, int z) {
         if (y < CEILING_BOTTOM || y >= CEILING_BOTTOM + MEMBRANE_THICKNESS) {
             return false;
         }
-        return isAir(columnShafts, columnThrones, columnNurseries, x, CEILING_BOTTOM - 1, z);
+        return isAir(columnShafts, columnThrones, columnNurseries, columnGardens, x, CEILING_BOTTOM - 1, z);
     }
 
     // ------------------------------------------------------------------

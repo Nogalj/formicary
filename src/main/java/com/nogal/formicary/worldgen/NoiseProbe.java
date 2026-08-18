@@ -55,6 +55,7 @@ public final class NoiseProbe {
             connectivity(noise);
             thrones(noise);
             nurseries(noise);
+            gardens(noise);
             combPatches(noise);
             spawnDensity(noise);
         }
@@ -66,6 +67,9 @@ public final class NoiseProbe {
         }
         if (what.equals("nursery")) {
             nurseries(noise);
+        }
+        if (what.equals("garden")) {
+            gardens(noise);
         }
         if (what.equals("comb")) {
             combPatches(noise);
@@ -146,7 +150,7 @@ public final class NoiseProbe {
                 boolean exposed = air(noise, col, x, CEILING_BOTTOM - 1, z);
                 boolean stacked = true;
                 for (int layer = 0; layer < MEMBRANE_THICKNESS; layer++) {
-                    stacked &= noise.isDaylightMembrane(col.shafts(), col.thrones(), col.nurseries(),
+                    stacked &= noise.isDaylightMembrane(col.shafts(), col.thrones(), col.nurseries(), col.gardens(),
                             x, CEILING_BOTTOM + layer, z);
                 }
                 if (exposed) {
@@ -566,9 +570,9 @@ public final class NoiseProbe {
     // Play-test round 1 sections
     // ------------------------------------------------------------------
 
-    /** The three per-column feature arrays {@link ColonyNoise#isAir} needs, resolved once. */
+    /** The four per-column feature arrays {@link ColonyNoise#isAir} needs, resolved once. */
     private record Col(ColonyNoise.Shaft[] shafts, ColonyNoise.Throne[] thrones,
-            ColonyNoise.Nursery[] nurseries) {
+            ColonyNoise.Nursery[] nurseries, ColonyNoise.Garden[] gardens) {
     }
 
     private static Col col(ColonyNoise noise, int x, int z) {
@@ -576,11 +580,12 @@ public final class NoiseProbe {
         int chunkZ = z - Math.floorMod(z, 16);
         return new Col(noise.shaftsForColumn(noise.shaftsNear(chunkX, chunkZ), x, z),
                 noise.thronesForColumn(noise.thronesNear(chunkX, chunkZ), x, z),
-                noise.nurseriesForColumn(noise.nurseriesNear(chunkX, chunkZ), x, z));
+                noise.nurseriesForColumn(noise.nurseriesNear(chunkX, chunkZ), x, z),
+                noise.gardensForColumn(noise.gardensNear(chunkX, chunkZ), x, z));
     }
 
     private static boolean air(ColonyNoise noise, Col col, int x, int y, int z) {
-        return noise.isAir(col.shafts(), col.thrones(), col.nurseries(), x, y, z);
+        return noise.isAir(col.shafts(), col.thrones(), col.nurseries(), col.gardens(), x, y, z);
     }
 
     /**
@@ -654,6 +659,122 @@ public final class NoiseProbe {
                     nursery.floorY() + ColonyGeneratorTunables.NURSERY_WALL_HEIGHT
                             + ColonyGeneratorTunables.NURSERY_DOME_HEIGHT,
                     "the brood floor")) {
+                reached++;
+            }
+        }
+        System.out.printf(Locale.ROOT, "  %d of %d chambers around the origin are walkable from their ramp%n",
+                reached, near.length);
+    }
+
+    /**
+     * Fungus Garden chambers (D2): how many, where, does one join the ramp on foot, and
+     * how close can two neighbouring chambers get?
+     *
+     * <p>The overlap check is the geometric counterpart of the algebra
+     * {@code ColonyGeneratorTunables}' garden section derives (matching the nursery's own
+     * "worst case, not average case" argument): every pair of chambers in adjacent cells,
+     * over a wide sweep, is checked against the 32-block minimum separation the section
+     * concludes is achievable -- {@code WorldgenGameTests#nursery_chambers_never_overlap}
+     * holds nursery chambers to the same standard, a single counterexample anywhere is a
+     * bug, not a statistic.
+     */
+    private static void gardens(ColonyNoise noise) {
+        System.out.printf(Locale.ROOT,
+                "%nfungus garden chambers (one per %d-block cell, radius %.0f, interior %d tall):%n",
+                ColonyGeneratorTunables.GARDEN_SPACING, ColonyGeneratorTunables.GARDEN_RADIUS,
+                ColonyGeneratorTunables.GARDEN_WALL_HEIGHT + ColonyGeneratorTunables.GARDEN_DOME_HEIGHT);
+
+        double perNursery = Math.pow((double) ColonyGeneratorTunables.NURSERY_SPACING
+                / ColonyGeneratorTunables.GARDEN_SPACING, 2.0);
+        System.out.printf(Locale.ROOT, "  density: %.2f per 1000x1000 blocks, i.e. %.1fx the nursery chambers%n",
+                1.0e6 / Math.pow(ColonyGeneratorTunables.GARDEN_SPACING, 2.0), perNursery);
+
+        // Band containment, exactly like nurseries()'s own sweep.
+        int cells = 8;
+        int inBand = 0;
+        int total = 0;
+        int minFloor = Integer.MAX_VALUE;
+        int maxTop = Integer.MIN_VALUE;
+        int shell = (int) Math.ceil(ColonyGeneratorTunables.GARDEN_SHELL_THICKNESS);
+        for (int cx = -cells; cx <= cells; cx++) {
+            for (int cz = -cells; cz <= cells; cz++) {
+                ColonyNoise.Garden[] near = noise.gardensNear(cx * ColonyGeneratorTunables.GARDEN_SPACING,
+                        cz * ColonyGeneratorTunables.GARDEN_SPACING);
+                ColonyNoise.Garden garden = near[4];
+                int top = garden.floorY() + ColonyGeneratorTunables.GARDEN_WALL_HEIGHT
+                        + ColonyGeneratorTunables.GARDEN_DOME_HEIGHT + shell;
+                total++;
+                minFloor = Math.min(minFloor, garden.floorY());
+                maxTop = Math.max(maxTop, top);
+                if (garden.floorY() - shell >= tierMinY(2) && top < tierMaxY(2)) {
+                    inBand++;
+                }
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "  %d chambers sampled: floor y in [%d, %d], highest shell top y=%d; %d of %d wholly inside "
+                        + "the Fungal Gardens band y[%d,%d)%n",
+                total, minFloor, maxTop - ColonyGeneratorTunables.GARDEN_WALL_HEIGHT
+                        - ColonyGeneratorTunables.GARDEN_DOME_HEIGHT - shell,
+                maxTop, inBand, total, tierMinY(2), tierMaxY(2));
+        System.out.println(inBand == total
+                ? "  PASS: every sampled chamber sits wholly inside the Fungal Gardens tier."
+                : "  FAIL: a chamber crosses a tier boundary.");
+
+        // Overlap: every neighbouring pair against the 32-block minimum required separation.
+        double requiredSeparation = 32.0;
+        double minSeparation = Double.MAX_VALUE;
+        int pairs = 0;
+        int violations = 0;
+        for (int cx = -cells; cx < cells; cx++) {
+            for (int cz = -cells; cz < cells; cz++) {
+                ColonyNoise.Garden here = noise.gardensNear(cx * ColonyGeneratorTunables.GARDEN_SPACING,
+                        cz * ColonyGeneratorTunables.GARDEN_SPACING)[4];
+                for (int dx = 0; dx <= 1; dx++) {
+                    for (int dz = 0; dz <= 1; dz++) {
+                        if (dx == 0 && dz == 0) {
+                            continue;
+                        }
+                        ColonyNoise.Garden other = noise.gardensNear(
+                                (cx + dx) * ColonyGeneratorTunables.GARDEN_SPACING,
+                                (cz + dz) * ColonyGeneratorTunables.GARDEN_SPACING)[4];
+                        double distance =
+                                Math.hypot(here.centreX() - other.centreX(), here.centreZ() - other.centreZ());
+                        minSeparation = Math.min(minSeparation, distance);
+                        pairs++;
+                        if (distance < requiredSeparation) {
+                            violations++;
+                        }
+                    }
+                }
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "  neighbouring-cell separation over %d pairs: minimum %.1f blocks (required >= %.0f)%n",
+                pairs, minSeparation, requiredSeparation);
+        System.out.println(violations == 0
+                ? "  PASS: every sampled pair of garden chambers clears the required separation."
+                : "  FAIL: " + violations + " pair(s) came in closer than " + requiredSeparation + " blocks.");
+
+        ColonyNoise.Garden[] near = noise.gardensNear(0, 0);
+        ColonyNoise.Garden closest = near[0];
+        for (ColonyNoise.Garden garden : near) {
+            double distance = Math.hypot(garden.centreX(), garden.centreZ());
+            System.out.printf(Locale.ROOT,
+                    "  centre (%7.1f, %7.1f)  floorY %3d  ramp axis (%7.1f, %7.1f)  %6.1f blocks from origin%n",
+                    garden.centreX(), garden.centreZ(), garden.floorY(), garden.axisX(), garden.axisZ(), distance);
+            if (distance < Math.hypot(closest.centreX(), closest.centreZ())) {
+                closest = garden;
+            }
+        }
+
+        int reached = 0;
+        for (ColonyNoise.Garden garden : near) {
+            if (chamberWalk(noise, "garden", garden.centreX(), garden.centreZ(), garden.axisX(),
+                    garden.axisZ(), garden.floorY(), garden.floorY() + 1, ColonyGeneratorTunables.GARDEN_RADIUS,
+                    garden.floorY() + ColonyGeneratorTunables.GARDEN_WALL_HEIGHT
+                            + ColonyGeneratorTunables.GARDEN_DOME_HEIGHT,
+                    "the garden floor")) {
                 reached++;
             }
         }

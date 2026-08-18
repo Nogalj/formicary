@@ -523,6 +523,98 @@ public final class ColonyGeneratorTunables {
     public static final int NURSERY_LARVAE_MAX = 4;
 
     // ------------------------------------------------------------------
+    // Fungus Garden chambers (Ep2 D2) -- the colony's farm rooms, cloned end to end from
+    // the nursery chamber above: a room hung off a connectivity ramp at a fixed offset,
+    // floor set to the exact Y that ramp's walkway reaches at the approach bearing. Tier
+    // band = Fungal Gardens (tier 2), one per 96-block cell like the nursery.
+    //
+    // Wall/dome/shell/corridor numbers are cloned VERBATIM from the nursery's own
+    // constants -- only what structurally depends on the bigger radius is recomputed:
+    //
+    //   GARDEN_APPROACH_DISTANCE must satisfy two constraints at once. The lower bound is
+    //   the same one NURSERY_APPROACH_DISTANCE's javadoc derives: it must exceed
+    //   {@code GARDEN_RADIUS + GARDEN_SHELL_THICKNESS + SHAFT_MAX_REACH} = 8 + 2 + 13.1 =
+    //   23.1, so the helicoid never intrudes into the room. The upper bound comes from
+    //   NURSERY_SPACING's own derivation re-run for GARDEN_SPACING = 96: a chamber's centre
+    //   lands within {@code SHAFT_SPACING/2 + SHAFT_JITTER/2 + APPROACH_DISTANCE} of its
+    //   cell centre, two neighbouring shaft axes are at least
+    //   {@code GARDEN_SPACING - SHAFT_JITTER} = 80 apart (same arithmetic the nursery
+    //   comment uses), and the worst case (both chambers' approach directions pointing at
+    //   each other) puts two neighbouring garden centres
+    //   {@code 80 - 2*APPROACH_DISTANCE} apart -- which has to clear the required 32-block
+    //   minimum (matching the nursery's own guarantee), i.e. {@code APPROACH_DISTANCE <=
+    //   24}. The two bounds (23.1, 24] leave almost no room: 24.0 is the only reasonable
+    //   value, and it happens to equal NURSERY_APPROACH_DISTANCE even though
+    //   GARDEN_RADIUS is bigger. {@link com.nogal.formicary.worldgen.NoiseProbe}'s garden
+    //   section measures the real minimum and asserts it, rather than trusting this algebra
+    //   alone -- the nursery section of this file makes the same "measure, do not guess"
+    //   argument about a rejected 48-block cell.
+    // ------------------------------------------------------------------
+
+    /** One garden chamber per this many blocks on each axis. */
+    public static final int GARDEN_SPACING = 96;
+
+    /** Interior radius: 8 gives a 16-block-wide room, against the nursery's 12. */
+    public static final double GARDEN_RADIUS = 8.0;
+
+    /** Cloned verbatim from {@link #NURSERY_WALL_HEIGHT}. */
+    public static final int GARDEN_WALL_HEIGHT = NURSERY_WALL_HEIGHT;
+
+    /** Cloned verbatim from {@link #NURSERY_DOME_HEIGHT}. Interior clearance is the sum: 7. */
+    public static final int GARDEN_DOME_HEIGHT = NURSERY_DOME_HEIGHT;
+
+    /** Cloned verbatim from {@link #NURSERY_SHELL_THICKNESS}. */
+    public static final double GARDEN_SHELL_THICKNESS = NURSERY_SHELL_THICKNESS;
+
+    /** See the section javadoc above for why 24.0 is the only value that satisfies both bounds. */
+    public static final double GARDEN_APPROACH_DISTANCE = 24.0;
+
+    /** Cloned verbatim from {@link #NURSERY_CORRIDOR_HALF_WIDTH}; 3-block-wide passage. */
+    public static final double GARDEN_CORRIDOR_HALF_WIDTH = NURSERY_CORRIDOR_HALF_WIDTH;
+
+    /** Cloned verbatim from {@link #NURSERY_CORRIDOR_HEIGHT}. */
+    public static final int GARDEN_CORRIDOR_HEIGHT = NURSERY_CORRIDOR_HEIGHT;
+
+    /** Cloned verbatim from {@link #NURSERY_CORRIDOR_START}. */
+    public static final double GARDEN_CORRIDOR_START = NURSERY_CORRIDOR_START;
+
+    /** Where it stops -- just inside the chamber's shell, which is already air. */
+    public static final double GARDEN_CORRIDOR_END = GARDEN_APPROACH_DISTANCE - GARDEN_RADIUS + 2.0;
+
+    /**
+     * Lowest floor the chamber will sit at -- tier 2 (Fungal Gardens) rather than the
+     * nursery's tier 1, same landing-clearance reasoning as {@link #NURSERY_FLOOR_MIN_Y}
+     * (see its javadoc): the {@code + LANDING_HEIGHT} keeps a corridor from opening onto
+     * the landing disc's drop where it overhangs the ramp's annulus at the tier boundary.
+     * The ramp turn chosen is the first one at or above this, and the ramp descends 24
+     * blocks per turn, so the floor lands in {@code [102, 126)} -- the interior
+     * ({@code floor + 7}) plus its shell stays inside the Fungal Gardens band
+     * ({@code y < 144}) with 8+ blocks to spare even at the top of that range.
+     */
+    public static final int GARDEN_FLOOR_MIN_Y = MIN_Y + 2 * TIER_HEIGHT + LANDING_HEIGHT;
+
+    /**
+     * Widest a chamber's carve can reach from its centre; used to prune the per-column
+     * search. As with the nursery it is the corridor, not the dome, that sets it.
+     */
+    public static final double GARDEN_MAX_REACH = Math.max(
+            GARDEN_RADIUS + GARDEN_SHELL_THICKNESS,
+            GARDEN_APPROACH_DISTANCE - GARDEN_CORRIDOR_START + GARDEN_CORRIDOR_HALF_WIDTH) + 1.0;
+
+    // --- floor decoration inside the chamber (ColonyChunkGenerator#decorateGardenFloor) ---
+    //
+    // Three mutually exclusive floor overlays, rarer checked first (the same convention
+    // decorateSurface uses: royal comb before brood comb, resin weep before resin block).
+    // The crop is planted at FungalSporeCropBlock.MAX_AGE unconditionally -- see
+    // ColonyChunkGenerator's javadoc on the planting call for why: LIGHT_BY_AGE only
+    // reaches the crop's own canSurvive bar (8) at that one age, and the dimension has no
+    // skylight to make up the difference at any other age.
+
+    public static final double GARDEN_SPORE_CROP_CHANCE = 0.12;
+    public static final double GARDEN_FUNGAL_BLOOM_CHANCE = 0.15;
+    public static final double GARDEN_FUNGAL_CARPET_CHANCE = 0.50;
+
+    // ------------------------------------------------------------------
     // Mob spawning at chunk generation (see ColonyChunkGenerator#spawnOriginalMobs)
     //
     // Play-test round 1: "the colony felt too empty". Two changes, one cause each.
