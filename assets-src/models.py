@@ -58,6 +58,14 @@ PREVIEW_DIR = Path(__file__).resolve().parent / "previews"
 # under `body`, but only leaf parts carry rotations, so absolute poses here
 # project identically). Rotations are applied Rz * Ry * Rx, matching
 # ModelPart.translateAndRotate -> Quaternionf.rotationZYX(zRot, yRot, xRot).
+#
+# One exception, and it is opt-in: a part may carry {"parent": <another part
+# dict>}, in which case its pose and rot are relative TO THAT PARENT, exactly
+# like a nested PartDefinition in Java. `cube_corners` walks the chain. Use it
+# only where the flat form cannot express the shape -- a chain of two or more
+# hinges, where "absolute" would mean hand-simulating the composition and the
+# Java model has to nest anyway so that animating a link carries its children
+# (the queen's antennae are the one case so far).
 
 REST_LEG_Z = 0.8378        # leg splay away from vertical
 REST_LEG_Y_FRONT = -0.5236  # front legs yaw forward (right side)
@@ -264,15 +272,29 @@ LARVA = {
 #   gaster   (0,  0)  72x32     thorax  (0, 32)  56x24
 #   head     (72, 0)  46x20     petiole (72,20)  22x11
 #   crest    (94,20)  22x7      mandible_base (94,27) 16x7
-#   mandible_tip (94,34) 12x6   leg      (56,32)   8x15
-#   antenna  (64,32)   8x9
+#   mandible_tip (94,34) 12x6   leg      (56,32)   8x18
+#   antenna_base (64,32) 12x9   antenna_mid   (76,32)  8x7
+#   antenna_tip  (84,32)  8x6
 #
 # Ground is y=24; her back sits at y=0, i.e. 24px = 1.5 blocks tall, under the
-# 1.8-block hitbox. Feet land at 12 + 13*cos(0.6109) = 22.7, so the splay and
-# the leg length are tied together -- change one and the feet leave the floor.
+# 1.8-block hitbox.
+#
+# Ep2 model pass, item 1: the legs used to hang off (+/-7, 12, z) -- x exactly on
+# the thorax's side plane and y a full unit BELOW its underside (the thorax spans
+# y 1..11), so every leg started in mid-air with a visible gap between it and the
+# body. They are rooted now: x +/-6 puts the 2-wide leg cube two units inside the
+# shell and y 9.5 puts its top 1.5 units inside it, so the joint is buried in the
+# thorax's lower flank the way a real one is. Raising the root by 2.5 lifts the
+# feet by the same amount, so the segment is 3 longer to compensate: feet land at
+# 9.5 + 16*cos(0.6109) = 22.6, within a tenth of the old 12 + 13*cos(0.6109) =
+# 22.7. Root height, leg length and splay are one number in three parts -- change
+# any one alone and she floats or sinks.
 QUEEN_REST_LEG_Z = 0.6109       # 35 degrees off vertical
 QUEEN_REST_LEG_Y_FRONT = -0.4363
 QUEEN_REST_LEG_Y_HIND = 0.4363
+QUEEN_LEG_ROOT_X = 6
+QUEEN_LEG_ROOT_Y = 9.5
+QUEEN_LEG_LENGTH = 16
 
 # Play-test round 1, spec item 2: the mandibles read "too chunky" -- reworked from one
 # 5x4x8 block per side into two tapered segments (base 4x3x4, tip 2x2x4) so the jaw
@@ -285,6 +307,64 @@ QUEEN_REST_LEG_Y_HIND = 0.4363
 # an identical absolute pose while keeping this file's "poses are absolute" invariant
 # intact -- no hierarchical composition to hand-simulate.
 QUEEN_MANDIBLE_TIP_ANGLE = 0.3491   # ~20 degrees
+
+# Ep2 model pass, item 2: the antennae were one straight 2x7x2 spike per side,
+# which at her scale read as a stray leg glued to the skull rather than as a
+# feeler. Rebuilt as the three real segments of an ant's antenna, each hinged off
+# the last so the whole thing sweeps FORWARD over the jaws instead of standing up:
+# a thick 3x3 scape out of the skull, a pedicel that leans in, and a flagellum
+# that finishes horizontal, aimed at whatever she is looking at. The pitches add
+# up (25 + 30 + 35 = 90 degrees) precisely so the last segment ends level, which
+# is the whole silhouette -- something pointing at you rather than at the ceiling.
+# The tip lands ~7.6 units past the mandibles' biting point, so the antennae are
+# the first thing of her that reaches you.
+#
+# These are the only NESTED parts in this file (see the geometry comment at the
+# top): a three-link chain has no honest flat form, and Java has to nest them
+# anyway so that setupAnim's idle sway on the base carries the other two with it
+# instead of letting the segments drift apart mid-animation.
+QUEEN_ANTENNA_BASE_X = 0.4363   # 25 deg forward, out of the skull
+QUEEN_ANTENNA_BASE_Z = 0.2618   # 15 deg outward
+QUEEN_ANTENNA_MID_X = 0.5236    # +30 deg: the elbow leans forward
+QUEEN_ANTENNA_MID_Z = 0.1745    # +10 deg further out
+QUEEN_ANTENNA_TIP_X = 0.6109    # +35 deg -- 90 in total, so the tip runs level
+QUEEN_ANTENNA_BASE_LEN = 6
+QUEEN_ANTENNA_MID_LEN = 5
+QUEEN_ANTENNA_TIP_LEN = 4
+
+
+def queen_antenna(side):
+    """One antenna as three nested segments. `side` is -1 right, +1 left.
+
+    Mirrors QueenAntModel.createBodyLayer's nesting exactly: the base hangs off
+    the head with an absolute-in-head pose, and mid/tip carry parent-relative
+    poses of (0, -len_of_parent, 0) so each segment starts where the last ended.
+    """
+    base = {
+        "name": f"antenna_{'l' if side > 0 else 'r'}_base",
+        "pose": (3 * side, 4, -16),
+        "rot": (QUEEN_ANTENNA_BASE_X, 0, QUEEN_ANTENNA_BASE_Z * side),
+        "cubes": [{"off": (64, 32),
+                   "box": (-1.5, -QUEEN_ANTENNA_BASE_LEN, -1.5, 3, QUEEN_ANTENNA_BASE_LEN, 3)}],
+    }
+    mid = {
+        "name": f"antenna_{'l' if side > 0 else 'r'}_mid",
+        "parent": base,
+        "pose": (0, -QUEEN_ANTENNA_BASE_LEN, 0),
+        "rot": (QUEEN_ANTENNA_MID_X, 0, QUEEN_ANTENNA_MID_Z * side),
+        "cubes": [{"off": (76, 32),
+                   "box": (-1, -QUEEN_ANTENNA_MID_LEN, -1, 2, QUEEN_ANTENNA_MID_LEN, 2)}],
+    }
+    tip = {
+        "name": f"antenna_{'l' if side > 0 else 'r'}_tip",
+        "parent": mid,
+        "pose": (0, -QUEEN_ANTENNA_MID_LEN, 0),
+        "rot": (QUEEN_ANTENNA_TIP_X, 0, 0),
+        "cubes": [{"off": (84, 32),
+                   "box": (-1, -QUEEN_ANTENNA_TIP_LEN, -1, 2, QUEEN_ANTENNA_TIP_LEN, 2)}],
+    }
+    return [base, mid, tip]
+
 
 QUEEN_ANT = {
     "name": "queen_ant",
@@ -312,40 +392,36 @@ QUEEN_ANT = {
          "rot": (0, QUEEN_MANDIBLE_TIP_ANGLE, 0), "cubes": [
             {"off": (94, 34), "box": (-1, -1, -4, 2, 2, 4)},
         ]},
-        {"name": "antenna_r", "pose": (-3, 4, -16),
-         "rot": (REST_ANT_X, 0, -REST_ANT_Z), "cubes": [
-            {"off": (64, 32), "box": (-1, -7, -1, 2, 7, 2)},
-        ]},
-        {"name": "antenna_l", "pose": (3, 4, -16),
-         "rot": (REST_ANT_X, 0, REST_ANT_Z), "cubes": [
-            {"off": (64, 32), "box": (-1, -7, -1, 2, 7, 2)},
-        ]},
         # --- gaster: the mass. Petiole waist, then the egg-swollen abdomen ------
         {"name": "gaster", "pose": (0, 4, 0), "cubes": [
             {"off": (72, 20), "box": (-3, 3, 5, 6, 6, 5)},              # petiole
             {"off": (0, 0), "box": (-9, -4, 9, 18, 14, 18)},            # gaster
         ]},
-        # --- six long legs ------------------------------------------------------
-        {"name": "leg_r1", "pose": (-7, 12, -5),
+        # --- six long legs, rooted in the thorax's lower flank -------------------
+        {"name": "leg_r1", "pose": (-QUEEN_LEG_ROOT_X, QUEEN_LEG_ROOT_Y, -5),
          "rot": (0, QUEEN_REST_LEG_Y_FRONT, QUEEN_REST_LEG_Z),
-         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
-        {"name": "leg_r2", "pose": (-7, 12, 0),
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, QUEEN_LEG_LENGTH, 2)}]},
+        {"name": "leg_r2", "pose": (-QUEEN_LEG_ROOT_X, QUEEN_LEG_ROOT_Y, 0),
          "rot": (0, 0, QUEEN_REST_LEG_Z),
-         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
-        {"name": "leg_r3", "pose": (-7, 12, 5),
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, QUEEN_LEG_LENGTH, 2)}]},
+        {"name": "leg_r3", "pose": (-QUEEN_LEG_ROOT_X, QUEEN_LEG_ROOT_Y, 5),
          "rot": (0, QUEEN_REST_LEG_Y_HIND, QUEEN_REST_LEG_Z),
-         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
-        {"name": "leg_l1", "pose": (7, 12, -5),
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, QUEEN_LEG_LENGTH, 2)}]},
+        {"name": "leg_l1", "pose": (QUEEN_LEG_ROOT_X, QUEEN_LEG_ROOT_Y, -5),
          "rot": (0, -QUEEN_REST_LEG_Y_FRONT, -QUEEN_REST_LEG_Z),
-         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
-        {"name": "leg_l2", "pose": (7, 12, 0),
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, QUEEN_LEG_LENGTH, 2)}]},
+        {"name": "leg_l2", "pose": (QUEEN_LEG_ROOT_X, QUEEN_LEG_ROOT_Y, 0),
          "rot": (0, 0, -QUEEN_REST_LEG_Z),
-         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
-        {"name": "leg_l3", "pose": (7, 12, 5),
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, QUEEN_LEG_LENGTH, 2)}]},
+        {"name": "leg_l3", "pose": (QUEEN_LEG_ROOT_X, QUEEN_LEG_ROOT_Y, 5),
          "rot": (0, -QUEEN_REST_LEG_Y_HIND, -QUEEN_REST_LEG_Z),
-         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, 13, 2)}]},
+         "cubes": [{"off": (56, 32), "box": (-1, 0, -1, 2, QUEEN_LEG_LENGTH, 2)}]},
     ],
 }
+
+# Appended rather than written inline: the two chains carry `parent` references to
+# dicts, which a list literal cannot express without naming them first.
+QUEEN_ANT["parts"].extend(queen_antenna(-1) + queen_antenna(1))
 
 
 # ------------------------------------------------------------------- faces --
@@ -536,6 +612,15 @@ Q_SAC_PALE = (253, 240, 210, 255)
 
 Q_EYE = (255, 226, 150, 255)
 Q_EYE_DARK = (30, 12, 22, 255)
+
+# Ep2 model pass, item 3: the crest was six flat fills of Q_GOLD_DEEP -- a solid
+# yellow slab on the one part of her that is supposed to read as a crown. Its own
+# ramp instead, running plum -> gold, so the crest is chitin plating shot through
+# with gold rather than a block of gold. noise_rect's default weights put most of
+# the pixels on index 2, so keeping Q_GOLD_DEEP there holds the overall read at
+# gameplay distance while the plum and bright-gold tones do the mottling.
+Q_CREST_PAL = [Q_PLUM_DARKEST, Q_PLUM_BASE, Q_GOLD_DEEP, Q_GOLD, Q_GOLD_BRIGHT]
+Q_CREST_TOP_PAL = [Q_PLUM_DARK, Q_GOLD_DEEP, Q_GOLD, Q_GOLD_BRIGHT, Q_GOLD_BRIGHT]
 
 Q_SHELL_PAL = [Q_PLUM_DARK, Q_PLUM_BASE, Q_PLUM_MID, Q_PLUM_LIGHT, Q_GOLD_DEEP]
 Q_SHELL_BACK_PAL = [Q_PLUM_DARKEST, Q_PLUM_DARK, Q_PLUM_BASE, Q_PLUM_MID, Q_PLUM_LIGHT]
@@ -1072,16 +1157,22 @@ def paint_queen_ant():
         hband(d, r[f], 1, Q_GOLD_DEEP)
     hband(d, r["top"], 10, Q_PLUM_DARKEST)       # shadow where the crest sits
 
-    # ---- crest: the one piece that is gold rather than trimmed with it ------
+    # ---- crest: gold-veined chitin plating, not a slab of gold ---------------
+    # cell=1: the crest's tallest face is 2 texels, so the 3-texel clumping the
+    # rest of her uses would paint each face a single flat tone -- exactly the
+    # thing this replaces.
     r = rects(crest)
-    for f in ("west", "north", "east", "south", "top"):
-        fill(d, r[f], Q_GOLD_DEEP)
-    fill(d, r["bottom"], Q_PLUM_DARKEST)
-    fill(d, r["top"], Q_GOLD)
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "crest:" + f, Q_CREST_PAL, namespace=NS, cell=1, jitter=0.35)
+    noise_rect(d, r["top"], "crest:top", Q_CREST_TOP_PAL, namespace=NS, cell=1, jitter=0.35)
+    fill(d, r["bottom"], Q_PLUM_DARKEST)         # underside, never seen lit
     for f in ("west", "east"):
         hband(d, r[f], 0, Q_GOLD_BRIGHT)         # lit ridge along the top
+    for gx in (1, 4):                            # two plate seams down the crown
+        vband(d, r["top"], gx, Q_PLUM_DARKEST)
     px(d, r["north"], 2, 0, Q_GOLD_BRIGHT)
     px(d, r["north"], 3, 0, Q_GOLD_BRIGHT)
+    hband(d, r["north"], 1, Q_PLUM_DARKEST)      # shadow where it meets the skull
 
     # ---- mandibles: plum base with a gold joint accent, then a slimmer gold ------
     # ---- tip that carries the biting point (play-test round 1, spec item 2) ------
@@ -1102,23 +1193,43 @@ def paint_queen_ant():
         vband(d, r[f], 0, Q_GOLD_BRIGHT)          # brightest right at the point
         vband(d, r[f], 3, Q_PLUM_DARK)            # dims back toward the base joint
 
-    # ---- antennae: dark shaft, gold tip (min-Y end is the tip) -------------
-    r = rects(parts["antenna_r"]["cubes"][0])
+    # ---- antennae: three segments, darkest at the skull and gold at the point --
+    # Each rect's y=0 is its min-Y end, i.e. the end AWAY from the head, so the
+    # gradient across the chain is written the same way in each: light at row 0,
+    # dark at the last row. The scape is plum shading to a gold joint collar, the
+    # pedicel is the transition, and the flagellum is gold outright -- so the eye
+    # is pulled along the sweep to the thing pointing at the player.
+    r = rects(parts["antenna_r_base"]["cubes"][0])
     for f in ("west", "north", "east", "south"):
-        noise_rect(d, r[f], "antenna:" + f, Q_LIMB_PAL, cell=1, namespace=NS)
-        hband(d, r[f], 0, Q_GOLD)
-        hband(d, r[f], 1, Q_GOLD_DEEP)
-        hband(d, r[f], 6, Q_PLUM_DARKEST)        # base joint
-    fill(d, r["top"], Q_GOLD_BRIGHT)
+        noise_rect(d, r[f], "antenna_base:" + f, Q_LIMB_PAL, cell=1, namespace=NS)
+        hband(d, r[f], 0, Q_GOLD_DEEP)           # collar the pedicel hinges on
+        hband(d, r[f], QUEEN_ANTENNA_BASE_LEN - 1, Q_PLUM_DARKEST)   # buried in the skull
+    fill(d, r["top"], Q_GOLD_DEEP)
     fill(d, r["bottom"], Q_PLUM_DARKEST)
+
+    r = rects(parts["antenna_r_mid"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "antenna_mid:" + f, Q_LIMB_PAL, cell=1, namespace=NS)
+        hband(d, r[f], 0, Q_GOLD)
+        hband(d, r[f], QUEEN_ANTENNA_MID_LEN - 1, Q_PLUM_DARKEST)    # elbow joint
+    fill(d, r["top"], Q_GOLD)
+    fill(d, r["bottom"], Q_PLUM_DARKEST)
+
+    r = rects(parts["antenna_r_tip"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        fill(d, r[f], Q_GOLD)
+        hband(d, r[f], 0, Q_GOLD_BRIGHT)         # the point itself
+        hband(d, r[f], QUEEN_ANTENNA_TIP_LEN - 1, Q_GOLD_DEEP)
+    fill(d, r["top"], Q_GOLD_BRIGHT)
+    fill(d, r["bottom"], Q_GOLD_DEEP)
 
     # ---- legs: dark chitin, two gold joint bands, near-black foot ---------
     r = rects(parts["leg_r1"]["cubes"][0])
     for f in ("west", "north", "east", "south"):
         noise_rect(d, r[f], "leg:" + f, Q_LIMB_PAL, cell=1, namespace=NS)
-        hband(d, r[f], 4, Q_GOLD_DEEP)           # femur/tibia joint
-        hband(d, r[f], 9, Q_GOLD_DEEP)           # tibia/tarsus joint
-        hband(d, r[f], 12, Q_PLUM_DARKEST)       # foot
+        hband(d, r[f], 5, Q_GOLD_DEEP)           # femur/tibia joint
+        hband(d, r[f], 11, Q_GOLD_DEEP)          # tibia/tarsus joint
+        hband(d, r[f], QUEEN_LEG_LENGTH - 1, Q_PLUM_DARKEST)         # foot
     fill(d, r["top"], Q_PLUM_DARK)
     fill(d, r["bottom"], Q_PLUM_DARKEST)
 
@@ -1145,16 +1256,26 @@ def rotate_zyx(p, rot):
 
 
 def cube_corners(part, cube):
-    """The 8 world-space corners plus the per-face (origin, +u, +v) triples."""
-    ox, oy, oz = part["pose"]
-    rot = part.get("rot", (0.0, 0.0, 0.0))
+    """The 8 world-space corners plus the per-face (origin, +u, +v) triples.
+
+    Walks the optional `parent` chain outward, applying each node's own
+    rotation before its offset -- the same order ModelPart.translateAndRotate
+    uses, where a child's offset is expressed in its PARENT's frame. A part
+    with no `parent` (every part but the queen's antenna segments) takes
+    exactly one pass, which is the old absolute-pose behaviour unchanged."""
     bx, by, bz, w, h, d = cube["box"]
     x0, y0, z0 = bx, by, bz
     x1, y1, z1 = bx + w, by + h, bz + d
 
     def wp(x, y, z):
-        rx, ry, rz = rotate_zyx((x, y, z), rot)
-        return (ox + rx, oy + ry, oz + rz)
+        p = (x, y, z)
+        node = part
+        while node is not None:
+            rx, ry, rz = rotate_zyx(p, node.get("rot", (0.0, 0.0, 0.0)))
+            ox, oy, oz = node["pose"]
+            p = (ox + rx, oy + ry, oz + rz)
+            node = node.get("parent")
+        return p
 
     # (src-origin, src +x edge end, src +y edge end) per face, in world space.
     return {

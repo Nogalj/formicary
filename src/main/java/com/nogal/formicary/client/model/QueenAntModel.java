@@ -25,11 +25,16 @@ import net.minecraft.world.entity.Entity;
  * the source of truth for every number below and paints the matching 128x64 atlas. Keep
  * the two in step: change the spec, re-run it, then mirror the change here.
  *
- * <p>The leg length and the rest splay are tied together -- the foot lands at
- * {@code 12 + 13 * cos(0.6109) = 22.7}, just above the model's ground plane at 24 -- so
- * changing one without the other lifts her off the floor. Same 1.21 entity-model rules as
- * {@link WorkerAntModel}: absolute rest poses every frame, int colour in
- * {@code renderToBuffer}, and the baked texture size must match the painted atlas.
+ * <p>The leg root height, leg length and rest splay are one number in three parts -- the
+ * foot lands at {@code 9.5 + 16 * cos(0.6109) = 22.6}, just above the model's ground plane
+ * at 24 -- so changing any one alone lifts her off the floor or sinks her into it. Same
+ * 1.21 entity-model rules as {@link WorkerAntModel}: absolute rest poses every frame, int
+ * colour in {@code renderToBuffer}, and the baked texture size must match the painted atlas.
+ *
+ * <p>The antenna segments are the one place this model nests parts more than one level
+ * deep, and that is load-bearing rather than tidy: {@code setupAnim} sways the scape alone
+ * and the pedicel and flagellum ride along with it. Rotating three parts about three
+ * separate pivots by the same angle would pull a 15-unit chain visibly apart.
  */
 public class QueenAntModel<T extends Entity> extends EntityModel<T> {
     public static final ModelLayerLocation LAYER_LOCATION = new ModelLayerLocation(
@@ -38,8 +43,35 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
     private static final float REST_LEG_Z = 0.6109F;
     private static final float REST_LEG_Y_FRONT = -0.4363F;
     private static final float REST_LEG_Y_HIND = 0.4363F;
-    private static final float REST_ANTENNA_X = 0.5236F;
-    private static final float REST_ANTENNA_Z = 0.2618F;
+
+    /**
+     * Leg geometry, mirroring {@code assets-src/models.py}'s {@code QUEEN_LEG_*}. The root
+     * is inside the thorax on both axes: {@code X} 6 against the shell's own 7 buries the
+     * 2-wide leg cube two units in, and {@code Y} 3.5 (relative to {@code body}, i.e.
+     * absolute 9.5 against a thorax spanning 1..11) buries its top 1.5 units. Before this
+     * the roots sat at 7 / 12 -- flush with the side plane and a whole unit BELOW the
+     * underside, so every leg started in mid-air.
+     */
+    private static final float LEG_ROOT_X = 6.0F;
+    private static final float LEG_ROOT_Y = 3.5F;
+    private static final float LEG_LENGTH = 16.0F;
+
+    /**
+     * The three antenna hinges, in order out from the skull. The pitches add to
+     * {@code 0.4363 + 0.5236 + 0.6109 = 1.5708} rad -- 90 degrees exactly -- which is the
+     * entire point of the shape: the flagellum finishes level and forward, pointing at
+     * whatever she is looking at, instead of standing up like the single straight spike
+     * this replaced. Each pair matches {@code assets-src/models.py}'s
+     * {@code QUEEN_ANTENNA_*} exactly; that file is the source of truth.
+     */
+    private static final float REST_ANTENNA_BASE_X = 0.4363F;
+    private static final float REST_ANTENNA_BASE_Z = 0.2618F;
+    private static final float REST_ANTENNA_MID_X = 0.5236F;
+    private static final float REST_ANTENNA_MID_Z = 0.1745F;
+    private static final float REST_ANTENNA_TIP_X = 0.6109F;
+    private static final float ANTENNA_BASE_LENGTH = 6.0F;
+    private static final float ANTENNA_MID_LENGTH = 5.0F;
+    private static final float ANTENNA_TIP_LENGTH = 4.0F;
 
     /**
      * Play-test round 1, spec item 2: "rework to slimmer, tapered mandibles (e.g. two
@@ -61,8 +93,12 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
     private final ModelPart mandibleTipRight;
     private final ModelPart mandibleBaseLeft;
     private final ModelPart mandibleTipLeft;
-    private final ModelPart antennaRight;
-    private final ModelPart antennaLeft;
+    private final ModelPart antennaBaseRight;
+    private final ModelPart antennaMidRight;
+    private final ModelPart antennaTipRight;
+    private final ModelPart antennaBaseLeft;
+    private final ModelPart antennaMidLeft;
+    private final ModelPart antennaTipLeft;
     private final ModelPart gaster;
     private final ModelPart[] legs;
 
@@ -87,8 +123,12 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
         this.mandibleTipRight = this.head.getChild("mandible_r_tip");
         this.mandibleBaseLeft = this.head.getChild("mandible_l_base");
         this.mandibleTipLeft = this.head.getChild("mandible_l_tip");
-        this.antennaRight = this.head.getChild("antenna_r");
-        this.antennaLeft = this.head.getChild("antenna_l");
+        this.antennaBaseRight = this.head.getChild("antenna_r_base");
+        this.antennaMidRight = this.antennaBaseRight.getChild("antenna_r_mid");
+        this.antennaTipRight = this.antennaMidRight.getChild("antenna_r_tip");
+        this.antennaBaseLeft = this.head.getChild("antenna_l_base");
+        this.antennaMidLeft = this.antennaBaseLeft.getChild("antenna_l_mid");
+        this.antennaTipLeft = this.antennaMidLeft.getChild("antenna_l_tip");
         this.gaster = this.body.getChild("gaster");
         this.legs = new ModelPart[] {
                 this.body.getChild("leg_r1"),
@@ -141,15 +181,11 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
                         .texOffs(94, 34).mirror().addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 4.0F, new CubeDeformation(0.0F)).mirror(false),
                 PartPose.offsetAndRotation(5.0F, 5.5F, -8.0F, 0.0F, MANDIBLE_TIP_ANGLE, 0.0F));
 
-        head.addOrReplaceChild("antenna_r",
-                CubeListBuilder.create()
-                        .texOffs(64, 32).addBox(-1.0F, -7.0F, -1.0F, 2.0F, 7.0F, 2.0F, new CubeDeformation(0.0F)),
-                PartPose.offsetAndRotation(-3.0F, -2.5F, -9.0F, REST_ANTENNA_X, 0.0F, -REST_ANTENNA_Z));
-
-        head.addOrReplaceChild("antenna_l",
-                CubeListBuilder.create()
-                        .texOffs(64, 32).mirror().addBox(-1.0F, -7.0F, -1.0F, 2.0F, 7.0F, 2.0F, new CubeDeformation(0.0F)).mirror(false),
-                PartPose.offsetAndRotation(3.0F, -2.5F, -9.0F, REST_ANTENNA_X, 0.0F, REST_ANTENNA_Z));
+        // Antennae: three hinged segments per side, each a CHILD of the last, unlike every
+        // other part of this model. See the class javadoc -- the nesting is what lets the
+        // idle sway move the whole sweep from one rotation on the scape.
+        addAntenna(head, "r", -1.0F);
+        addAntenna(head, "l", 1.0F);
 
         body.addOrReplaceChild("gaster",
                 CubeListBuilder.create()
@@ -158,24 +194,69 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
                 PartPose.offset(0.0F, GASTER_REST_Y, 0.0F));
 
         CubeListBuilder legRight = CubeListBuilder.create()
-                .texOffs(56, 32).addBox(-1.0F, 0.0F, -1.0F, 2.0F, 13.0F, 2.0F, new CubeDeformation(0.0F));
+                .texOffs(56, 32).addBox(-1.0F, 0.0F, -1.0F, 2.0F, LEG_LENGTH, 2.0F, new CubeDeformation(0.0F));
         CubeListBuilder legLeft = CubeListBuilder.create()
-                .texOffs(56, 32).mirror().addBox(-1.0F, 0.0F, -1.0F, 2.0F, 13.0F, 2.0F, new CubeDeformation(0.0F)).mirror(false);
+                .texOffs(56, 32).mirror().addBox(-1.0F, 0.0F, -1.0F, 2.0F, LEG_LENGTH, 2.0F, new CubeDeformation(0.0F)).mirror(false);
 
         body.addOrReplaceChild("leg_r1", legRight,
-                PartPose.offsetAndRotation(-7.0F, 6.0F, -5.0F, 0.0F, REST_LEG_Y_FRONT, REST_LEG_Z));
+                PartPose.offsetAndRotation(-LEG_ROOT_X, LEG_ROOT_Y, -5.0F, 0.0F, REST_LEG_Y_FRONT, REST_LEG_Z));
         body.addOrReplaceChild("leg_r2", legRight,
-                PartPose.offsetAndRotation(-7.0F, 6.0F, 0.0F, 0.0F, 0.0F, REST_LEG_Z));
+                PartPose.offsetAndRotation(-LEG_ROOT_X, LEG_ROOT_Y, 0.0F, 0.0F, 0.0F, REST_LEG_Z));
         body.addOrReplaceChild("leg_r3", legRight,
-                PartPose.offsetAndRotation(-7.0F, 6.0F, 5.0F, 0.0F, REST_LEG_Y_HIND, REST_LEG_Z));
+                PartPose.offsetAndRotation(-LEG_ROOT_X, LEG_ROOT_Y, 5.0F, 0.0F, REST_LEG_Y_HIND, REST_LEG_Z));
         body.addOrReplaceChild("leg_l1", legLeft,
-                PartPose.offsetAndRotation(7.0F, 6.0F, -5.0F, 0.0F, -REST_LEG_Y_FRONT, -REST_LEG_Z));
+                PartPose.offsetAndRotation(LEG_ROOT_X, LEG_ROOT_Y, -5.0F, 0.0F, -REST_LEG_Y_FRONT, -REST_LEG_Z));
         body.addOrReplaceChild("leg_l2", legLeft,
-                PartPose.offsetAndRotation(7.0F, 6.0F, 0.0F, 0.0F, 0.0F, -REST_LEG_Z));
+                PartPose.offsetAndRotation(LEG_ROOT_X, LEG_ROOT_Y, 0.0F, 0.0F, 0.0F, -REST_LEG_Z));
         body.addOrReplaceChild("leg_l3", legLeft,
-                PartPose.offsetAndRotation(7.0F, 6.0F, 5.0F, 0.0F, -REST_LEG_Y_HIND, -REST_LEG_Z));
+                PartPose.offsetAndRotation(LEG_ROOT_X, LEG_ROOT_Y, 5.0F, 0.0F, -REST_LEG_Y_HIND, -REST_LEG_Z));
 
         return LayerDefinition.create(mesh, 128, 64);
+    }
+
+    /**
+     * One antenna chain under {@code head}: scape -> pedicel -> flagellum, each the child
+     * of the last.
+     *
+     * <p>{@code side} is {@code -1} for the right and {@code +1} for the left, and
+     * multiplies both the root offset and every outward ({@code zRot}) hinge -- the same
+     * sign convention {@code assets-src/models.py}'s {@code queen_antenna(side)} uses, so
+     * the two files can be read against each other line for line. Each child's offset is
+     * {@code (0, -<parent length>, 0)}, i.e. exactly where the parent segment ended.
+     */
+    private static void addAntenna(PartDefinition head, String tag, float side) {
+        boolean mirror = side > 0.0F;
+        PartDefinition base = head.addOrReplaceChild("antenna_" + tag + "_base",
+                antennaSegment(64, 32, 3.0F, ANTENNA_BASE_LENGTH, mirror),
+                PartPose.offsetAndRotation(3.0F * side, -2.5F, -9.0F,
+                        REST_ANTENNA_BASE_X, 0.0F, REST_ANTENNA_BASE_Z * side));
+        PartDefinition mid = base.addOrReplaceChild("antenna_" + tag + "_mid",
+                antennaSegment(76, 32, 2.0F, ANTENNA_MID_LENGTH, mirror),
+                PartPose.offsetAndRotation(0.0F, -ANTENNA_BASE_LENGTH, 0.0F,
+                        REST_ANTENNA_MID_X, 0.0F, REST_ANTENNA_MID_Z * side));
+        mid.addOrReplaceChild("antenna_" + tag + "_tip",
+                antennaSegment(84, 32, 2.0F, ANTENNA_TIP_LENGTH, mirror),
+                PartPose.offsetAndRotation(0.0F, -ANTENNA_MID_LENGTH, 0.0F,
+                        REST_ANTENNA_TIP_X, 0.0F, 0.0F));
+    }
+
+    /**
+     * A square column {@code thickness} across and {@code length} long, growing UP out of
+     * its own pivot (negative Y is up in model space), so a segment's far end is at
+     * {@code -length} and its child hangs there.
+     */
+    private static CubeListBuilder antennaSegment(int u, int v, float thickness, float length,
+            boolean mirror) {
+        CubeListBuilder builder = CubeListBuilder.create().texOffs(u, v);
+        if (mirror) {
+            builder.mirror();
+        }
+        builder.addBox(-thickness / 2.0F, -length, -thickness / 2.0F,
+                thickness, length, thickness, new CubeDeformation(0.0F));
+        if (mirror) {
+            builder.mirror(false);
+        }
+        return builder;
     }
 
     @Override
@@ -186,12 +267,25 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
         this.head.yRot = netHeadYaw * DEG_TO_RAD;
         this.head.xRot = headPitch * DEG_TO_RAD;
 
+        // The idle sway is written on the SCAPE only: the pedicel and flagellum are its
+        // children and ride along, so the sweep stays one rigid curve. Adding the same
+        // angle to all three -- the shape the mandibles below use -- would rotate each
+        // about its own pivot and visibly pull a 15-unit chain apart.
         float bob = Mth.cos(ageInTicks * 0.09F) * 0.11F;
         float sway = Mth.sin(ageInTicks * 0.07F) * 0.06F;
-        this.antennaRight.xRot = REST_ANTENNA_X + bob;
-        this.antennaRight.zRot = -REST_ANTENNA_Z - sway;
-        this.antennaLeft.xRot = REST_ANTENNA_X - bob;
-        this.antennaLeft.zRot = REST_ANTENNA_Z + sway;
+        this.antennaBaseRight.xRot = REST_ANTENNA_BASE_X + bob;
+        this.antennaBaseRight.zRot = -REST_ANTENNA_BASE_Z - sway;
+        this.antennaBaseLeft.xRot = REST_ANTENNA_BASE_X - bob;
+        this.antennaBaseLeft.zRot = REST_ANTENNA_BASE_Z + sway;
+        this.antennaMidRight.xRot = REST_ANTENNA_MID_X;
+        this.antennaMidRight.zRot = -REST_ANTENNA_MID_Z;
+        this.antennaMidLeft.xRot = REST_ANTENNA_MID_X;
+        this.antennaMidLeft.zRot = REST_ANTENNA_MID_Z;
+        // The flagellum flicks on its own, faster and out of phase with the sway. It is
+        // the difference between a feeler and a horn.
+        float flick = Mth.sin(ageInTicks * 0.17F) * 0.13F;
+        this.antennaTipRight.xRot = REST_ANTENNA_TIP_X + flick;
+        this.antennaTipLeft.xRot = REST_ANTENNA_TIP_X - flick;
 
         // Mandibles work slowly and wide -- she is not in a hurry. Both segments of a
         // side get the same flex added on top of their own rest yRot (the tip's rest
