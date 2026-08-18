@@ -77,6 +77,18 @@ NORMAL difficulty (Monsters safe).
   the drop's exact position is load-bearing -- `a_drop_just_outside_pickup_range_is_still_collected`
   does, which is what makes it deterministic where its live-loop sibling was not.
   (`verified: 2026-08-18`)
+- **A movement assertion sampled N ticks after the test's own landed hit measures residual
+  knockback, not just the behaviour under test.** `makeMockPlayer` leaves the attacker at the
+  world origin, so a landed swing gives the mob ~0.3-0.4/tick of velocity on a fixed bearing
+  (away from origin) that is unrelated to anything the test set up -- about 1.3-1.8 blocks of
+  drift over a 10-tick window -- and `Entity.moveTo` resets position but NOT velocity, so
+  repositioning the mob between swings does not shed it. This dragged legitimate 8.4-block
+  ender-ant blinks under `a_hurt_ender_ant_blinks_at_least_eight_blocks`'s 8.0 lower bound
+  (~6-9% flake; instrumented atBlink-vs-atPlus10 deltas of +-1.8), and symmetrically eats the
+  regression-catching margin of any upper-bound (negative) assertion. Measure a synchronous
+  reaction immediately after `hurt()` returns; where a delayed window is load-bearing (a
+  negative assertion must give a deferred reaction time to happen), zero the velocity with
+  `setDeltaMovement(Vec3.ZERO)` after the reposition instead. (`verified: 2026-08-18`)
 - **RESOLVED -- the former "Flake watch" on `bound_worker_collects_a_ground_item_and_deposits_it`.**
   Reproduced 2026-08-18 at 2 failures in 33 runs (~6%), then twice more with instrumentation.
   It was **not** arena cross-contamination, which was the standing prime suspect: a diagnostic

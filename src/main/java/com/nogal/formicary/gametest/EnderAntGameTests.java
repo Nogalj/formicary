@@ -152,7 +152,17 @@ public class EnderAntGameTests {
                     "setup: the first swing has to land");
 
             // Straight back to the centre, so the second swing is measured from a known spot.
+            // moveTo resets position but NOT velocity, so the first swing's knockback
+            // (~1.3-1.8 blocks over the 10-tick window, on the fixed bearing away from the
+            // mock attacker at the world origin) would still be in play -- and an inward
+            // drift on top of a low-end regression blink (8-9.8 blocks) could drag the
+            // measurement under the 8.0 bound and false-PASS this test. Zero it, so the
+            // delayed window below measures teleports and nothing else. The window itself
+            // stays: a negative assertion has to give a deferred blink time to happen,
+            // which is exactly what the hurt-blink sibling's synchronous measurement
+            // deliberately gave up.
             ant.moveTo(landed.x, landed.y, landed.z, 0.0F, 0.0F);
+            ant.setDeltaMovement(Vec3.ZERO);
             helper.assertFalse(
                     ant.hurt(helper.getLevel().damageSources().playerAttack(attacker), TEST_HIT_DAMAGE),
                     "setup: a same-size follow-up inside invulnerableTime must be rejected by hurt");
