@@ -11,6 +11,7 @@ import com.nogal.formicary.colony.ColonyAnger;
 import com.nogal.formicary.effect.ModMobEffects;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerBossEvent;
@@ -18,6 +19,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.BossEvent;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -73,6 +75,10 @@ import net.minecraft.world.phys.Vec3;
 public class QueenAntEntity extends PathfinderMob {
     private static final String TAG_HOME = "ThroneHome";
     private static final String TAG_FIRED_PHASES = "FiredPhases";
+    private static final String TAG_UNLOCKED_MOVES = "UnlockedMoves";
+
+    /** {@link #unlockedMoves} bit for the burrow slam. */
+    public static final int UNLOCK_BURROW_SLAM = 1;
 
     // ------------------------------------------------------------- tunables --
 
@@ -162,6 +168,47 @@ public class QueenAntEntity extends PathfinderMob {
     /** Ticks between spits: 4 seconds. Tunable. */
     public static final int SPIT_COOLDOWN_TICKS = 80;
 
+    // ----------------------------------------------------------- burrow slam --
+
+    /**
+     * Health fraction that unlocks the burrow slam, for good. Latched exactly the way
+     * {@link #PHASE_THRESHOLDS} are -- see {@link #unlockedMoves} -- so healing back over
+     * it does not take the move away again. Tunable.
+     */
+    public static final float BURROW_UNLOCK_FRACTION = 0.60F;
+
+    /**
+     * Ticks she spends underground before erupting. Long enough that a player who is
+     * paying attention can move; short enough that it is a threat rather than an
+     * intermission. Tunable.
+     */
+    public static final int BURROW_TICKS = 30;
+
+    /** Ticks between burrows: 12 seconds. Tunable. */
+    public static final int BURROW_COOLDOWN_TICKS = 240;
+
+    /** Closest range she will burrow from -- inside this she simply bites. Tunable. */
+    public static final double BURROW_MIN_RANGE = 5.0;
+
+    /** Furthest range she will burrow from. Tunable. */
+    public static final double BURROW_MAX_RANGE = 14.0;
+
+    /**
+     * If the target has got further than this from the burrow point by the time she
+     * erupts, the move is aborted. Comfortably past {@link #BURROW_MAX_RANGE} on purpose:
+     * the abort is for a player who ran, not for one who backed up a step. Tunable.
+     */
+    public static final double BURROW_ABORT_DISTANCE = 20.0;
+
+    /** Radius of the eruption's area damage, in blocks. Tunable. */
+    public static final double SLAM_RADIUS = 4.0;
+
+    /** Eruption damage. Tunable. */
+    public static final float SLAM_DAMAGE = 6.0F;
+
+    /** Upward impulse the eruption adds, in blocks/tick. Tunable. */
+    public static final double SLAM_KNOCK_UP = 0.8;
+
     /**
      * XP reward on death (play-test round 1, spec item 2: "queen ~50-60, boss-tier,
      * wither-class"). Already matched {@code WitherBoss.xpReward} exactly before this round
@@ -191,6 +238,28 @@ public class QueenAntEntity extends PathfinderMob {
      */
     private int spitCooldown;
 
+    /**
+     * Bitmask of the fight moves her health has unlocked. Persisted and one-way, exactly
+     * like {@link #firedPhases} -- the same discipline for the same reason: a boss whose
+     * moveset flickers as she is healed and re-damaged is unreadable, and a relog must not
+     * be able to take a move back.
+     *
+     * <p>A field of its own rather than more bits in {@code firedPhases}, because
+     * {@link #getFiredPhaseCount()} counts that mask's bits and is the seam the burst tests
+     * assert on; sharing the int would silently make "phases fired" mean something else.
+     */
+    private int unlockedMoves;
+
+    /** Ticks left underground. Zero means she is above ground. Not persisted -- see {@link #beginBurrowSlam}. */
+    private int burrowTicksLeft;
+
+    /** Where she went down, so an aborted eruption can put her back. */
+    @Nullable
+    private Vec3 burrowOrigin;
+
+    /** Ticks left before she may burrow again. Same rationale as {@link #spitCooldown}. */
+    private int burrowCooldown;
+
     @Nullable
     private BlockPos throneHome;
 
@@ -216,13 +285,17 @@ public class QueenAntEntity extends PathfinderMob {
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
+        // The burrow outranks everything else she can do: it is a 30-tick commitment with
+        // its own damage-immunity window, and a boss halfway into the ground must not have
+        // her navigation taken back by a goal that wants her to walk somewhere.
+        this.goalSelector.addGoal(1, new BurrowSlamGoal(this));
         // Above the melee goal on purpose: the two can never both apply (their ranges do
         // not overlap -- SPIT_MIN_RANGE is 6, a bite is ~3), so the ordering only decides
         // which one wins in the tick a target crosses the boundary, and a spit that is
         // already off cooldown should not be swallowed by a lunge that cannot land yet.
-        this.goalSelector.addGoal(1, new AcidSpitGoal(this));
-        this.goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.0, true));
-        this.goalSelector.addGoal(3, new MoveTowardsRestrictionGoal(this, 1.0));
+        this.goalSelector.addGoal(2, new AcidSpitGoal(this));
+        this.goalSelector.addGoal(3, new MeleeAttackGoal(this, 1.0, true));
+        this.goalSelector.addGoal(4, new MoveTowardsRestrictionGoal(this, 1.0));
         this.goalSelector.addGoal(5, new RandomStrollGoal(this, 0.6, 200));
         this.goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 16.0F, 0.4F));
         this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
@@ -267,6 +340,10 @@ public class QueenAntEntity extends PathfinderMob {
         if (this.spitCooldown > 0) {
             this.spitCooldown--;
         }
+        if (this.burrowCooldown > 0) {
+            this.burrowCooldown--;
+        }
+        this.tickBurrow(level);
 
         // The leash's failsafe. MoveTowardsRestrictionGoal is the polite version and does
         // the work in practice; this catches the cases pathfinding cannot -- knocked
@@ -278,6 +355,22 @@ public class QueenAntEntity extends PathfinderMob {
         }
 
         this.checkPhaseThresholds(level);
+        this.checkMoveUnlocks();
+    }
+
+    /**
+     * The one-way latches that give her new moves as the fight goes on.
+     *
+     * <p>Deliberately the same shape as {@link #checkPhaseThresholds}: a health fraction, a
+     * bit that is only ever set, and no polling anywhere else. Nothing in the fight is
+     * allowed to ask "is she under 60%?" directly -- that question has a different answer
+     * every time she is healed, and a boss whose moveset flickers cannot be learned.
+     */
+    private void checkMoveUnlocks() {
+        float fraction = this.getHealth() / this.getMaxHealth();
+        if ((this.unlockedMoves & UNLOCK_BURROW_SLAM) == 0 && fraction < BURROW_UNLOCK_FRACTION) {
+            this.unlockedMoves |= UNLOCK_BURROW_SLAM;
+        }
     }
 
     private void checkPhaseThresholds(ServerLevel level) {
@@ -453,6 +546,181 @@ public class QueenAntEntity extends PathfinderMob {
             this.queen.getLookControl().setLookAt(this.target, 30.0F, 30.0F);
             this.queen.spitAcidAt(this.target);
             this.target = null;
+        }
+    }
+
+    // ----------------------------------------------------------- burrow slam --
+
+    /** Whether her health has ever dropped under {@link #BURROW_UNLOCK_FRACTION}. */
+    public boolean hasUnlockedBurrowSlam() {
+        return (this.unlockedMoves & UNLOCK_BURROW_SLAM) != 0;
+    }
+
+    /** Whether she is underground right now. Read by {@link #hurt}; a test seam. */
+    public boolean isBurrowed() {
+        return this.burrowTicksLeft > 0;
+    }
+
+    /** Ticks until she may burrow again. Zero means ready. A readout for tests. */
+    public int getBurrowCooldown() {
+        return this.burrowCooldown;
+    }
+
+    /**
+     * Takes her underground.
+     *
+     * <p>Nothing here is persisted, and that is the intended failure mode: a queen saved
+     * mid-burrow loads above ground, cooled down, and simply starts the move again. The
+     * alternative -- persisting a half-finished animation -- would have to answer what
+     * happens when the target logged out during it, and "she surfaces" is the answer either
+     * way.
+     */
+    public void beginBurrowSlam() {
+        this.burrowTicksLeft = BURROW_TICKS;
+        this.burrowOrigin = this.position();
+        this.burrowCooldown = BURROW_COOLDOWN_TICKS;
+        this.getNavigation().stop();
+        this.setDeltaMovement(Vec3.ZERO);
+        this.setInvisible(true);
+        this.playSound(SoundEvents.ROOTED_DIRT_BREAK, 2.0F, 0.5F);
+    }
+
+    /**
+     * One tick of the burrow: hold her still, kick up soil, and erupt when the timer runs
+     * out.
+     *
+     * <p>Driven from {@link #customServerAiStep} rather than from {@link BurrowSlamGoal},
+     * so that a goal losing its flags mid-move cannot strand her underground and immune
+     * forever. Once she is down, she comes back up.
+     */
+    private void tickBurrow(ServerLevel level) {
+        if (this.burrowTicksLeft <= 0) {
+            return;
+        }
+        // She is under the floor: no drifting, no pathing, no being shoved.
+        this.getNavigation().stop();
+        this.setDeltaMovement(Vec3.ZERO);
+        BlockPos below = this.blockPosition().below();
+        level.sendParticles(new BlockParticleOption(ParticleTypes.BLOCK, level.getBlockState(below)),
+                this.getX(), this.getY() + 0.1, this.getZ(), 14, 0.9, 0.1, 0.9, 0.08);
+        if (--this.burrowTicksLeft <= 0) {
+            this.erupt(level);
+        }
+    }
+
+    /**
+     * The eruption, or the shrug.
+     *
+     * <p>The abort exists because the move's whole point is that it cannot be kited, and a
+     * move that cannot be kited has to be able to miss for some other reason or it is just
+     * an unavoidable 6 damage every 12 seconds. Three ways it misses, all checked at this
+     * instant rather than when she went down: the target died, the target became
+     * untargetable (a Pheromonal Disguise -- {@link #canAttack} is the seam
+     * {@code ColonyAnger.colonyMayAttack} binds, which is what makes drinking the potion a
+     * real answer to this move), or the target simply got a long way away.
+     */
+    private void erupt(ServerLevel level) {
+        Vec3 origin = this.burrowOrigin != null ? this.burrowOrigin : this.position();
+        this.burrowTicksLeft = 0;
+        this.burrowOrigin = null;
+        this.setInvisible(false);
+
+        LivingEntity target = this.getTarget();
+        boolean landed = target != null && target.isAlive() && this.canAttack(target)
+                && target.distanceToSqr(origin) <= BURROW_ABORT_DISTANCE * BURROW_ABORT_DISTANCE;
+
+        Vec3 surface = landed ? target.position() : origin;
+        this.teleportTo(surface.x, surface.y, surface.z);
+        this.getNavigation().stop();
+        this.setDeltaMovement(Vec3.ZERO);
+
+        if (landed) {
+            this.burrowSlam(level, surface);
+        } else {
+            // Same soil, a quarter of the noise: she comes up where she went down and the
+            // player gets to see that the dodge worked.
+            level.sendParticles(ParticleTypes.EXPLOSION, surface.x, surface.y + 0.5, surface.z,
+                    1, 0.0, 0.0, 0.0, 0.0);
+            this.playSound(SoundEvents.ROOTED_DIRT_PLACE, 1.6F, 0.5F);
+        }
+    }
+
+    /**
+     * The eruption's area damage: everything living within {@link #SLAM_RADIUS} that is not
+     * an ant takes {@link #SLAM_DAMAGE} and is thrown {@link #SLAM_KNOCK_UP} upward.
+     *
+     * <p>Ants are exempt -- wild, tamed and the queen herself. She has just summoned three
+     * soldiers onto a ring around her; an AoE that killed them would make her own phase
+     * bursts a liability, and hurting one would run
+     * {@code ColonyAngerEvents.onColonyAntHurt} and anger the nest at nobody. Same rule the
+     * acid spit's {@code canHitEntity} follows, for the same reason.
+     *
+     * <p>The knock-up is applied <em>after</em> {@code hurt}, because {@code hurt} sets
+     * delta movement itself (she carries 1.5 {@code ATTACK_KNOCKBACK}) and doing it the
+     * other way round would throw the impulse away. {@code hurtMarked} is what makes a
+     * server-side velocity change reach the client at all.
+     */
+    private void burrowSlam(ServerLevel level, Vec3 centre) {
+        AABB area = AABB.ofSize(centre, SLAM_RADIUS * 2.0, SLAM_RADIUS * 2.0, SLAM_RADIUS * 2.0);
+        double radiusSq = SLAM_RADIUS * SLAM_RADIUS;
+        for (LivingEntity victim : level.getEntitiesOfClass(LivingEntity.class, area,
+                candidate -> candidate != this && candidate.isAlive()
+                        && !ColonyAnger.isColonyAnt(candidate) && !ColonyAnger.isTamedAnt(candidate)
+                        && candidate.distanceToSqr(centre) <= radiusSq)) {
+            if (victim.hurt(level.damageSources().mobAttack(this), SLAM_DAMAGE)) {
+                victim.push(0.0, SLAM_KNOCK_UP, 0.0);
+                victim.hurtMarked = true;
+            }
+        }
+        level.sendParticles(ParticleTypes.EXPLOSION, centre.x, centre.y + 0.5, centre.z,
+                6, 1.5, 0.4, 1.5, 0.0);
+        level.sendParticles(new BlockParticleOption(ParticleTypes.BLOCK,
+                        level.getBlockState(BlockPos.containing(centre).below())),
+                centre.x, centre.y + 0.2, centre.z, 60, 2.0, 0.3, 2.0, 0.3);
+        this.playSound(SoundEvents.GENERIC_EXPLODE.value(), 2.0F, 0.6F);
+    }
+
+    /**
+     * Her second attack (Ep2, task F3): unlocked by
+     * {@link QueenAntEntity#BURROW_UNLOCK_FRACTION}, so the first 40% of the fight is the
+     * fight she has always had and the rest is not.
+     *
+     * <p>The goal is only the trigger and the movement lock. The 30 ticks underground and
+     * the eruption are driven by {@link QueenAntEntity#tickBurrow}, so that this goal
+     * losing its flags cannot leave a boss buried and damage-immune -- see that method.
+     * {@link #canContinueToUse()} keeps the lock for exactly as long as she is down.
+     */
+    public static class BurrowSlamGoal extends Goal {
+        private final QueenAntEntity queen;
+
+        public BurrowSlamGoal(QueenAntEntity queen) {
+            this.queen = queen;
+            this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.JUMP, Goal.Flag.LOOK));
+        }
+
+        @Override
+        public boolean canUse() {
+            if (!this.queen.hasUnlockedBurrowSlam() || this.queen.isBurrowed()
+                    || this.queen.getBurrowCooldown() > 0) {
+                return false;
+            }
+            LivingEntity target = this.queen.getTarget();
+            if (target == null || !target.isAlive() || !this.queen.canAttack(target)) {
+                return false;
+            }
+            double distanceSq = this.queen.distanceToSqr(target);
+            return distanceSq >= BURROW_MIN_RANGE * BURROW_MIN_RANGE
+                    && distanceSq <= BURROW_MAX_RANGE * BURROW_MAX_RANGE;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return this.queen.isBurrowed();
+        }
+
+        @Override
+        public void start() {
+            this.queen.beginBurrowSlam();
         }
     }
 
@@ -643,6 +911,7 @@ public class QueenAntEntity extends PathfinderMob {
     public void addAdditionalSaveData(CompoundTag compound) {
         super.addAdditionalSaveData(compound);
         compound.putInt(TAG_FIRED_PHASES, this.firedPhases);
+        compound.putInt(TAG_UNLOCKED_MOVES, this.unlockedMoves);
         if (this.throneHome != null) {
             compound.putLong(TAG_HOME, this.throneHome.asLong());
         }
@@ -652,6 +921,7 @@ public class QueenAntEntity extends PathfinderMob {
     public void readAdditionalSaveData(CompoundTag compound) {
         super.readAdditionalSaveData(compound);
         this.firedPhases = compound.getInt(TAG_FIRED_PHASES);
+        this.unlockedMoves = compound.getInt(TAG_UNLOCKED_MOVES);
         // Mob does not persist its restriction, so the leash has to be re-planted here or
         // a relog would set her free.
         if (compound.contains(TAG_HOME)) {
@@ -681,6 +951,28 @@ public class QueenAntEntity extends PathfinderMob {
     @Override
     public boolean canAttack(LivingEntity target) {
         return ColonyAnger.colonyMayAttack(target) && super.canAttack(target);
+    }
+
+    /**
+     * Nothing touches her while she is underground.
+     *
+     * <p>Deliberately independent of {@code invulnerableTime}: that field is a 10-tick
+     * anti-multihit window whose early return is conditional on
+     * {@code amount <= lastHurt} (the banked {@code hurt} rule), so a big enough swing goes
+     * straight through it. The burrow is not an i-frame window, it is a statement that she
+     * is not there -- 30 ticks in which a player who keeps swinging at the hole is wasting
+     * the 30 ticks they had to move.
+     *
+     * <p>{@code BYPASSES_INVULNERABILITY} is still honoured, which is what keeps
+     * {@code /kill} and the void working on her mid-move. A boss that a command cannot
+     * remove is a bug report, not a mechanic.
+     */
+    @Override
+    public boolean hurt(DamageSource source, float amount) {
+        if (this.isBurrowed() && !source.is(DamageTypeTags.BYPASSES_INVULNERABILITY)) {
+            return false;
+        }
+        return super.hurt(source, amount);
     }
 
     // -------------------------------------------------------------- sounds --

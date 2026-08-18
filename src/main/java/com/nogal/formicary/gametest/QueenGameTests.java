@@ -24,6 +24,8 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.animal.Pig;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -70,6 +72,20 @@ public class QueenGameTests {
      * and well outside the reach of a 2.4-wide mob's bite.
      */
     private static final BlockPos ARENA_SPIT_RANGE = new BlockPos(2, 2, 12);
+
+    /**
+     * Exactly eight blocks west of {@link #ARENA_CENTRE}: inside her burrow band
+     * ({@link QueenAntEntity#BURROW_MIN_RANGE} 5 .. {@link QueenAntEntity#BURROW_MAX_RANGE}
+     * 14).
+     */
+    private static final BlockPos ARENA_BURROW_RANGE = new BlockPos(4, 2, 12);
+
+    /**
+     * Two blocks east of the queen -- inside {@link QueenAntEntity#SLAM_RADIUS} of the spot
+     * she burrows from, and eight blocks clear of {@link #ARENA_BURROW_RANGE}, which is what
+     * makes "took no damage" mean "no slam happened at the burrow point".
+     */
+    private static final BlockPos ARENA_BYSTANDER = new BlockPos(14, 2, 12);
 
     private static final BlockPos SMALL_ARENA_A = new BlockPos(1, 2, 1);
     private static final BlockPos SMALL_ARENA_B = new BlockPos(3, 2, 3);
@@ -356,6 +372,130 @@ public class QueenGameTests {
         });
     }
 
+    // ----------------------------------------------------------- burrow slam --
+
+    /**
+     * Ep2, task F3: "kiting is no longer free." The move is latched at
+     * {@link QueenAntEntity#BURROW_UNLOCK_FRACTION}, so this test is also the latch's
+     * assertion -- an unhurt queen must not have it, and taking her to half health must.
+     *
+     * <p>Half health crosses two of {@link QueenAntEntity#PHASE_THRESHOLDS} on the way past
+     * 60%, so this queen also summons two waves. That is left in deliberately: the burrow
+     * has to work in the state the fight actually reaches it in, soldiers and all.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform", timeoutTicks = 60)
+    public static void a_wounded_queen_burrows_at_a_target_eight_blocks_out(GameTestHelper helper) {
+        QueenAntEntity queen = helper.spawn(ModEntities.QUEEN_ANT.get(), ARENA_CENTRE);
+        Player intruder = mockPlayerAt(helper, ARENA_BURROW_RANGE);
+        queen.setTarget(intruder);
+
+        double distance = Math.sqrt(queen.distanceToSqr(intruder));
+        helper.assertTrue(distance >= QueenAntEntity.BURROW_MIN_RANGE
+                        && distance <= QueenAntEntity.BURROW_MAX_RANGE,
+                "setup: the intruder must stand inside the burrow band, not at " + distance);
+        helper.assertFalse(queen.hasUnlockedBurrowSlam(),
+                "an unhurt queen must not have unlocked the burrow slam");
+        helper.assertFalse(queen.isBurrowed(), "and must not already be underground");
+
+        // setHealth rather than repeated hurt(): the banked invulnerableTime rule makes a
+        // second same-size swing a silent no-op, so driving a boss down 100 HP by hitting
+        // her is a test of the damage window, not of this move.
+        queen.setHealth(queen.getMaxHealth() * 0.5F);
+
+        helper.succeedWhen(() -> {
+            helper.assertTrue(queen.hasUnlockedBurrowSlam(),
+                    "half health should have latched the burrow slam open");
+            helper.assertTrue(queen.isBurrowed(), "and she should have gone underground");
+        });
+    }
+
+    /**
+     * The abort. If the target is gone by the time she comes up, she surfaces where she went
+     * down and nothing happens -- no teleport to a corpse, and no area damage at the burrow
+     * point either.
+     *
+     * <p>The second half is the one worth writing. "She did not teleport" passes on an
+     * implementation that skips the move entirely; "she did not teleport AND the bystander
+     * two blocks from the burrow point is untouched" only passes on one that took the abort
+     * branch. The bystander is a pig with its AI switched off -- a non-ant living entity,
+     * which is exactly the set {@code burrowSlam} damages, parked so it cannot wander out of
+     * the radius and make the assertion vacuous.
+     *
+     * <p>The target is killed with {@code setHealth(0)} rather than {@code hurt}: it is the
+     * abort's own condition ({@code isAlive()} is false either way) and it cannot be
+     * swallowed by the banked {@code invulnerableTime} early return.
+     *
+     * <p>Its health is captured at the moment of the kill, not compared against the maximum,
+     * because {@code helper.spawn} drops a mob far enough to deal 1.0 fall damage -- the
+     * banked rule -- so a pig is never at full health by the time anything else happens.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform", timeoutTicks = 200)
+    public static void a_burrow_whose_target_dies_mid_move_surfaces_where_it_started(GameTestHelper helper) {
+        QueenAntEntity queen = helper.spawn(ModEntities.QUEEN_ANT.get(), ARENA_CENTRE);
+        Pig bystander = parkedPig(helper, ARENA_BYSTANDER);
+        Player intruder = mockPlayerAt(helper, ARENA_BURROW_RANGE);
+        queen.setTarget(intruder);
+        queen.setHealth(queen.getMaxHealth() * 0.5F);
+
+        helper.runAfterDelay(8, () -> {
+            helper.assertTrue(queen.isBurrowed(),
+                    "setup: she must be mid-burrow before the target dies");
+            Vec3 origin = queen.position();
+            float bystanderHealth = bystander.getHealth();
+            intruder.setHealth(0.0F);
+
+            // 34 more ticks: the burrow is 30 long and started inside the first two, so the
+            // eruption is comfortably behind us, and only a handful of ticks of ordinary
+            // walking are in front. The 3-block slack below is for those; the failure this
+            // catches is an 8-block teleport onto a corpse.
+            helper.runAfterDelay(34, () -> {
+                helper.assertFalse(queen.isBurrowed(), "the burrow should have finished by now");
+                helper.assertTrue(queen.distanceToSqr(origin) <= 9.0,
+                        "an aborted eruption must surface at the burrow point, not where the "
+                                + "dead target stood");
+                helper.assertValueEqual(bystander.getHealth(), bystanderHealth,
+                        "an aborted eruption must deal no area damage at the burrow point");
+                helper.succeed();
+            });
+        });
+    }
+
+    /**
+     * The control for the test above: with a live target the eruption really does land, and
+     * it really does hurt a non-ant standing where it lands.
+     *
+     * <p>Without this, "the bystander took no damage" would pass just as happily on an
+     * implementation whose slam never fires at all -- which is the failure mode a test about
+     * an abort is least able to notice on its own.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform", timeoutTicks = 200)
+    public static void a_completed_burrow_erupts_on_the_target_and_hurts_a_bystander(GameTestHelper helper) {
+        QueenAntEntity queen = helper.spawn(ModEntities.QUEEN_ANT.get(), ARENA_CENTRE);
+        // Standing on the spot the queen will erupt at, so the slam's centre is on it.
+        Pig bystander = parkedPig(helper, ARENA_BURROW_RANGE);
+        Player intruder = mockPlayerAt(helper, ARENA_BURROW_RANGE);
+        queen.setTarget(intruder);
+        queen.setHealth(queen.getMaxHealth() * 0.5F);
+
+        helper.runAfterDelay(8, () -> {
+            helper.assertTrue(queen.isBurrowed(),
+                    "setup: she must be mid-burrow before the eruption is asserted");
+            float bystanderHealth = bystander.getHealth();
+
+            helper.runAfterDelay(34, () -> {
+                helper.assertFalse(queen.isBurrowed(), "the burrow should have finished by now");
+                helper.assertTrue(bystander.getHealth() <= bystanderHealth - QueenAntEntity.SLAM_DAMAGE,
+                        "the eruption should have dealt " + QueenAntEntity.SLAM_DAMAGE
+                                + " to a non-ant inside its radius; the pig went from "
+                                + bystanderHealth + " to " + bystander.getHealth());
+                helper.succeed();
+            });
+        });
+    }
+
     // ------------------------------------------------------------- boss bar --
 
     /**
@@ -608,6 +748,24 @@ public class QueenGameTests {
         Vec3 pos = Vec3.atBottomCenterOf(helper.absolutePos(rel));
         player.setPos(pos.x, pos.y, pos.z);
         return player;
+    }
+
+    /**
+     * A pig at {@code rel} with its AI switched off.
+     *
+     * <p>A pig because {@code burrowSlam} spares every ant -- wild, tamed and the queen --
+     * so the only way to assert on its damage at all is with something that is not one, and
+     * a vanilla animal is the cheapest honest stand-in for a player the slam can actually
+     * see ({@code makeMockPlayer} is never added to the level, so it is invisible to the
+     * radius sweep the same way it is to every other one in this file).
+     *
+     * <p>{@code setNoAi} so it cannot stroll out of {@link QueenAntEntity#SLAM_RADIUS} and
+     * turn "took no damage" into a fact about pig pathfinding.
+     */
+    private static Pig parkedPig(GameTestHelper helper, BlockPos rel) {
+        Pig pig = helper.spawn(EntityType.PIG, rel);
+        pig.setNoAi(true);
+        return pig;
     }
 
     /**
