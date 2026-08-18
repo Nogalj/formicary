@@ -189,6 +189,13 @@ public class ModEntities {
                     Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                     (type, level, spawnType, pos, random) -> true,
                     RegisterSpawnPlacementsEvent.Operation.REPLACE);
+            // The one caste whose predicate is NOT unconditional: an ender ant belongs in
+            // the dark wilds between colonies, which is a fact about X/Z that no biome
+            // spawn list can state. See EnderAntEntity#checkSpawnRules.
+            event.register(ENDER_ANT.get(), SpawnPlacementTypes.ON_GROUND,
+                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    EnderAntEntity::checkSpawnRules,
+                    RegisterSpawnPlacementsEvent.Operation.REPLACE);
         }
     }
 

@@ -403,6 +403,43 @@ public final class ColonyGeneratorTunables {
     public static final double ENDER_SPAWN_MAX_F = 0.35;
 
     /**
+     * How many ender ants {@code ColonyChunkGenerator} seeds into each colony's fringe when
+     * its chunks generate, inclusive range.
+     *
+     * <p>Two or three, not a dozen: these are the ones that are guaranteed to still be there
+     * when a player first walks the ring (they are the only persistence-required ender ants
+     * -- see {@code EnderAntEntity}'s despawn-policy javadoc), and their job is to make the
+     * caste's existence discoverable. The population you actually fight comes from runtime
+     * spawning out in the dark wilds.
+     */
+    public static final int COLONY_ENDER_ANTS_MIN = 2;
+    public static final int COLONY_ENDER_ANTS_MAX = 3;
+
+    /**
+     * The colony-field band the seeded ants are placed in -- the core's fringe.
+     *
+     * <p>Deliberately overlapping {@link #ENDER_SPAWN_MAX_F} (0.35) at its lower end and
+     * reaching well inside it at its upper: the seeded few are the introduction, so they
+     * belong where a player heading out from a colony first meets them, not out in the wilds
+     * where the runtime spawns already are. Below 0.3 they would be indistinguishable from
+     * ordinary wilds spawns; above 0.8 they would be standing in a working nest.
+     */
+    public static final double ENDER_SEED_MIN_F = 0.3;
+    public static final double ENDER_SEED_MAX_F = 0.8;
+
+    /**
+     * The two radii {@link #ENDER_SEED_MAX_F} and {@link #ENDER_SEED_MIN_F} correspond to,
+     * solved from {@link #colonyFalloff} rather than written down.
+     *
+     * <p>Inverting the falloff by hand would mean a second copy of the quintic that goes
+     * stale the moment {@link #COLONY_CORE_RADIUS} or {@link #COLONY_OUTER_RADIUS} is
+     * retuned. {@link #radiusForField} bisects the real function instead, which is exact to
+     * well under a block and costs 64 evaluations once at class load.
+     */
+    public static final double ENDER_SEED_INNER_RADIUS = radiusForField(ENDER_SEED_MAX_F);
+    public static final double ENDER_SEED_OUTER_RADIUS = radiusForField(ENDER_SEED_MIN_F);
+
+    /**
      * The "never" sentinel the {@code *_THRESHOLD_BY_TIER} arrays already used for a tier
      * that grows no comb / no cathedral rooms: no single-octave Perlin value can exceed it
      * (measured span is {@code [-0.90, 0.91]}).
@@ -427,6 +464,31 @@ public final class ColonyGeneratorTunables {
     public static double colonyFalloff(double distance) {
         double t = (distance - COLONY_CORE_RADIUS) / (COLONY_OUTER_RADIUS - COLONY_CORE_RADIUS);
         return 1.0 - Mth.smoothstep(Mth.clamp(t, 0.0, 1.0));
+    }
+
+    /**
+     * The distance from a colony centre at which {@link #colonyFalloff} equals {@code field}.
+     *
+     * <p>Plain bisection, which is enough because the falloff is strictly decreasing over
+     * {@code [COLONY_CORE_RADIUS, COLONY_OUTER_RADIUS]} (it is {@code 1 - smoothstep}, and
+     * smoothstep is strictly increasing on the unit interval). {@code field} outside
+     * {@code (0, 1)} simply converges on the matching endpoint. Declared below
+     * {@code colonyFalloff} and read by the {@code ENDER_SEED_*_RADIUS} constants above,
+     * which is legal in either order for a static <em>method</em> -- only static field
+     * initialisers are order-sensitive.
+     */
+    private static double radiusForField(double field) {
+        double inside = COLONY_CORE_RADIUS;
+        double outside = COLONY_OUTER_RADIUS;
+        for (int step = 0; step < 64; step++) {
+            double mid = (inside + outside) * 0.5;
+            if (colonyFalloff(mid) > field) {
+                inside = mid;
+            } else {
+                outside = mid;
+            }
+        }
+        return (inside + outside) * 0.5;
     }
 
     // ------------------------------------------------------------------

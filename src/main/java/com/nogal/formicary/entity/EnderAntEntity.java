@@ -1,6 +1,8 @@
 package com.nogal.formicary.entity;
 
 import com.nogal.formicary.colony.ColonyAnger;
+import com.nogal.formicary.worldgen.ColonyChunkGenerator;
+import com.nogal.formicary.worldgen.ColonyGeneratorTunables;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -9,9 +11,12 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -24,6 +29,8 @@ import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.Vec3;
@@ -156,6 +163,62 @@ public class EnderAntEntity extends PathfinderMob {
         // at the ACQUISITION layer, and canAttack below honours it at the continuation layer.
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Player.class, 10, true, false,
                 living -> living instanceof Player player && ColonyAnger.isValidTarget(player)));
+    }
+
+    // -------------------------------------------------------- spawn rules --
+
+    /**
+     * Where an ender ant may spawn <em>at runtime</em> (Ep2 E4). Registered from
+     * {@code ModEntities} with {@code SpawnPlacementTypes.ON_GROUND} and
+     * {@code Heightmap.Types.MOTION_BLOCKING_NO_LEAVES}, {@code Operation.REPLACE} -- the
+     * same wiring the E1 spike proved the whole path through (see
+     * {@code docs/superpowers/plans/notes-e1-spike.md}: 1901 placement checks, the veto
+     * splitting cleanly either side of the field threshold with no crossover).
+     *
+     * <p>Three conditions, and the middle one is the whole design:
+     * <ol>
+     *   <li><b>block light 0.</b> The colony has no sky, so sky light is meaningless here and
+     *       vanilla's {@code Monster#isDarkEnoughToSpawn} would be answering a question about
+     *       a dimension this is not. What emits light down here is the decoration -- Resin
+     *       Weep, Fungal Bloom -- and decoration density is multiplied by the colony field,
+     *       so "no block light" is very nearly "not in a working nest" on its own. The spike
+     *       measured that: with no light gate at all, spawns still came in at block light
+     *       0-8, the 8s being the ones near an emissive decoration. This is the gate that
+     *       removes them.</li>
+     *   <li><b>colony field below {@link ColonyGeneratorTunables#ENDER_SPAWN_MAX_F}.</b> The
+     *       biomes here are Y bands, so "between the colonies" is not something a biome
+     *       spawn list can express -- it is an XZ property, and this is the only place it can
+     *       be asked. {@code ColonyNoise} is position-pure, so the sample is arithmetic
+     *       rather than a world read.</li>
+     *   <li><b>the standard on-ground check</b>, {@code Mob.checkMobSpawnRules}: something
+     *       underneath that is a valid spawn surface for this type.</li>
+     * </ol>
+     *
+     * <p>A level whose generator is not the colony's reads as field {@code 0} -- i.e. the
+     * field gate passes and the other two decide. That is deliberately permissive rather
+     * than a hard refusal, because it is unreachable in practice (no other biome anywhere
+     * lists this type) and a silent {@code false} would be an invisible way for the whole
+     * caste to stop spawning if the generator were ever swapped.
+     */
+    public static boolean checkSpawnRules(EntityType<EnderAntEntity> type, ServerLevelAccessor level,
+            MobSpawnType spawnType, BlockPos pos, RandomSource random) {
+        return level.getBrightness(LightLayer.BLOCK, pos) == 0
+                && colonyFieldAt(level, pos) < ColonyGeneratorTunables.ENDER_SPAWN_MAX_F
+                && Mob.checkMobSpawnRules(type, level, spawnType, pos, random);
+    }
+
+    /**
+     * The colony density at {@code pos}, read off the live level's own generator rather than
+     * rebuilt from the seed -- the same rule {@code FormicaryDevCommands#colonyNoise} states:
+     * a second, independently seeded copy would give answers that look reasonable and
+     * describe terrain that was never generated.
+     */
+    private static double colonyFieldAt(ServerLevelAccessor level, BlockPos pos) {
+        ServerLevel server = level.getLevel();
+        if (!(server.getChunkSource().getGenerator() instanceof ColonyChunkGenerator colony)) {
+            return 0.0;
+        }
+        return colony.noise(server.getChunkSource().randomState()).colonyField(pos.getX(), pos.getZ());
     }
 
     /**

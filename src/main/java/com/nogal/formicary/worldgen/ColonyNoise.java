@@ -13,8 +13,13 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_LARGE
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SMALL_THRESHOLD_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SMALL_XZ_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SMALL_Y_SCALE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COLONY_ENDER_ANTS_MAX;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COLONY_ENDER_ANTS_MIN;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COLONY_JITTER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COLONY_SPACING;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENDER_SEED_INNER_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENDER_SEED_OUTER_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.between;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FLOOR_TOP;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_APPROACH_DISTANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_CORRIDOR_END;
@@ -93,6 +98,8 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.WALL_JITTER_S
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.colonyFalloff;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierIndex;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import net.minecraft.util.Mth;
@@ -400,6 +407,72 @@ public final class ColonyNoise {
      */
     public boolean isChamberEligible(double x, double z) {
         return colonyField(x, z) > CHAMBER_ELIGIBILITY_MIN_F;
+    }
+
+    // ------------------------------------------------------------------
+    // Seeded ender ants (Ep2 E4) -- the introduction, out on the core's fringe
+    // ------------------------------------------------------------------
+
+    /**
+     * One ender ant that generation places, as an XZ. There is no Y here: the tier band is
+     * fixed (Royal Depths) but the floor inside it is a property of the carve, so
+     * {@code ColonyChunkGenerator} reads it off the chunk rather than deriving it.
+     */
+    public record EnderSlot(double x, double z) {
+    }
+
+    /**
+     * The two or three fringe positions one colony seeds an ender ant at.
+     *
+     * <p>Slots, not a per-chunk probability, and for the reason
+     * {@code spawnQueenIfThisChunkHoldsAThrone} places the queen the way it does: "2-3 per
+     * colony" is a statement about a colony, and a chunk-local dice roll can only ever
+     * approximate it. Making the positions a pure function of the cell means the chunk that
+     * happens to contain one seeds it, exactly once, with no marker block and no saved flag.
+     *
+     * <p>Each slot lands on a ring whose radius is drawn from
+     * {@code [ENDER_SEED_INNER_RADIUS, ENDER_SEED_OUTER_RADIUS]} -- the distances at which
+     * the field is {@code ENDER_SEED_MAX_F} and {@code ENDER_SEED_MIN_F}. The field there is
+     * that colony's own, not a neighbour's: the ring tops out at about 131 blocks from the
+     * centre while the nearest other centre is at least {@code COLONY_SPACING -
+     * COLONY_JITTER} = 288 away, so no other colony can be closer than 157. The bearings are
+     * spread evenly with a jitter inside each sector rather than drawn independently, so two
+     * of three ants never land on top of each other.
+     */
+    public EnderSlot[] enderSlotsForCell(int cellX, int cellZ) {
+        // y = 6: a seventh independent stream, after shaft (0), throne (1), nursery (2),
+        // garden (3), larder (4) and the colony centre itself (5).
+        RandomSource random = this.factory.at(cellX, 6, cellZ);
+        Colony colony = colonyCenterForCell(cellX, cellZ);
+        int count = between(COLONY_ENDER_ANTS_MIN, COLONY_ENDER_ANTS_MAX, random);
+        EnderSlot[] slots = new EnderSlot[count];
+        for (int i = 0; i < count; i++) {
+            double bearing = (i + random.nextDouble()) * TWO_PI / count;
+            double radius = ENDER_SEED_INNER_RADIUS
+                    + random.nextDouble() * (ENDER_SEED_OUTER_RADIUS - ENDER_SEED_INNER_RADIUS);
+            slots[i] = new EnderSlot(colony.centreX() + Math.cos(bearing) * radius,
+                    colony.centreZ() + Math.sin(bearing) * radius);
+        }
+        return slots;
+    }
+
+    /**
+     * Every seeded slot that could fall in the chunk containing {@code (blockX, blockZ)}.
+     *
+     * <p>The 3x3 cell neighbourhood is more than enough by the same argument
+     * {@link #coloniesNear} makes: a slot sits within about 131 blocks of its own colony
+     * centre, and every centre that close is inside the ring.
+     */
+    public EnderSlot[] enderSlotsNear(int blockX, int blockZ) {
+        int cellX = Math.floorDiv(blockX, COLONY_SPACING);
+        int cellZ = Math.floorDiv(blockZ, COLONY_SPACING);
+        List<EnderSlot> out = new ArrayList<>();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                Collections.addAll(out, enderSlotsForCell(cellX + dx, cellZ + dz));
+            }
+        }
+        return out.toArray(new EnderSlot[0]);
     }
 
     // ------------------------------------------------------------------

@@ -717,6 +717,7 @@ public class ColonyChunkGenerator extends ChunkGenerator {
 
         spawnQueenIfThisChunkHoldsAThrone(level, chunkPos);
         spawnLarvaeInNurseryChambers(level, chunkPos, random);
+        seedEnderAntsOnTheColonyFringe(level, chunkPos, random);
 
         // One field sample per chunk, at its centre: cluster density is a property of "which
         // part of the world is this chunk in", and a per-cluster sample would only add jitter
@@ -885,6 +886,86 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             }
             Formicary.LOGGER.info("Formicary: seeded {} larvae in the nursery chamber at ({}, {}, {})",
                     count, centreX, nursery.floorY() + 1, centreZ);
+        }
+    }
+
+    /**
+     * Seeds the two or three ender ants a colony introduces itself with (Ep2, spec section
+     * 5), exactly once per slot.
+     *
+     * <p>Third instance of the same mechanism as
+     * {@link #spawnQueenIfThisChunkHoldsAThrone} and {@link #spawnLarvaeInNurseryChambers}:
+     * the positions are a pure function of the colony cell ({@link ColonyNoise#
+     * enderSlotsForCell}), {@code ChunkStatus.SPAWN} runs once in a chunk's life, and the
+     * chunk that happens to contain a slot is the one that fills it. That is what makes "2-3
+     * per colony" true of a colony rather than true on average.
+     *
+     * <p>Two deliberate departures from {@link #spawnTier}, which is the other thing in this
+     * file that places mobs:
+     * <ul>
+     *   <li>{@code SpawnPlacements.checkSpawnRules} is <em>not</em> consulted. It would
+     *       reject nearly every slot: the runtime predicate
+     *       ({@code EnderAntEntity#checkSpawnRules}) demands block light 0 and a colony field
+     *       below {@code ENDER_SPAWN_MAX_F} = 0.35, while these ants are placed on purpose in
+     *       a lit-ish fringe at {@code f} in {@code [0.3, 0.8]}. This is placed content, the
+     *       queen and the nursery brood are placed the same way, and a placement predicate is
+     *       a rule about where a <em>population</em> may appear.</li>
+     *   <li>{@code setPersistenceRequired()} -- unlike a runtime ender ant, which keeps
+     *       {@code Mob}'s stock distance despawn on purpose. Without it these would be gone
+     *       the first time a player walked 128 blocks away, which is to say before anyone
+     *       ever met one, since {@code MobCategory.MONSTER} is not persistent.</li>
+     * </ul>
+     */
+    private void seedEnderAntsOnTheColonyFringe(WorldGenRegion level, ChunkPos chunkPos, RandomSource random) {
+        // Royal Depths only (tier 0), clamped into the buildable range the way spawnTier
+        // clamps its own bands.
+        int bandMin = Math.max(tierMinY(0), level.getMinBuildHeight() + 1);
+        int bandMax = Math.min(tierMaxY(0), level.getMaxBuildHeight() - 2);
+        if (bandMax <= bandMin) {
+            return;
+        }
+
+        ColonyNoise noise = noise(level.getLevel().getChunkSource().randomState());
+        for (ColonyNoise.EnderSlot slot : noise.enderSlotsNear(chunkPos.getMinBlockX(), chunkPos.getMinBlockZ())) {
+            int x = Mth.floor(slot.x());
+            int z = Mth.floor(slot.z());
+            if (SectionPos.blockToSectionCoord(x) != chunkPos.x || SectionPos.blockToSectionCoord(z) != chunkPos.z) {
+                continue;
+            }
+            // The slot is an XZ in a ring, and one 1x1 column of the Royal Depths is solid
+            // far more often than not -- a scripted runServer probe seeded only 1 of 2 slots
+            // when this took a single column. So it wanders, exactly the way spawnTier's own
+            // placement loop does: jitter a few blocks and try again, clamped into this
+            // chunk because a WorldGenRegion refuses writes outside the chunks it owns.
+            int originX = chunkPos.getMinBlockX();
+            int originZ = chunkPos.getMinBlockZ();
+            int y = Integer.MIN_VALUE;
+            for (int attempt = 0; y == Integer.MIN_VALUE && attempt < SPAWN_FLOOR_ATTEMPTS; attempt++) {
+                y = findFloor(level, x, z, bandMin, bandMax, random);
+                if (y == Integer.MIN_VALUE) {
+                    x = Mth.clamp(x + random.nextInt(7) - 3, originX, originX + 15);
+                    z = Mth.clamp(z + random.nextInt(7) - 3, originZ, originZ + 15);
+                }
+            }
+            if (y == Integer.MIN_VALUE) {
+                // Still nothing: a chunk of the fringe that is genuinely solid through the
+                // whole Royal Depths band. Expected occasionally rather than a fault -- the
+                // colony simply seeds one fewer.
+                Formicary.LOGGER.debug("Formicary: no Royal Depths floor for the ender ant slot at ({}, {})", x, z);
+                continue;
+            }
+
+            Entity entity = ModEntities.ENDER_ANT.get().create(level.getLevel());
+            if (!(entity instanceof Mob ant)) {
+                Formicary.LOGGER.warn("Formicary: could not create the seeded ender ant at ({}, {}, {})", x, y, z);
+                continue;
+            }
+            ant.moveTo(x + 0.5, y, z + 0.5, random.nextFloat() * 360.0F, 0.0F);
+            ant.finalizeSpawn(level, level.getCurrentDifficultyAt(new BlockPos(x, y, z)),
+                    MobSpawnType.CHUNK_GENERATION, null);
+            ant.setPersistenceRequired();
+            level.addFreshEntityWithPassengers(ant);
+            Formicary.LOGGER.info("Formicary: seeded an ender ant on the colony fringe at ({}, {}, {})", x, y, z);
         }
     }
 
