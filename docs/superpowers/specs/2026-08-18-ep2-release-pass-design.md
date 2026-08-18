@@ -18,19 +18,28 @@ critic, refuter) ran against source on 2026-08-18; its findings are folded in be
 The video ships Sunday regardless; the public release does not have to — **the
 CurseForge/Modrinth build may trail the video by a day or two.**
 
-- **P0 — release blockers (ship no matter what):** §2 exits, §4 boss-bar gate,
-  §7 (both halves), §11 release mechanics.
-- **P1 — episode headliners:** §1 colony field, §3 chambers (depends on §1),
-  §5 ender ant, §6 queen. **§13 dev tooling lands early in P1** — every visual
-  verification after it gets cheaper (the colony-locate command rides along with
-  §1's noise code; the shot-list autopilot is independent and can land first).
+- **P0 — release blockers (ship no matter what):** §2 exits (visibility +
+  affordability floor), §3 chambers (the larders carry §2's pearl floor), §4
+  boss-bar gate, §7 (sneak-click toggle + harvesting rework), §11 release
+  mechanics.
+- **P1 — episode headliners:** §1 colony field, §5 ender ant, §6 queen. **§13 dev
+  tooling lands early in P1** — every visual verification after it gets cheaper
+  (the colony-locate command rides along with §1's noise code; the shot-list
+  autopilot is independent and can land first).
 - **P2 — polish:** §8 items, §9 building blocks, §10 textures.
+- **§3 does NOT depend on §1:** the new chambers use the nursery's existing
+  construction on their own spacing grids, which works on today's uniform layout;
+  §1 merely *adds* the `f > ~0.2` eligibility gate when it lands. This is what
+  keeps §2's pearl floor (and the Peaceful exit economy) in P0 even if the colony
+  field slips.
 - **Gate:** the colony field (§1) must be probe-green by **Thu Aug 20 EOD** or it
-  defers to a post-video 1.1 (§3 defers with it; §4/§5 degrade gracefully — the bar
-  gate works at any spacing, the ender ant falls back to Royal-Depths-only).
-- **Human pass:** Logan play-tests a fresh colony-field world **no later than Fri
-  Aug 22**; 1.0.0 is frozen only after that pass. (Banked lesson: live verification
-  can be fully green and the first human contact still broken.)
+  defers to a post-video 1.1 (§4/§5 degrade gracefully — the bar gate alone kills
+  the two-bars symptom at today's 224 spacing, and the ender ant's spawn predicate
+  simply sees `f`-low everywhere until the field lands).
+- **Human pass:** Logan play-tests a fresh world **no later than Fri Aug 21** (the
+  day before the Saturday shoot); 1.0.0 is frozen only after that pass. (Banked
+  lesson: live verification can be fully green and the first human contact still
+  broken.)
 
 ## 1. Colony field (worldgen)
 
@@ -107,7 +116,8 @@ are a coupled system: the ender ant is what makes exit pearls renewable.
 ## 3. New chambers
 
 Both use the nursery's reachable-by-construction build (ramp hang-off, corridor at
-walkable Y, probe-verified), eligible where `f > ~0.2` (§1).
+walkable Y, probe-verified) on their own spacing grids — **no §1 dependency**; when
+the colony field lands, the `f > ~0.2` eligibility gate (§1) is added on top.
 
 - **Fungus Garden** — Fungal Gardens tier (y 96–143), one per 96 cell, radius ≈ 8.
   Floor carpeted in fungal growth with wild **harvestable fungal spore crops**
@@ -137,10 +147,11 @@ symptom at today's 224 spacing.
 ## 5. Ender Ant (new hostile caste)
 
 - **Mechanism (not expressible as biome data):** biomes here are Y-bands; "between
-  colonies" is XZ noise. The ant registers in the tier biomes' MONSTER lists (all
-  currently empty) **plus a custom `SpawnPlacements` predicate sampling the colony
-  falloff `f`** (ColonyNoise is position-pure, so the sample is cheap) — spawns
-  where `f` is low and block light is 0. The dimension's `monster_spawn_light_level
+  colonies" is XZ noise. The ant registers in the **two deep-tier biomes'** MONSTER
+  lists only (Royal Depths + Nurseries — preserving the chosen deep-tier flavor;
+  both lists currently empty) **plus a custom `SpawnPlacements` predicate sampling
+  the colony falloff `f`** (ColonyNoise is position-pure, so the sample is cheap) —
+  spawns where `f` is low and block light is 0. Upper tiers stay ender-free. The dimension's `monster_spawn_light_level
   = 0` plus emissive decoration concentrating in cores means spawns naturally skew
   to the dark inter-colony wilds — which is the intent.
 - **Despawn policy (deliberate, two-tier):** runtime-spawned ender ants **despawn
@@ -193,10 +204,14 @@ hand-authored NBT.
 
 ## 7. Tamed workers
 
-- **Status announce (scoped by code review):** workers already announce on
-  bind/unbind transitions; the one silent branch is sneak-clicking a worker that's
-  already following (sound only). Fix: announce the current state on **every**
-  command interaction, including no-change ones — matching how soldiers feel.
+- **Sneak-click becomes a true toggle (Logan, 2026-08-18):** today binding is
+  chest-driven only — right-click a chest and the nearest unbound owned worker
+  takes it; sneak-clicking an unbound ant does nothing but a sound. New behavior:
+  sneak-click a **bound** worker → unbind, announce "following" (unchanged);
+  sneak-click an **unbound** worker → bind to the **nearest deposit chest within
+  ~16 blocks** and announce "harvesting", or announce "no chest nearby" and stay
+  following if none is in range. Chest-click binding stays as-is. Every
+  interaction announces the resulting state — no more silent branches.
 - **Smarter harvesting** (the radius machinery already exists and is respected —
   no change claimed there): **nearest-mature-crop targeting** (the scanner is
   currently a budgeted cursor, not nearest-first); **guaranteed replant** — close
@@ -207,10 +222,16 @@ hand-authored NBT.
   sweep-until-pack-full is deliberately nerfed: "too good"). Ground-item ferrying
   stays as-is.
 - **GameTests:** after one harvest the next act is a deposit, not a second crop;
-  replant happens even on a zero-seed roll; nearest-mature is chosen.
-  **Expected to move:** the existing harvest-loop/deposit-trigger tests pin the old
-  sweep behavior — they get explicitly retargeted to the one-crop loop, and the
-  retarget is named in the commit.
+  replant happens even on a zero-seed roll; nearest-mature is chosen; sneak-click
+  on an unbound worker binds to the nearest in-range chest (and announces the
+  no-chest case).
+  **Expected to move:** `the_crop_scan_is_tick_budgeted_and_incremental`
+  (TamingGameTests) pins the budgeted-cursor scanner that nearest-mature targeting
+  replaces — it gets explicitly retargeted, named in the commit. The single-crop
+  `bound_worker_harvests_replants_and_deposits` test passes unchanged. Note for the
+  implementer: the current deposit trip has three triggers (pack full, field
+  exhausted, 40-tick idle — `DepositToChestGoal`); the one-crop rule supersedes
+  them — remove/repurpose deliberately, don't leave dead constants.
 
 ## 8. New items
 
@@ -252,7 +273,7 @@ Three families crafted from colony materials, datagen'd like existing blocks:
 ## 11. Release readiness
 
 - **Version → 1.0.0** (`gradle.properties`; metadata is generated — never hand-edit
-  the toml). Frozen only after Logan's Friday fresh-world pass (see cut line).
+  the toml). Frozen only after Logan's Fri Aug 21 fresh-world pass (see cut line).
 - **mods.toml metadata real:** description, author, GitHub repo + issues URLs.
 - **Mod icon is a real art task:** no logo asset exists in the repo (template
   `logoFile` is commented out) — produce/borrow the Formicary logo PNG, wire it in.
@@ -269,9 +290,8 @@ Three families crafted from colony materials, datagen'd like existing blocks:
 ## 12. Verification bar
 
 - **GameTests:** all 53 existing tests **green or explicitly retargeted** — the §7
-  one-crop change is *expected* to move the harvest-loop/deposit tests, and each
-  retarget is named. New tests per §5–§7; Provision Comb loot + brewing recipe
-  tests for §8.
+  rework is *expected* to move the scan-budget test (see §7), and each retarget is
+  named. New tests per §5–§7; Provision Comb loot + brewing recipe tests for §8.
 - **NoiseProbe:** colony section per §1 (including the separation invariant and
   findability stat) + exposed-ceiling⇒membrane assert per §2, re-run across the
   standard seeds.
