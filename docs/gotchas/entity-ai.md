@@ -81,11 +81,21 @@ keeps its original `verified:` date. Routed by the symptom index in CLAUDE.md.
   with `getMoveControl().setWantedPosition(...)` -- the same primitive `PathNavigation.tick()`
   itself uses to push a mob at its next waypoint -- bounded to a few blocks so it stays a final
   step rather than becoming a pathfinding substitute that could walk the mob off a ledge. Any
-  goal pairing `moveTo` with a hand-written reach wants checking against this: `RelocateItemGoal`
-  has the identical 1.5-block pickup on the same `moveTo(Entity)` approach and is **still
-  exposed** (its failure is only a wasted errand, so no test caught it); `HarvestCropsGoal` and
-  `DepositToChestGoal` use 2.0 and aim at block centres, which is narrower but not provably
-  safe. (`verified: 2026-08-18`)
+  goal pairing `moveTo` with a hand-written reach wants checking against this. `RelocateItemGoal`
+  had the identical 1.5-block pickup on the same `moveTo(Entity)` approach and got the same fix
+  plus a deterministic twin test (`a_drop_the_path_stops_short_of_is_still_relocated`) on
+  2026-08-18 -- its deadlock had gone unfiled because the failure is invisible in play: the
+  errand burns its approach timeout, the cooldown swallows the retry, and the ant just looks
+  like it changed its mind. `HarvestCropsGoal` and `DepositToChestGoal` (reach 2.0, aimed at
+  block centres) were assessed safe and left alone: `PathFinder.findPath` accepts an end node
+  by MANHATTAN distance (`node.distanceManhattan(target) <= accuracy`, read in the decompiled
+  source), so an accuracy-1 path ends on the target block or one of its six face neighbours,
+  and against a block-CENTRE aim the worst retirement position -- 1.0 of node offset plus the
+  0.45 per-axis waypoint slack plus the half-block up to the centre, ant on standable ground --
+  lands about 1.6 out, inside 2.0 with ~0.4 to spare. The item goals were the exposed pair
+  because an item entity's measured position floats up to a further ~0.7 from the centre of
+  the block actually pathed to (`blockPosition()`), which is what stretched "arrived" to ~2.2
+  against their 1.5. (`verified: 2026-08-18`)
 - **`xpReward = N` never produces one orb worth N.** `ExperienceOrb.award` splits the total
   through `getExperienceValue`'s tier ladder (1, 3, 7, 17, ...), so a reward of 8 always
   arrives as 7+1. A GameTest using `anyMatch(orb.getValue() == XP_REWARD)` works for 7 by
