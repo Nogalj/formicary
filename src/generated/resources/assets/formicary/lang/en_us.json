@@ -71,9 +71,13 @@
   "item.formicary.trail_pheromone": "Trail Pheromone",
   "item.formicary.trail_pheromone.no_trail": "No trail to follow yet.",
   "item.formicary.worker_ant_spawn_egg": "Worker Ant Spawn Egg",
+  "item.minecraft.lingering_potion.effect.hardened_chitin": "Lingering Potion of Hardened Chitin",
   "item.minecraft.lingering_potion.effect.pheromonal_disguise": "Lingering Potion of Pheromonal Disguise",
+  "item.minecraft.potion.effect.hardened_chitin": "Potion of Hardened Chitin",
   "item.minecraft.potion.effect.pheromonal_disguise": "Potion of Pheromonal Disguise",
+  "item.minecraft.splash_potion.effect.hardened_chitin": "Splash Potion of Hardened Chitin",
   "item.minecraft.splash_potion.effect.pheromonal_disguise": "Splash Potion of Pheromonal Disguise",
+  "item.minecraft.tipped_arrow.effect.hardened_chitin": "Arrow of Hardened Chitin",
   "item.minecraft.tipped_arrow.effect.pheromonal_disguise": "Arrow of Pheromonal Disguise",
   "itemGroup.formicary.formicary": "Formicary"
 }

@@ -116,6 +116,12 @@ public class ModLanguageProvider extends LanguageProvider {
         add("item.minecraft.lingering_potion.effect.pheromonal_disguise", "Lingering Potion of Pheromonal Disguise");
         add("item.minecraft.tipped_arrow.effect.pheromonal_disguise", "Arrow of Pheromonal Disguise");
 
+        // Ep2 task H2: same four-key shape as the disguise potion above.
+        add("item.minecraft.potion.effect.hardened_chitin", "Potion of Hardened Chitin");
+        add("item.minecraft.splash_potion.effect.hardened_chitin", "Splash Potion of Hardened Chitin");
+        add("item.minecraft.lingering_potion.effect.hardened_chitin", "Lingering Potion of Hardened Chitin");
+        add("item.minecraft.tipped_arrow.effect.hardened_chitin", "Arrow of Hardened Chitin");
+
         // M8: the formicary advancement tab -- root plus six beats.
         add("advancements.formicary.root.title", "Formicary");
         add("advancements.formicary.root.description", "Delve into the ant colony");

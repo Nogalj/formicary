@@ -63,6 +63,12 @@ public class ModCreativeModeTabs {
                                 PotionContents.createItemStack(Items.SPLASH_POTION, ModPotions.PHEROMONAL_DISGUISE));
                         output.accept(PotionContents.createItemStack(Items.LINGERING_POTION,
                                 ModPotions.PHEROMONAL_DISGUISE));
+                        // Ep2 task H2, same PotionContents.createItemStack seam as above.
+                        output.accept(PotionContents.createItemStack(Items.POTION, ModPotions.HARDENED_CHITIN));
+                        output.accept(
+                                PotionContents.createItemStack(Items.SPLASH_POTION, ModPotions.HARDENED_CHITIN));
+                        output.accept(
+                                PotionContents.createItemStack(Items.LINGERING_POTION, ModPotions.HARDENED_CHITIN));
                         output.accept(ModEntities.WORKER_ANT_SPAWN_EGG.get());
                         output.accept(ModEntities.SOLDIER_ANT_SPAWN_EGG.get());
                         output.accept(ModEntities.LARVA_SPAWN_EGG.get());
