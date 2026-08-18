@@ -93,6 +93,9 @@ public class ModLanguageProvider extends LanguageProvider {
         // Ep2, spec section 5. No spawn egg on purpose -- see ModEntities.ENDER_ANT.
         addEntityType(ModEntities.ENDER_ANT, "Ender Ant");
 
+        // Ep2, task F2. A projectile has a name because a death message can quote one.
+        addEntityType(ModEntities.ACID_SPIT, "Acid Spit");
+
         add("itemGroup.formicary.formicary", "Formicary");
 
         addEffect(ModMobEffects.PHEROMONAL_DISGUISE, "Pheromonal Disguise");

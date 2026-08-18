@@ -5,6 +5,7 @@ import java.util.List;
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.ModBlocks;
 import com.nogal.formicary.effect.ModMobEffects;
+import com.nogal.formicary.entity.AcidSpitProjectile;
 import com.nogal.formicary.entity.ModEntities;
 import com.nogal.formicary.entity.QueenAntEntity;
 import com.nogal.formicary.entity.SoldierAntEntity;
@@ -62,6 +63,13 @@ public class QueenGameTests {
 
     /** Somewhere in the arena a mock player can stand without being on top of the queen. */
     private static final BlockPos ARENA_SIDE = new BlockPos(9, 2, 12);
+
+    /**
+     * Exactly ten blocks west of {@link #ARENA_CENTRE}: inside her spit band
+     * ({@link QueenAntEntity#SPIT_MIN_RANGE} 6 .. {@link QueenAntEntity#SPIT_MAX_RANGE} 16)
+     * and well outside the reach of a 2.4-wide mob's bite.
+     */
+    private static final BlockPos ARENA_SPIT_RANGE = new BlockPos(2, 2, 12);
 
     private static final BlockPos SMALL_ARENA_A = new BlockPos(1, 2, 1);
     private static final BlockPos SMALL_ARENA_B = new BlockPos(3, 2, 3);
@@ -276,6 +284,76 @@ public class QueenGameTests {
         helper.assertTrue(stillAngry.getTarget() == null,
                 "the untouched guard was never hunting anyone, and must not have gained a target");
         helper.succeed();
+    }
+
+    // ------------------------------------------------------------ acid spit --
+
+    /**
+     * Ep2, task F2: "range is no longer free." Her spit is live from the first tick of a
+     * fight -- no health latch -- so a player who parks at ten blocks and shoots is answered.
+     *
+     * <p>Driven through the real goal rather than by calling
+     * {@link QueenAntEntity#spitAcidAt}: what this owns is that the AI reaches the decision
+     * on its own, inside 100 ticks, given nothing but a target in the band. The cooldown
+     * assertion rides along because it is the difference between an attack and a stream --
+     * without it the test passes on an implementation that fires every tick forever.
+     *
+     * <p>{@code timeoutTicks = 100} is the assertion, not a safety margin: "within 100
+     * ticks" is the contract, so the test is allowed to fail by simply running out.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform", timeoutTicks = 100)
+    public static void the_queen_spits_acid_at_a_target_ten_blocks_out(GameTestHelper helper) {
+        QueenAntEntity queen = helper.spawn(ModEntities.QUEEN_ANT.get(), ARENA_CENTRE);
+        Player intruder = mockPlayerAt(helper, ARENA_SPIT_RANGE);
+        queen.setTarget(intruder);
+
+        double distance = Math.sqrt(queen.distanceToSqr(intruder));
+        helper.assertTrue(distance >= QueenAntEntity.SPIT_MIN_RANGE
+                        && distance <= QueenAntEntity.SPIT_MAX_RANGE,
+                "setup: the intruder must stand inside the spit band, not at " + distance);
+        helper.assertTrue(queen.isAcidSpitReady(), "setup: her spit starts off cooldown");
+        helper.assertValueEqual(spitsFrom(helper, queen).size(), 0,
+                "acid spits before she has ticked at all");
+
+        helper.succeedWhen(() -> {
+            helper.assertFalse(spitsFrom(helper, queen).isEmpty(),
+                    "she should have spat acid at a target ten blocks out");
+            helper.assertTrue(queen.getAcidSpitCooldown() > 0,
+                    "firing must charge the cooldown, or she spits every tick she can see you");
+        });
+    }
+
+    /**
+     * The band's lower edge. A target already inside melee gets bitten, not spat on --
+     * without {@link QueenAntEntity#SPIT_MIN_RANGE} the fight's two attacks would land
+     * simultaneously and neither would read as a decision.
+     *
+     * <p>Ten ticks is deliberately short. Her spit starts ready and the goal selector
+     * evaluates {@code canUse} every other tick, so an implementation missing the minimum
+     * would have fired inside the first two -- and by tick 10 exactly one bite has landed
+     * (10 damage, one {@code MeleeAttackGoal} interval), so the guard below can still prove
+     * the absence means something rather than that the target quietly died.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform", timeoutTicks = 100)
+    public static void the_queen_does_not_spit_at_a_target_already_in_melee(GameTestHelper helper) {
+        QueenAntEntity queen = helper.spawn(ModEntities.QUEEN_ANT.get(), ARENA_CENTRE);
+        Player biteable = mockPlayerAt(helper, ARENA_SIDE);
+        queen.setTarget(biteable);
+
+        double distance = Math.sqrt(queen.distanceToSqr(biteable));
+        helper.assertTrue(distance < QueenAntEntity.SPIT_MIN_RANGE,
+                "setup: the target must stand inside the minimum range, not at " + distance);
+        helper.assertTrue(queen.isAcidSpitReady(), "setup: her spit starts off cooldown");
+
+        helper.runAfterDelay(10, () -> {
+            helper.assertTrue(queen.getTarget() == biteable && biteable.isAlive(),
+                    "setup: she must still be locked on a live target for the absence to mean anything");
+            helper.assertValueEqual(spitsFrom(helper, queen).size(), 0,
+                    "acid spits at a target already inside her bite");
+            helper.succeed();
+        });
     }
 
     // ------------------------------------------------------------- boss bar --
@@ -530,6 +608,21 @@ public class QueenGameTests {
         Vec3 pos = Vec3.atBottomCenterOf(helper.absolutePos(rel));
         player.setPos(pos.x, pos.y, pos.z);
         return player;
+    }
+
+    /**
+     * Every live acid spit <em>this</em> queen fired.
+     *
+     * <p>Filtered by owner rather than only by a box, because GameTest arenas share one
+     * level and sit in a grid: a spit test running in the next arena over is close enough
+     * for a position-only query to see, and "some queen somewhere spat" is not what either
+     * of these tests claims.
+     */
+    private static List<AcidSpitProjectile> spitsFrom(GameTestHelper helper, QueenAntEntity queen) {
+        double reach = QueenAntEntity.SPIT_MAX_RANGE * 3.0;
+        return helper.getLevel().getEntitiesOfClass(AcidSpitProjectile.class,
+                AABB.ofSize(queen.position(), reach, reach, reach),
+                spit -> spit.isAlive() && spit.getOwner() == queen);
     }
 
     /** Every soldier in the level within the burst's own radius of the queen. */

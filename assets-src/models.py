@@ -46,6 +46,7 @@ TEX = 64
 SOLDIER_TEX_W, SOLDIER_TEX_H = 64, 32
 LARVA_TEX_W, LARVA_TEX_H = 32, 16
 QUEEN_TEX_W, QUEEN_TEX_H = 128, 64
+ACID_TEX_W, ACID_TEX_H = 32, 16
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENTITY_TEX_DIR = REPO_ROOT / "src/main/resources/assets/formicary/textures/entity"
 PREVIEW_DIR = Path(__file__).resolve().parent / "previews"
@@ -424,6 +425,42 @@ QUEEN_ANT = {
 QUEEN_ANT["parts"].extend(queen_antenna(-1) + queen_antenna(1))
 
 
+# Acid spit (Ep2, task F2): the queen's ranged attack, a flying blob.
+#
+# Deliberately symmetric in Y, and that is a rendering fact rather than taste.
+# LlamaSpitRenderer -- the reference this follows -- extends EntityRenderer, NOT
+# LivingEntityRenderer, so it never applies the scale(-1, -1, 1) flip that makes
+# +Y "down" for every mob in this file. A blob that is identical top and bottom
+# renders the same either way, so the preview below and the game agree without
+# the spec having to pick a convention it cannot honour.
+#
+# Shape is LlamaSpit's idea at a smaller part count: one 4-cube core with four
+# 2-cubes budding off its sides, so it reads as a splattering glob rather than a
+# tidy box. All four buds share one atlas rect -- they are the same cube.
+#
+# Atlas is 32x16:  core (0, 0) 16x8    bud (16, 0) 8x4
+ACID_SPIT = {
+    "name": "acid_spit",
+    "parts": [
+        {"name": "core", "pose": (0, 20, 0), "cubes": [
+            {"off": (0, 0), "box": (-2, -2, -2, 4, 4, 4)},
+        ]},
+        {"name": "bud_west", "pose": (0, 20, 0), "cubes": [
+            {"off": (16, 0), "box": (-4, -1, -1, 2, 2, 2)},
+        ]},
+        {"name": "bud_east", "pose": (0, 20, 0), "cubes": [
+            {"off": (16, 0), "box": (2, -1, -1, 2, 2, 2)},
+        ]},
+        {"name": "bud_north", "pose": (0, 20, 0), "cubes": [
+            {"off": (16, 0), "box": (-1, -1, -4, 2, 2, 2)},
+        ]},
+        {"name": "bud_south", "pose": (0, 20, 0), "cubes": [
+            {"off": (16, 0), "box": (-1, -1, 2, 2, 2, 2)},
+        ]},
+    ],
+}
+
+
 # ------------------------------------------------------------------- faces --
 
 def face_rects(u, v, w, h, d):
@@ -612,6 +649,23 @@ Q_SAC_PALE = (253, 240, 210, 255)
 
 Q_EYE = (255, 226, 150, 255)
 Q_EYE_DARK = (30, 12, 22, 255)
+
+
+# ------------------------------------------------------------- acid palette --
+# The queen's spit (Ep2). Bile green, deliberately the one thing in this mod that
+# is NOT in the warm chitin/amber family: it has to read as "not part of her" at a
+# glance, from across a chamber, in the dark. The pale top tone is what carries it
+# at that distance; the dark rim is what keeps it from looking like a slime ball.
+
+A_ACID_DARKEST = (24, 46, 12, 255)
+A_ACID_DARK = (46, 84, 22, 255)
+A_ACID_BASE = (86, 150, 36, 255)
+A_ACID_MID = (124, 190, 52, 255)
+A_ACID_LIGHT = (166, 220, 84, 255)
+A_ACID_PALE = (214, 248, 148, 255)
+
+A_ACID_PAL = [A_ACID_DARK, A_ACID_BASE, A_ACID_MID, A_ACID_LIGHT, A_ACID_PALE]
+A_ACID_RIM_PAL = [A_ACID_DARKEST, A_ACID_DARK, A_ACID_DARK, A_ACID_BASE, A_ACID_MID]
 
 # Ep2 model pass, item 3: the crest was six flat fills of Q_GOLD_DEEP -- a solid
 # yellow slab on the one part of her that is supposed to read as a crown. Its own
@@ -1236,6 +1290,41 @@ def paint_queen_ant():
     return img
 
 
+def paint_acid_spit():
+    img = Image.new("RGBA", (ACID_TEX_W, ACID_TEX_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    parts = {p["name"]: p for p in ACID_SPIT["parts"]}
+    NS = "acid_spit"
+
+    def rects(cube):
+        u, v = cube["off"]
+        _, _, _, w, h, dd = cube["box"]
+        return face_rects(u, v, w, h, dd)
+
+    # ---- core: a lit blob -- pale on top, dark underneath ------------------
+    # cell=1 on a 4-texel face: anything coarser paints the whole thing one tone.
+    r = rects(parts["core"]["cubes"][0])
+    for f in ("west", "north", "east", "south"):
+        noise_rect(d, r[f], "core:" + f, A_ACID_PAL, namespace=NS, cell=1, jitter=0.4)
+        hband(d, r[f], 0, A_ACID_LIGHT)          # lit crown
+        hband(d, r[f], 3, A_ACID_DARK)           # shaded underside
+    noise_rect(d, r["top"], "core:top", A_ACID_PAL, namespace=NS, cell=1, jitter=0.4)
+    noise_rect(d, r["bottom"], "core:bottom", A_ACID_RIM_PAL, namespace=NS, cell=1, jitter=0.4)
+    px(d, r["top"], 1, 1, A_ACID_PALE)           # one specular texel, top and front
+    px(d, r["north"], 1, 1, A_ACID_PALE)
+
+    # ---- bud: one rect shared by all four, so it reads the same from any side --
+    r = rects(parts["bud_west"]["cubes"][0])
+    for f in ("top", "west", "north", "east", "south"):
+        fill(d, r[f], A_ACID_MID)
+    fill(d, r["bottom"], A_ACID_DARK)
+    for f in ("west", "north", "east", "south"):
+        hband(d, r[f], 0, A_ACID_LIGHT)
+    px(d, r["top"], 0, 0, A_ACID_PALE)
+
+    return img
+
+
 # ----------------------------------------------------------------- preview --
 
 def rotate_zyx(p, rot):
@@ -1422,6 +1511,7 @@ MODELS = [
     (LARVA, paint_larva),
     (QUEEN_ANT, paint_queen_ant),
     (ENDER_ANT, paint_ender_ant),
+    (ACID_SPIT, paint_acid_spit),
 ]
 
 

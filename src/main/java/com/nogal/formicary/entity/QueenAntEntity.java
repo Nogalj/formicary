@@ -2,6 +2,7 @@ package com.nogal.formicary.entity;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 
 import javax.annotation.Nullable;
@@ -28,6 +29,7 @@ import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
+import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.MoveTowardsRestrictionGoal;
@@ -142,6 +144,24 @@ public class QueenAntEntity extends PathfinderMob {
     /** Pheromonal Disguise granted on her death: 3600 ticks = 3 minutes. Tunable. */
     public static final int GRACE_DISGUISE_TICKS = 3600;
 
+    // ------------------------------------------------------------ acid spit --
+
+    /**
+     * Closest range she will spit from. Inside this she is already in melee, and a boss
+     * that shoots you in the face while biting you is not a decision the player can read.
+     * Tunable.
+     */
+    public static final double SPIT_MIN_RANGE = 6.0;
+
+    /**
+     * Furthest range she will spit from -- deliberately half her {@code FOLLOW_RANGE}, so
+     * "she can see you" and "she can reach you" stay two different facts. Tunable.
+     */
+    public static final double SPIT_MAX_RANGE = 16.0;
+
+    /** Ticks between spits: 4 seconds. Tunable. */
+    public static final int SPIT_COOLDOWN_TICKS = 80;
+
     /**
      * XP reward on death (play-test round 1, spec item 2: "queen ~50-60, boss-tier,
      * wither-class"). Already matched {@code WitherBoss.xpReward} exactly before this round
@@ -157,6 +177,19 @@ public class QueenAntEntity extends PathfinderMob {
 
     /** Bitmask over {@link #PHASE_THRESHOLDS}. Persisted, so a relog cannot re-trigger. */
     private int firedPhases;
+
+    /**
+     * Ticks left before she may spit again.
+     *
+     * <p>On the queen rather than on {@link AcidSpitGoal}, and that is the whole point of
+     * the field: a {@code Goal} is constructed once but started and stopped constantly, and
+     * a cooldown living in one would reset every time the goal lost its flags to
+     * {@code MeleeAttackGoal} -- which is exactly when a player is closing distance, i.e.
+     * exactly when a free extra spit is worth the most. Deliberately NOT persisted: a
+     * relog's worth of grace on a 4-second timer is not worth a save-data field, and 0 (the
+     * value a fresh queen loads with) is the same "ready" state she starts a fight in.
+     */
+    private int spitCooldown;
 
     @Nullable
     private BlockPos throneHome;
@@ -183,8 +216,13 @@ public class QueenAntEntity extends PathfinderMob {
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        this.goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.0, true));
-        this.goalSelector.addGoal(2, new MoveTowardsRestrictionGoal(this, 1.0));
+        // Above the melee goal on purpose: the two can never both apply (their ranges do
+        // not overlap -- SPIT_MIN_RANGE is 6, a bite is ~3), so the ordering only decides
+        // which one wins in the tick a target crosses the boundary, and a spit that is
+        // already off cooldown should not be swallowed by a lunge that cannot land yet.
+        this.goalSelector.addGoal(1, new AcidSpitGoal(this));
+        this.goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.0, true));
+        this.goalSelector.addGoal(3, new MoveTowardsRestrictionGoal(this, 1.0));
         this.goalSelector.addGoal(5, new RandomStrollGoal(this, 0.6, 200));
         this.goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 16.0F, 0.4F));
         this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
@@ -225,6 +263,9 @@ public class QueenAntEntity extends PathfinderMob {
         this.bossEvent.setProgress(this.getHealth() / this.getMaxHealth());
         if (this.tickCount % BOSS_BAR_REFRESH_TICKS == 0) {
             this.refreshBossBarAudience(level.players());
+        }
+        if (this.spitCooldown > 0) {
+            this.spitCooldown--;
         }
 
         // The leash's failsafe. MoveTowardsRestrictionGoal is the polite version and does
@@ -306,6 +347,112 @@ public class QueenAntEntity extends PathfinderMob {
             }
             level.addFreshEntity(soldier);
             level.sendParticles(ParticleTypes.FALLING_HONEY, x, this.getY() + 0.5, z, 20, 0.4, 0.4, 0.4, 0.01);
+        }
+    }
+
+    // ------------------------------------------------------------- acid spit --
+
+    /** Whether her spit is off cooldown. Read by {@link AcidSpitGoal}; a test seam. */
+    public boolean isAcidSpitReady() {
+        return this.spitCooldown <= 0;
+    }
+
+    /** Ticks until the next spit. Zero means ready. A readout for tests. */
+    public int getAcidSpitCooldown() {
+        return this.spitCooldown;
+    }
+
+    /**
+     * Launches one {@link AcidSpitProjectile} at {@code target} and starts the cooldown.
+     *
+     * <p>The lead is vanilla's llama arithmetic (verified in {@code reference}'s
+     * {@code Llama#performRangedAttack}): aim at a third of the target's height and add
+     * {@code horizontal * 0.2} to the vertical component, which is the standing
+     * approximation for the drop a 0.05-gravity projectile takes over that distance. Her
+     * band tops out at {@link #SPIT_MAX_RANGE}, where that correction is still small enough
+     * to be an arc rather than a mortar.
+     *
+     * <p>Public because {@link AcidSpitGoal} is the only caller and it is a separate class,
+     * and because a test that wants to assert on the projectile rather than on the AI can
+     * drive it directly.
+     */
+    public void spitAcidAt(LivingEntity target) {
+        if (!(this.level() instanceof ServerLevel level)) {
+            return;
+        }
+        AcidSpitProjectile spit = new AcidSpitProjectile(level, this);
+        double dx = target.getX() - this.getX();
+        double dy = target.getY(0.3333333333333333) - spit.getY();
+        double dz = target.getZ() - this.getZ();
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        spit.shoot(dx, dy + horizontal * 0.2, dz,
+                AcidSpitProjectile.LAUNCH_VELOCITY, AcidSpitProjectile.LAUNCH_INACCURACY);
+        level.addFreshEntity(spit);
+        this.playSound(SoundEvents.LLAMA_SPIT, 1.6F, 0.6F);
+        this.spitCooldown = SPIT_COOLDOWN_TICKS;
+    }
+
+    /**
+     * Her ranged attack (Ep2, task F2): live from the first tick of the fight, unlike the
+     * burrow and the frenzy, which are unlocked by health latches.
+     *
+     * <p>A one-shot goal -- {@link #canContinueToUse()} is always false, so it fires once
+     * and hands its flags straight back. Everything that persists between shots lives on
+     * the queen ({@link QueenAntEntity#spitCooldown}), which is what lets the goal be
+     * restarted freely by the goal selector without ever handing out a free shot.
+     *
+     * <p>It claims only {@code LOOK}. Taking {@code MOVE} would fight
+     * {@code MeleeAttackGoal} for the navigation of a boss who is supposed to keep walking
+     * at you while she spits.
+     */
+    public static class AcidSpitGoal extends Goal {
+        private final QueenAntEntity queen;
+
+        @Nullable
+        private LivingEntity target;
+
+        public AcidSpitGoal(QueenAntEntity queen) {
+            this.queen = queen;
+            this.setFlags(EnumSet.of(Goal.Flag.LOOK));
+        }
+
+        @Override
+        public boolean canUse() {
+            this.target = null;
+            if (!this.queen.isAcidSpitReady()) {
+                return false;
+            }
+            LivingEntity candidate = this.queen.getTarget();
+            if (candidate == null || !candidate.isAlive() || !this.queen.canAttack(candidate)) {
+                return false;
+            }
+            double distanceSq = this.queen.distanceToSqr(candidate);
+            if (distanceSq < SPIT_MIN_RANGE * SPIT_MIN_RANGE
+                    || distanceSq > SPIT_MAX_RANGE * SPIT_MAX_RANGE) {
+                return false;
+            }
+            // Last, because it is the expensive one: a raycast per candidate, and every
+            // cheaper reason to say no has already run.
+            if (!this.queen.getSensing().hasLineOfSight(candidate)) {
+                return false;
+            }
+            this.target = candidate;
+            return true;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return false;
+        }
+
+        @Override
+        public void start() {
+            if (this.target == null) {
+                return;
+            }
+            this.queen.getLookControl().setLookAt(this.target, 30.0F, 30.0F);
+            this.queen.spitAcidAt(this.target);
+            this.target = null;
         }
     }
 

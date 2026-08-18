@@ -124,6 +124,28 @@ public class ModEntities {
                             .sized(0.9F, 0.7F)
                             .build("ender_ant"));
 
+    /**
+     * The queen's acid spit (Ep2, task F2). Registered exactly the way vanilla registers
+     * {@code LLAMA_SPIT} -- {@code MobCategory.MISC}, a small box, a 4-chunk client
+     * tracking range and a 10-tick update interval (verified in
+     * {@code reference/net/minecraft/world/entity/EntityType.java}) -- because it is the
+     * same kind of object and those numbers are what a short-lived ballistic projectile
+     * costs on the network.
+     *
+     * <p>0.35 rather than the llama's 0.25: her blob is a 4-cube core with buds, and the
+     * hitbox is what decides whether a shot that visually clipped a player counts.
+     *
+     * <p>No spawn egg and no loot table. It is not a mob; it exists for at most
+     * {@link AcidSpitProjectile#MAX_LIFE_TICKS} and only she creates one.
+     */
+    public static final DeferredHolder<EntityType<?>, EntityType<AcidSpitProjectile>> ACID_SPIT =
+            ENTITY_TYPES.register("acid_spit",
+                    () -> EntityType.Builder.<AcidSpitProjectile>of(AcidSpitProjectile::new, MobCategory.MISC)
+                            .sized(0.35F, 0.35F)
+                            .clientTrackingRange(4)
+                            .updateInterval(10)
+                            .build("acid_spit"));
+
     /** Chitin red-brown shell, amber highlight -- the same pair the texture uses. */
     public static final DeferredItem<DeferredSpawnEggItem> WORKER_ANT_SPAWN_EGG =
             ModItems.ITEMS.registerItem("worker_ant_spawn_egg",

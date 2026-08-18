@@ -1,11 +1,13 @@
 package com.nogal.formicary.client;
 
 import com.nogal.formicary.Formicary;
+import com.nogal.formicary.client.model.AcidSpitModel;
 import com.nogal.formicary.client.model.EnderAntModel;
 import com.nogal.formicary.client.model.LarvaModel;
 import com.nogal.formicary.client.model.QueenAntModel;
 import com.nogal.formicary.client.model.SoldierAntModel;
 import com.nogal.formicary.client.model.WorkerAntModel;
+import com.nogal.formicary.client.renderer.AcidSpitRenderer;
 import com.nogal.formicary.client.renderer.EnderAntRenderer;
 import com.nogal.formicary.client.renderer.LarvaRenderer;
 import com.nogal.formicary.client.renderer.QueenAntRenderer;
@@ -33,6 +35,7 @@ public class ModClientEvents {
         event.registerLayerDefinition(LarvaModel.LAYER_LOCATION, LarvaModel::createBodyLayer);
         event.registerLayerDefinition(QueenAntModel.LAYER_LOCATION, QueenAntModel::createBodyLayer);
         event.registerLayerDefinition(EnderAntModel.LAYER_LOCATION, EnderAntModel::createBodyLayer);
+        event.registerLayerDefinition(AcidSpitModel.LAYER_LOCATION, AcidSpitModel::createBodyLayer);
     }
 
     @SubscribeEvent
@@ -44,6 +47,7 @@ public class ModClientEvents {
         event.registerEntityRenderer(ModEntities.TAMED_SOLDIER_ANT.get(), TamedSoldierAntRenderer::new);
         event.registerEntityRenderer(ModEntities.QUEEN_ANT.get(), QueenAntRenderer::new);
         event.registerEntityRenderer(ModEntities.ENDER_ANT.get(), EnderAntRenderer::new);
+        event.registerEntityRenderer(ModEntities.ACID_SPIT.get(), AcidSpitRenderer::new);
     }
 
     private ModClientEvents() {
