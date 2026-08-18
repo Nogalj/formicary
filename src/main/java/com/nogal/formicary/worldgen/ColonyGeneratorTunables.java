@@ -273,21 +273,54 @@ public final class ColonyGeneratorTunables {
     public static final int MEMBRANE_THICKNESS = 2;
 
     // ------------------------------------------------------------------
-    // Arrival pocket (M5) -- where an ender pearl thrown at an anthill puts the player
+    // Arrival pocket (M5, retuned in Ep2) -- where a pearl thrown at an anthill lands you
+    //
+    // Ep2 pulls the whole band up against the ceiling cap. The pocket is no longer just
+    // "somewhere legal in the Upper Galleries": it is the near side of a guaranteed exit,
+    // with a membrane punched through the cap directly above it (AnthillPortal
+    // #openMembraneColumn). A pocket 30 blocks below the roof would put that membrane out
+    // of pearl range behind whatever the carve happened to leave in between, so the band
+    // and the punch are one design, not two.
     // ------------------------------------------------------------------
+
+    /**
+     * How far below {@link #CEILING_BOTTOM} an arrival pocket floor may sit.
+     *
+     * <p>12 blocks: far enough that the search still has a real choice of natural floors in
+     * a tier of narrow tunnels, close enough that the chimney up to the membrane is a
+     * couple of pearl-lengths and stays in frame when the player looks up on arrival.
+     */
+    public static final int ENTRY_MAX_DROP_BELOW_CAP = 12;
 
     /** Highest Y the arrival search will stand a player on. Leaves headroom under the cap. */
     public static final int ENTRY_SCAN_TOP = CEILING_BOTTOM - 2;
 
-    /** Lowest Y the arrival search will accept -- still well inside the Upper Galleries. */
-    public static final int ENTRY_SCAN_BOTTOM = MIN_Y + 3 * TIER_HEIGHT + 4;
+    /** Lowest Y the arrival search will accept -- {@link #ENTRY_MAX_DROP_BELOW_CAP} down. */
+    public static final int ENTRY_SCAN_BOTTOM = CEILING_BOTTOM - ENTRY_MAX_DROP_BELOW_CAP;
+
+    /**
+     * Whether a pocket floor at {@code floorY} is close enough under the cap for the
+     * membrane punched above it to be the exit the arrival is supposed to advertise.
+     *
+     * <p>The one owner of "under the cap": {@link AnthillPortal} accepts a natural floor
+     * only if this says so, and its carve fallback is bounded by the same two constants.
+     * It lives here, in the registry-free class, for the reason {@link #rollCount} does --
+     * a headless checker (and any GameTest that must not load the dimension) can call it,
+     * whereas merely touching {@code AnthillPortal} drags in blocks and levels.
+     */
+    public static boolean entryPocketUnderCap(int floorY) {
+        return floorY >= ENTRY_SCAN_BOTTOM && floorY <= ENTRY_SCAN_TOP;
+    }
 
     /**
      * The Y the arrival pocket prefers to be carved at when the scan finds no natural floor
      * at the anthill's XZ. A preference, not a rule: the carve searches down (then up) from
-     * here for a level that already has solid ground beneath it.
+     * here for a level that already has solid ground beneath it. 180 is one block under the
+     * highest floor the band can hold a whole pocket at ({@code ENTRY_SCAN_TOP -
+     * ENTRY_CARVE_HEIGHT + 1} = 181), which keeps the fallback search a two-sided one:
+     * mostly downward, with a rung above it still available.
      */
-    public static final int ENTRY_CARVE_PREFERRED_Y = 168;
+    public static final int ENTRY_CARVE_PREFERRED_Y = 180;
 
     /** Half-width of the carved pocket in X/Z; 2 gives a 5x5 footprint. */
     public static final int ENTRY_CARVE_RADIUS = 2;

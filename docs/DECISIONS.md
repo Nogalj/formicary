@@ -237,6 +237,26 @@ meaningfully change gameplay go to Logan instead of here.
   searches for a Y that already has ground beneath it and hollows upward from there. The
   single exception is patching holes in the pocket's own floor, which at worst raises a ramp
   walkway by one block -- still passable, since the ramp is carved three tall.
+  **Ep2 adds a second block of the same sanctioned family**, and it is sanctioned for the
+  same reason: `AnthillPortal#openMembraneColumn` swaps the cap's bottom `MEMBRANE_THICKNESS`
+  layers for Daylight Membrane at the pocket's XZ. That is solid-for-solid inside a band
+  (`y >= CEILING_BOTTOM`) that `ColonyNoise#isAir` never carves, so it cannot land a block in
+  carved air any more than the floor patch can, and the shaft's precedence is untouched. The
+  chimney it opens beneath the swap removes only. Both halves run through the runtime
+  `setBlock` path rather than the generator because the pocket may have been carved a moment
+  earlier -- a position-pure generator rule cannot see a runtime carve.
+- **The arrival band was pulled up against the ceiling cap in Ep2** (`ENTRY_SCAN_BOTTOM` is
+  now `CEILING_BOTTOM - 12`, i.e. y in [174, 184], and `ENTRY_CARVE_PREFERRED_Y` 168 -> 180).
+  The pocket is no longer just a legal place to stand in the Upper Galleries: it is the near
+  end of a guaranteed exit, and a pocket 30 blocks below the roof would put its membrane out
+  of pearl range behind whatever the carve left in between. The band and the punch are one
+  design. `ColonyGeneratorTunables#entryPocketUnderCap` is the single owner of the rule --
+  registry-free, like `rollCount`, so a headless check can assert the arithmetic without
+  loading a level. Verified on `runServer` over 10 spread XZ (a temporary
+  `ServerStartedEvent` rig driving `findOrCarveEntryPocket`, since a dedicated server has no
+  player to throw a pearl): 10/10 with pocket Y in band, two blocks of headroom on solid
+  ground, an unobstructed chimney, and a full membrane stack overhead -- 9 of the 10 over
+  cap that was plain Packed Soil beforehand.
 - **Arrival takes the HIGHEST legal Y in the Upper Galleries**, not the nearest to a target.
   The spec's whole vertical structure is "the player enters at the TOP and descends", so
   entering near the ceiling is the correct read of "an Upper Galleries entry chamber".

@@ -1,10 +1,13 @@
 package com.nogal.formicary.portal;
 
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CEILING_BOTTOM;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_CARVE_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_CARVE_PREFERRED_Y;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_CARVE_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_SCAN_BOTTOM;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_SCAN_TOP;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_THICKNESS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.entryPocketUnderCap;
 
 import java.util.Set;
 
@@ -136,7 +139,7 @@ public final class AnthillPortal {
 
     /**
      * Finds -- or, failing that, digs -- somewhere safe to put an arriving player at
-     * {@code (x, z)} in the colony.
+     * {@code (x, z)} in the colony, and opens the exit above it.
      *
      * <p>The carve only ever <b>removes</b> solid blocks, and only from a Y where there was
      * already something solid to stand on. That is deliberate: the dimension's walkable
@@ -147,14 +150,68 @@ public final class AnthillPortal {
      * at worst raise a ramp walkway by one block -- still passable, since the ramp is
      * carved three blocks tall.
      *
+     * <p>Ep2 adds {@link #openMembraneColumn}, which is subject to the same rule and keeps
+     * it: it removes fabric between the pocket and the cap, and inside the cap -- which is
+     * never carvable, so never part of the spine -- it swaps solid for solid. Neither half
+     * can put a block into carved air, so the shaft's precedence is untouched exactly as it
+     * is by the pocket carve.
+     *
      * <p>The caller must already have loaded the chunk.
      */
     public static BlockPos findOrCarveEntryPocket(ServerLevel colony, int x, int z) {
         int natural = findFloorInBand(colony, x, z, ENTRY_SCAN_BOTTOM, ENTRY_SCAN_TOP + 1);
-        if (natural != NO_FLOOR) {
-            return new BlockPos(x, natural, z);
+        // entryPocketUnderCap, not "natural != NO_FLOOR": the band and the acceptance rule
+        // are the same statement, and stating it once is what lets a headless check assert
+        // the arithmetic without loading a level.
+        BlockPos pocket = natural != NO_FLOOR && entryPocketUnderCap(natural)
+                ? new BlockPos(x, natural, z)
+                : carveEntryPocket(colony, x, z);
+        openMembraneColumn(colony, pocket);
+        return pocket;
+    }
+
+    /**
+     * Punches the arrival's guaranteed way out: a one-block chimney from just above the
+     * player's head up to the underside of the ceiling cap, capped with Daylight Membrane
+     * for {@code MEMBRANE_THICKNESS} layers at the pocket's own XZ.
+     *
+     * <p>The generator already makes every <i>exposed</i> ceiling column a membrane, but an
+     * arrival pocket is precisely the case that rule cannot reach: the pocket is often a
+     * tunnel with solid fabric between it and the roof, so the nearest exit could be tens
+     * of blocks of unlit gallery away with nothing pointing at it. Arriving under a lit
+     * patch turns the way out from something a player has to discover into something they
+     * are standing under, which is the whole of the Ep2 exits change on the portal side.
+     *
+     * <p>Runtime {@code setBlock} on the loaded chunk, the same path {@link
+     * #carveEntryPocket} uses -- the pocket may have been carved a moment ago, so a
+     * generator-side rule could not see it.
+     */
+    private static void openMembraneColumn(ServerLevel colony, BlockPos pocket) {
+        int x = pocket.getX();
+        int z = pocket.getZ();
+        BlockState air = Blocks.AIR.defaultBlockState();
+        BlockState membrane = ModBlocks.DAYLIGHT_MEMBRANE.get().defaultBlockState();
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+
+        // From the first block above the player's head (feet at floorY, head at floorY + 1)
+        // to the last block under the cap. Removal only.
+        int cleared = 0;
+        for (int y = pocket.getY() + 2; y < CEILING_BOTTOM; y++) {
+            if (!colony.getBlockState(cursor.set(x, y, z)).isAir()) {
+                colony.setBlock(cursor.immutable(), air, Block.UPDATE_ALL);
+                cleared++;
+            }
         }
-        return carveEntryPocket(colony, x, z);
+        for (int layer = 0; layer < MEMBRANE_THICKNESS; layer++) {
+            cursor.set(x, CEILING_BOTTOM + layer, z);
+            if (!colony.getBlockState(cursor).is(ModBlocks.DAYLIGHT_MEMBRANE.get())) {
+                colony.setBlock(cursor.immutable(), membrane, Block.UPDATE_ALL);
+            }
+        }
+        Formicary.LOGGER.info(
+                "Formicary: opened an exit above the arrival pocket at {} {} {} -- cleared {} blocks, "
+                        + "membrane at y {}..{}",
+                x, pocket.getY(), z, cleared, CEILING_BOTTOM, CEILING_BOTTOM + MEMBRANE_THICKNESS - 1);
     }
 
     private static BlockPos carveEntryPocket(ServerLevel colony, int x, int z) {
@@ -185,7 +242,10 @@ public final class AnthillPortal {
      * {@code ENTRY_CARVE_PREFERRED_Y} with solid ground beneath it, then failing that the
      * first one above. Keeping the whole pocket inside
      * {@code [ENTRY_SCAN_BOTTOM, ENTRY_SCAN_TOP]} is what stops it punching through the
-     * ceiling cap or dropping below the Upper Galleries.
+     * ceiling cap; since Ep2 pulled that band up against the cap it is also what keeps
+     * every carved floor inside {@code entryPocketUnderCap}, exactly like an accepted
+     * natural one -- every return here is bounded by the same two constants the predicate
+     * is written from.
      */
     private static int chooseCarveFloor(ServerLevel colony, int x, int z) {
         int highest = ENTRY_SCAN_TOP - ENTRY_CARVE_HEIGHT + 1;
