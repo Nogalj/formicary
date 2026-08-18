@@ -32,6 +32,7 @@ import net.minecraft.world.level.levelgen.XoroshiroRandomSource;
  * <pre>
  *   .\gradlew --init-script docs\noise-probe.init.gradle formicaryProbe
  *   .\gradlew --init-script docs\noise-probe.init.gradle formicaryProbe -PprobeSeed=42 -PprobeWhat=slices
+ *   .\gradlew --init-script docs\noise-probe.init.gradle formicaryProbe -PprobeWhat=colony
  * </pre>
  *
  * <p>Since Ep2 the sections whose subject only exists inside a nest ({@link #nurseries},
@@ -58,12 +59,16 @@ public final class NoiseProbe {
             palette(noise);
             membranes(noise);
             connectivity(noise);
+            colonies(noise);
             thrones(noise);
             nurseries(noise);
             gardens(noise);
             larders(noise);
             combPatches(noise);
             spawnDensity(noise);
+        }
+        if (what.equals("colony")) {
+            colonies(noise);
         }
         if (what.equals("membrane")) {
             membranes(noise);
@@ -373,6 +378,350 @@ public final class NoiseProbe {
         System.out.println(MIN_Y + deepest < tierMaxY(0)
                 ? "  PASS: the Royal Depths are reachable on foot from the top tier (and back, edges are symmetric)."
                 : "  FAIL: cannot walk from the Upper Galleries into the Royal Depths.");
+    }
+
+    // ------------------------------------------------------------------
+    // The colony field (Ep2 D1) -- the Thursday go/no-go gate
+    // ------------------------------------------------------------------
+
+    /** Cell rings swept by the separation and one-throne-per-colony checks: 13x13 colonies. */
+    private static final int COLONY_CELL_SWEEP = 6;
+    /** Deterministic sample points for the findability stat. */
+    private static final int COLONY_FIND_SAMPLES = 64;
+    /** Half-width of the box those points are drawn from, in blocks. */
+    private static final int COLONY_FIND_SPREAD = 4000;
+    /** Width of one ring of the density profile, and how far out the profile runs. */
+    private static final int COLONY_RING_STEP = 25;
+    private static final int COLONY_RING_MAX = 250;
+    /** XZ / Y strides of the density-profile sampler. */
+    private static final int COLONY_PROFILE_XZ_STEP = 2;
+    private static final int COLONY_PROFILE_Y_STEP = 4;
+
+    /**
+     * The Ep2 acceptance criteria for the colony field, all six in one place.
+     *
+     * <p>Every one of them is an <b>invariant or a bound</b> rather than a taste judgement,
+     * which is the only reason a headless tool can gate an architectural change to how the
+     * world looks:
+     * <ol>
+     *   <li><b>One throne per colony.</b> Counted the way a player meets it -- every throne
+     *       whose centre falls inside a colony's outer radius -- rather than by trusting
+     *       that one cell produces one chamber. Two thrones in one colony would be two
+     *       queens and, given the bar radius, potentially two boss bars.</li>
+     *   <li><b>A monotone density profile.</b> "Dense cores, sparse wilds" is exactly the
+     *       claim that the blob-chamber carve falls off with distance from a centre and is
+     *       gone beyond the outer radius; anything else (a flat field, an inverted one, a
+     *       field that never reaches zero) reproduces the mega-nest this package exists to
+     *       end.</li>
+     *   <li><b>Minimum centre separation.</b> The boss-bar invariant, measured. See
+     *       {@link ColonyGeneratorTunables#COLONY_JITTER}.</li>
+     *   <li><b>Findability.</b> The counterweight to (2): a world of dense cores is only an
+     *       improvement if you can still find one. The 224-block throne grid was chosen from
+     *       a measured "nearest queen 130-176 blocks"; 384 has to stay inside "committed
+     *       exploration finds it", and the bound asserted is the worst case over deterministic
+     *       sample points rather than an average.</li>
+     *   <li><b>Core air fraction</b>, reported. This is the measurement that replaces the one
+     *       the throne corridor's unforced floor used to rest on.</li>
+     *   <li><b>Reachability, re-run under the field</b> for all four chamber kinds. The field
+     *       changes what the noise carves around a chamber, so every walkability result from
+     *       before it landed is stale evidence.</li>
+     * </ol>
+     */
+    private static void colonies(ColonyNoise noise) {
+        System.out.printf(Locale.ROOT,
+                "%n== colony field: spacing %d, jitter %.0f, core r=%.0f, outer r=%.0f, chamber gate f>%.2f ==%n",
+                ColonyGeneratorTunables.COLONY_SPACING, ColonyGeneratorTunables.COLONY_JITTER,
+                ColonyGeneratorTunables.COLONY_CORE_RADIUS, ColonyGeneratorTunables.COLONY_OUTER_RADIUS,
+                ColonyGeneratorTunables.CHAMBER_ELIGIBILITY_MIN_F);
+
+        boolean green = colonySeparation(noise);
+        green &= colonyFindability(noise);
+        green &= colonyThrones(noise);
+        green &= colonyDensityProfile(noise);
+        green &= colonyChamberWalks(noise);
+
+        System.out.println(green
+                ? "\n  COLONY SECTION: ALL PASS"
+                : "\n  COLONY SECTION: FAILED -- see the FAIL lines above.");
+    }
+
+    /** (3) No two colony centres are closer than {@code COLONY_SPACING - COLONY_JITTER}. */
+    private static boolean colonySeparation(ColonyNoise noise) {
+        double required = ColonyGeneratorTunables.COLONY_SPACING - ColonyGeneratorTunables.COLONY_JITTER;
+        double minSeparation = Double.MAX_VALUE;
+        int pairs = 0;
+        for (int cx = -COLONY_CELL_SWEEP; cx <= COLONY_CELL_SWEEP; cx++) {
+            for (int cz = -COLONY_CELL_SWEEP; cz <= COLONY_CELL_SWEEP; cz++) {
+                ColonyNoise.Colony here = noise.colonyCenterForCell(cx, cz);
+                // Every neighbour once: right, down, and both diagonals.
+                int[][] offsets = {{1, 0}, {0, 1}, {1, 1}, {1, -1}};
+                for (int[] offset : offsets) {
+                    ColonyNoise.Colony other = noise.colonyCenterForCell(cx + offset[0], cz + offset[1]);
+                    minSeparation = Math.min(minSeparation,
+                            Math.hypot(here.centreX() - other.centreX(), here.centreZ() - other.centreZ()));
+                    pairs++;
+                }
+            }
+        }
+        // Deliberately not quoting QueenAntEntity#BOSS_BAR_RADIUS_EXIT by symbol: this tool
+        // runs without Bootstrap.bootStrap(), and merely referencing an entity class would
+        // reach BuiltInRegistries and die "Not bootstrapped" (banked in
+        // docs/gotchas/worldgen.md). The invariant it has to clear -- 288 comfortably above
+        // twice that radius -- is derived in COLONY_JITTER's javadoc.
+        System.out.printf(Locale.ROOT,
+                "%n  centre separation over %d neighbouring pairs: minimum %.1f blocks (required >= %.0f"
+                        + " = COLONY_SPACING - COLONY_JITTER, the boss-bar separation invariant)%n",
+                pairs, minSeparation, required);
+        boolean pass = minSeparation >= required;
+        System.out.println(pass
+                ? "  PASS: two simultaneous queen boss bars are geometrically impossible."
+                : "  FAIL: two colonies came closer than the separation invariant allows.");
+        return pass;
+    }
+
+    /**
+     * (4) From an arbitrary point, how far is the nearest colony?
+     *
+     * <p>The bound is 340 blocks, which is the jittered grid's own worst case
+     * ({@code 192*sqrt(2) + 48} = 320) with a little air in it. The points are drawn from a
+     * fixed seed rather than a lattice on purpose: a lattice with any relationship to 384
+     * would sample the same phase of every cell and could miss the corner case entirely.
+     */
+    private static boolean colonyFindability(ColonyNoise noise) {
+        RandomSource points = new XoroshiroRandomSource(20260818L);
+        double worst = 0.0;
+        double sum = 0.0;
+        int worstX = 0;
+        int worstZ = 0;
+        for (int i = 0; i < COLONY_FIND_SAMPLES; i++) {
+            int x = points.nextInt(COLONY_FIND_SPREAD * 2) - COLONY_FIND_SPREAD;
+            int z = points.nextInt(COLONY_FIND_SPREAD * 2) - COLONY_FIND_SPREAD;
+            ColonyNoise.Colony nearest = noise.nearestColony(x, z);
+            double distance = Math.hypot(x - nearest.centreX(), z - nearest.centreZ());
+            sum += distance;
+            if (distance > worst) {
+                worst = distance;
+                worstX = x;
+                worstZ = z;
+            }
+        }
+        double bound = 340.0;
+        System.out.printf(Locale.ROOT,
+                "%n  findability over %d sample points in +-%d blocks: mean %.1f, worst %.1f (at %d, %d),"
+                        + " bound %.0f%n",
+                COLONY_FIND_SAMPLES, COLONY_FIND_SPREAD, sum / COLONY_FIND_SAMPLES, worst, worstX, worstZ, bound);
+        boolean pass = worst <= bound;
+        System.out.println(pass
+                ? "  PASS: a colony is always within committed-exploration range."
+                : "  FAIL: a sample point was further from a colony than the bound allows.");
+        return pass;
+    }
+
+    /** (1) Exactly one throne per colony, and it sits inside the core. */
+    private static boolean colonyThrones(ColonyNoise noise) {
+        int colonies = 0;
+        int wrongCount = 0;
+        int outsideCore = 0;
+        double worstOffset = 0.0;
+        for (int cx = -COLONY_CELL_SWEEP; cx <= COLONY_CELL_SWEEP; cx++) {
+            for (int cz = -COLONY_CELL_SWEEP; cz <= COLONY_CELL_SWEEP; cz++) {
+                ColonyNoise.Colony colony = noise.colonyCenterForCell(cx, cz);
+                colonies++;
+                int inThisColony = 0;
+                for (ColonyNoise.Throne throne : noise.thronesNear((int) Math.round(colony.centreX()),
+                        (int) Math.round(colony.centreZ()))) {
+                    double offset = Math.hypot(throne.centreX() - colony.centreX(),
+                            throne.centreZ() - colony.centreZ());
+                    if (offset <= ColonyGeneratorTunables.COLONY_OUTER_RADIUS) {
+                        inThisColony++;
+                        worstOffset = Math.max(worstOffset, offset);
+                        if (offset > ColonyGeneratorTunables.COLONY_CORE_RADIUS) {
+                            outsideCore++;
+                        }
+                    }
+                }
+                if (inThisColony != 1) {
+                    wrongCount++;
+                }
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "%n  thrones over %d colonies: %d colonies without exactly one, %d thrones outside their core;"
+                        + " worst centre offset %.1f blocks (core r=%.0f)%n",
+                colonies, wrongCount, outsideCore, worstOffset, ColonyGeneratorTunables.COLONY_CORE_RADIUS);
+        boolean pass = wrongCount == 0 && outsideCore == 0;
+        System.out.println(pass
+                ? "  PASS: one throne per colony, every one of them inside the core."
+                : "  FAIL: the throne grid and the colony grid disagree.");
+        return pass;
+    }
+
+    /**
+     * (2) and (5): the density profile in rings out from a colony centre, plus the core air
+     * fraction.
+     *
+     * <p>"Chamber air" here is the blob carve specifically -- {@link
+     * ColonyNoise#isChamberCarved} -- because that is the thing the field modulates. Total
+     * air is reported alongside it and deliberately does <em>not</em> fall to zero: the worm
+     * tunnels and the connectivity ramps are global by design, and a profile where total air
+     * went to zero in the wilds would mean the no-softlock spine had been modulated too.
+     *
+     * <p>Columns whose nearest colony is <em>not</em> the anchor are excluded, and that is a
+     * correctness fix rather than tidying. Two centres can be as close as 288 blocks, so a
+     * ring at r=225 already reaches into a neighbour's core (288 - 100 = 188 blocks out) and
+     * the profile turns back up -- seed 42 measured 0.647% chamber air in the r225-249 ring
+     * against 0.000% at r150. Restricting to the anchor's own Voronoi cell makes this the
+     * falloff of <em>one</em> colony, which is the thing being asserted.
+     */
+    private static boolean colonyDensityProfile(ColonyNoise noise) {
+        ColonyNoise.Colony anchor = anchor(noise);
+        int anchorX = (int) Math.round(anchor.centreX());
+        int anchorZ = (int) Math.round(anchor.centreZ());
+        int rings = COLONY_RING_MAX / COLONY_RING_STEP;
+        long[] samples = new long[rings];
+        long[] chamberAir = new long[rings];
+        long[] anyAir = new long[rings];
+        long[] coreByTier = new long[TIER_COUNT];
+        long[] coreTotalByTier = new long[TIER_COUNT];
+
+        for (int dx = -COLONY_RING_MAX; dx <= COLONY_RING_MAX; dx += COLONY_PROFILE_XZ_STEP) {
+            for (int dz = -COLONY_RING_MAX; dz <= COLONY_RING_MAX; dz += COLONY_PROFILE_XZ_STEP) {
+                double distance = Math.hypot(dx, dz);
+                int ring = (int) (distance / COLONY_RING_STEP);
+                if (ring >= rings) {
+                    continue;
+                }
+                int x = anchorX + dx;
+                int z = anchorZ + dz;
+                ColonyNoise.Colony owner = noise.nearestColony(x, z);
+                if (owner.centreX() != anchor.centreX() || owner.centreZ() != anchor.centreZ()) {
+                    continue;
+                }
+                Col col = col(noise, x, z);
+                for (int y = FLOOR_TOP; y < CEILING_BOTTOM; y += COLONY_PROFILE_Y_STEP) {
+                    samples[ring]++;
+                    if (noise.isChamberCarved(col.field(), x, y, z)) {
+                        chamberAir[ring]++;
+                    }
+                    boolean isAir = air(noise, col, x, y, z);
+                    if (isAir) {
+                        anyAir[ring]++;
+                    }
+                    if (distance < ColonyGeneratorTunables.COLONY_CORE_RADIUS) {
+                        int tier = tierIndex(y);
+                        coreTotalByTier[tier]++;
+                        if (isAir) {
+                            coreByTier[tier]++;
+                        }
+                    }
+                }
+            }
+        }
+
+        System.out.printf(Locale.ROOT,
+                "%n  density profile out from the colony at (%d, %d), %d-block rings"
+                        + " (columns nearer another colony are excluded):%n",
+                anchorX, anchorZ, COLONY_RING_STEP);
+        System.out.println("    ring        samples  chamberAir%   anyAir%   meanF");
+        double[] chamberFraction = new double[rings];
+        for (int ring = 0; ring < rings; ring++) {
+            chamberFraction[ring] = samples[ring] == 0 ? 0.0 : (double) chamberAir[ring] / samples[ring];
+            double mid = (ring + 0.5) * COLONY_RING_STEP;
+            System.out.printf(Locale.ROOT, "    r%3d-%3d  %9d  %10.3f%%  %7.3f%%  %6.3f%n",
+                    ring * COLONY_RING_STEP, (ring + 1) * COLONY_RING_STEP - 1, samples[ring],
+                    100.0 * chamberFraction[ring],
+                    samples[ring] == 0 ? 0.0 : 100.0 * anyAir[ring] / samples[ring],
+                    ColonyGeneratorTunables.colonyFalloff(mid));
+        }
+
+        int coreRings = (int) Math.ceil(ColonyGeneratorTunables.COLONY_CORE_RADIUS / COLONY_RING_STEP);
+        int outerRing = (int) Math.ceil(ColonyGeneratorTunables.COLONY_OUTER_RADIUS / COLONY_RING_STEP);
+        long coreSamples = 0;
+        long coreChamber = 0;
+        for (int ring = 0; ring < coreRings; ring++) {
+            coreSamples += samples[ring];
+            coreChamber += chamberAir[ring];
+        }
+        double coreValue = coreSamples == 0 ? 0.0 : (double) coreChamber / coreSamples;
+
+        boolean monotone = true;
+        for (int ring = coreRings; ring + 1 < rings; ring++) {
+            if (chamberFraction[ring + 1] > chamberFraction[ring]) {
+                monotone = false;
+            }
+        }
+        boolean fallsOff = chamberFraction[coreRings] < coreValue;
+        long beyondSamples = 0;
+        long beyondChamber = 0;
+        for (int ring = outerRing; ring < rings; ring++) {
+            beyondSamples += samples[ring];
+            beyondChamber += chamberAir[ring];
+        }
+        double beyondValue = beyondSamples == 0 ? 0.0 : (double) beyondChamber / beyondSamples;
+
+        System.out.printf(Locale.ROOT,
+                "  core (r<%.0f) chamber air %.3f%%; beyond the outer radius %.3f%% = %.1f%% of it%n",
+                ColonyGeneratorTunables.COLONY_CORE_RADIUS, 100.0 * coreValue, 100.0 * beyondValue,
+                coreValue == 0.0 ? 0.0 : 100.0 * beyondValue / coreValue);
+        boolean pass = coreValue > 0.0 && monotone && fallsOff && beyondValue < 0.10 * coreValue;
+        System.out.println(pass
+                ? "  PASS: density is flat across the core, falls monotonically through the ring, and is under"
+                        + " a tenth of the core value beyond the outer radius."
+                : "  FAIL: the density profile is not the falloff the field claims"
+                        + " (core>0 " + (coreValue > 0.0) + ", monotone " + monotone
+                        + ", falls " + fallsOff + ").");
+
+        // (5) The measurement the forced throne-corridor floor rests on.
+        System.out.println("  core air fraction by tier (this is what the 17% Royal Depths figure becomes"
+                + " inside a colony):");
+        for (int tier = TIER_COUNT - 1; tier >= 0; tier--) {
+            System.out.printf(Locale.ROOT, "    tier %d %-16s %6.2f%% air%n", tier, tierName(tier),
+                    coreTotalByTier[tier] == 0 ? 0.0 : 100.0 * coreByTier[tier] / coreTotalByTier[tier]);
+        }
+        return pass;
+    }
+
+    /** (6) Reachability re-run under the field, for all four chamber kinds. */
+    private static boolean colonyChamberWalks(ColonyNoise noise) {
+        ColonyNoise.Colony anchor = anchor(noise);
+        int anchorX = (int) Math.round(anchor.centreX());
+        int anchorZ = (int) Math.round(anchor.centreZ());
+        System.out.printf(Locale.ROOT, "%n  chamber reachability under the field, colony at (%d, %d):%n",
+                anchorX, anchorZ);
+
+        ColonyNoise.Throne throne = noise.nearestThrone(anchorX, anchorZ);
+        boolean pass = chamberWalk(noise, "throne", throne.centreX(), throne.centreZ(), throne.axisX(),
+                throne.axisZ(), throne.floorY(), throne.floorY() + ColonyGeneratorTunables.THRONE_DAIS_HEIGHT + 1,
+                ColonyGeneratorTunables.THRONE_RADIUS,
+                throne.floorY() + ColonyGeneratorTunables.THRONE_WALL_HEIGHT
+                        + ColonyGeneratorTunables.THRONE_DOME_HEIGHT,
+                "the queen's dais");
+
+        ColonyNoise.Nursery nursery = noise.nearestNursery(anchorX, anchorZ);
+        pass &= chamberWalk(noise, "nursery", nursery.centreX(), nursery.centreZ(), nursery.axisX(),
+                nursery.axisZ(), nursery.floorY(), nursery.floorY() + 1, ColonyGeneratorTunables.NURSERY_RADIUS,
+                nursery.floorY() + ColonyGeneratorTunables.NURSERY_WALL_HEIGHT
+                        + ColonyGeneratorTunables.NURSERY_DOME_HEIGHT,
+                "the brood floor");
+
+        ColonyNoise.Garden garden = noise.nearestGarden(anchorX, anchorZ);
+        pass &= chamberWalk(noise, "garden", garden.centreX(), garden.centreZ(), garden.axisX(),
+                garden.axisZ(), garden.floorY(), garden.floorY() + 1, ColonyGeneratorTunables.GARDEN_RADIUS,
+                garden.floorY() + ColonyGeneratorTunables.GARDEN_WALL_HEIGHT
+                        + ColonyGeneratorTunables.GARDEN_DOME_HEIGHT,
+                "the garden floor");
+
+        ColonyNoise.Larder larder = noise.nearestLarder(anchorX, anchorZ);
+        pass &= chamberWalk(noise, "larder", larder.centreX(), larder.centreZ(), larder.axisX(),
+                larder.axisZ(), larder.floorY(), larder.floorY() + 1, ColonyGeneratorTunables.LARDER_RADIUS,
+                larder.floorY() + ColonyGeneratorTunables.LARDER_WALL_HEIGHT
+                        + ColonyGeneratorTunables.LARDER_DOME_HEIGHT,
+                "the larder floor");
+
+        System.out.println(pass
+                ? "  PASS: all four chamber kinds join the connectivity spine on foot under the colony field."
+                : "  FAIL: a chamber kind stopped being reachable under the colony field.");
+        return pass;
     }
 
     /**

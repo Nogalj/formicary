@@ -1383,6 +1383,11 @@ jittered 384-block grid, sparse wilds between them.
 - **`nearest*` for the three gated chamber kinds searches 6 cell rings, not 2.** The old
   radius assumed every cell had a chamber. It now has to reach the nearest colony (at most
   320 blocks) plus its eligible radius (134) = 454, which 6 rings of 96 (576) covers.
+- **The probe's radial profile excludes columns belonging to a neighbouring colony**, and
+  that is a correctness fix rather than tidying: two centres can be 288 apart, so a ring at
+  r=225 already reaches into a neighbour's core and the profile turns back up. Seed 42
+  measured 0.647% chamber air at r225-249 against 0.000% at r150 before the exclusion --
+  a "the falloff is not monotone" FAIL that was entirely an artifact of the measurement.
 - **The probe's origin-anchored sections moved to a colony.** `nurseries`, `gardens`,
   `larders`, `combPatches` and `spawnDensity` now sample around the colony nearest the
   origin. On a 384 grid the origin is over 200 blocks from any centre on every seed
