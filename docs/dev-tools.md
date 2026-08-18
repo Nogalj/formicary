@@ -169,3 +169,18 @@ Shot list: done, closing the client
 Command output from a `command` field lands in the same file: `/formicary dev`'s replies are
 sent with logging enabled, so with the default `logAdminCommands` gamerule the integrated
 server writes them there too.
+
+## Scripting the dedicated server (headless probes)
+
+- **`gradlew runServer` does not forward piped stdin to the game JVM** -- the server is a
+  separate process the Gradle daemon spawns, not a child of your shell, so "echo stop |
+  gradlew runServer" leaves an orphaned java.exe. (Cost the Ep2 spawn spike two orphaned
+  servers before the workaround was found.)
+- **The recipe that needs no stdin at all:** give the probe a temporary
+  `ServerTickEvent.Post` listener that does its measurements and then calls
+  `server.halt(false)` when finished. Plain `gradlew runServer` then starts, measures,
+  and exits on its own -- no console, no process surgery. Delete the listener class before
+  committing. (`verified: 2026-08-18`, ender-ant E4 probe)
+- **Scripting the probe across seeds in PowerShell:** quote the whole property argument --
+  `$seedArg = "-PprobeSeed=$s"; .\gradlew ... $seedArg` -- or PS 5.1 passes the literal
+  string `$s` and the probe dies with `NumberFormatException`. (`verified: 2026-08-18`)

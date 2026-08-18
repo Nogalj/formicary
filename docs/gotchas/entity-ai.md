@@ -66,3 +66,8 @@ keeps its original `verified:` date. Routed by the symptom index in CLAUDE.md.
   must override `getBaseExperienceReward()` itself. Verified in the decompiled `Animal.java`
   and caught by a GameTest asserting an orb value outside `Animal`'s 1-3 fallback range.
   (`verified: 2026-08-15`)
+- **`xpReward = N` never produces one orb worth N.** `ExperienceOrb.award` splits the total
+  through `getExperienceValue`'s tier ladder (1, 3, 7, 17, ...), so a reward of 8 always
+  arrives as 7+1. A GameTest using `anyMatch(orb.getValue() == XP_REWARD)` works for 7 by
+  luck of a tier boundary and silently fails for 8 -- assert the SUM of orb values instead
+  (`an_ender_ant_death_awards_its_full_xp_reward`). (`verified: 2026-08-18`)

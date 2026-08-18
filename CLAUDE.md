@@ -131,6 +131,9 @@ subsystem, and bank new rules there, not here.
   -> `items-blocks.md`
 - **A class is missing from `reference/`** -> it's a partial extraction, not a missing
   API; re-extract recipe + per-milestone log -> `reference-extraction.md`
+- **Scripting a headless `runServer`/`runClient`** (piped stdin never reaches the game JVM;
+  `--args` replaces the whole argfile; the self-driving `ServerTickEvent` probe recipe; the
+  shot-list autopilot) -> `docs/dev-tools.md` (lives outside `gotchas/`, next to the tools)
 
 ## Workflow
 

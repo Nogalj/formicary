@@ -345,6 +345,24 @@ public static final double ENDER_SPAWN_MAX_F = 0.35;
 - [ ] Fresh default-terrain world via A2 shot list: colony core, wilds gap, garden, larder, arrival pocket + membrane, queen (bar gating), ender ant sighting, one of each deco family placed.
 - [ ] Then: hand Logan the client (rig teardown rule — restore any keybind/options mutations), he play-tests, and only after his pass does J2's version flip + the 1.0.0 freeze happen.
 
+## Execution corrections (2026-08-18 — what the build proved wrong)
+
+- **A1:** `Formicary.java` was NOT modified — game-bus handlers in this repo wire by
+  `@EventBusSubscriber` annotation, not constructor listeners; the plan's Files list was
+  wrong.
+- **B2's runServer verification:** a console-driven pearl throw is unreachable (the portal
+  event requires a `ServerPlayer` owner); the seam was driven directly via a temporary
+  `ServerStartedEvent` listener instead.
+- **E4:** colony seeding averages ~2.1–2.5 ender ants per colony, not a hard 2–3 — ~17% of
+  deep-tier fringe chunks are solid through the whole band. Documented in the generator.
+- **F5:** the larger arena was never needed; the existing 25×25 platform holds a 16-block
+  spit engagement. `structures.py` untouched.
+- **G2 side discovery:** `DepositToChestGoal.RETRY_COOLDOWN_TICKS` (pre-existing) now paces
+  the shuttle at ~10s/trip — a tuning dial for the play-test, recorded in DECISIONS.md.
+- **PKG-C/PKG-I:** both were killed mid-package by infrastructure (session limit / 529s);
+  C4 and I1 were completed and committed by the main loop from the agents' verified
+  in-flight work.
+
 ## Self-review (run before saving)
 
 1. **Spec coverage:** §1→C1-C4, §2→B1/B2/D1(pearls), §3→D2/D3, §4→B3, §5→E1-E5, §6→F1-F5, §7→G1/G2, §8→D1/H1/H2/H4, §9→H3, §10→I1-I4, §11→J1-J3, §12→embedded per-task + final gate, §13→A1/A2/C4/D4. No orphan sections.

@@ -98,3 +98,9 @@ keeps its original `verified:` date. Routed by the symptom index in CLAUDE.md.
   `ChunkGenerator`, whose `<clinit>` builds a registry codec and dies with
   `IllegalArgumentException: Not bootstrapped`. Shared arithmetic the probe needs belongs in
   a registry-free class -- `ColonyGeneratorTunables` is the one here. (`verified: 2026-08-15`)
+- **Block-light propagation is asynchronous: a same-tick read after `setBlockAndUpdate` sees
+  the STALE light level.** Placing glowstone and immediately calling
+  `getBrightness(LightLayer.BLOCK, pos)` in the same tick phase returns 0, which makes any
+  light-gated logic (spawn predicates here) look broken when it is fine. Read light on a
+  later tick. Cost one full probe-run of confusion during the ender-ant spawn spike.
+  (`verified: 2026-08-18`)

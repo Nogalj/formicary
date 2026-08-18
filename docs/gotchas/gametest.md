@@ -58,3 +58,16 @@ NORMAL difficulty (Monsters safe).
   fires. A test asserting on break drops needs the real pipeline: `level.destroyBlock(pos,
   true)` (the `LevelWriter` default overload, `dropBlock=true`), not the helper's shortcut.
   (`verified: 2026-08-15`)
+- **All arenas in a batch share one level on a tight grid, so any RADIUS search escapes its
+  own arena.** `StructureGridSpawner` lays live arenas out with `SPACE_BETWEEN_COLUMNS = 5`
+  / `SPACE_BETWEEN_ROWS = 6`, so a 16-block search from mid-arena reaches its neighbours --
+  which routinely contain chests, mobs, and crops of their own. Any test exercising code
+  that searches by radius (rather than reading a position the test wrote) must isolate
+  itself, e.g. run 80 blocks above its arena floor (`lift()` in TamingGameTests). Same
+  family: a real `ServerPlayer` left in the level by `makeMockServerPlayerInLevel` is
+  visible to every other arena's target goals -- remove it via `PlayerList.remove` in the
+  same test. (`verified: 2026-08-18`)
+- **Flake watch:** `bound_worker_collects_a_ground_item_and_deposits_it` (M6 pathing)
+  failed exactly once in an otherwise-unrelated run on 2026-08-18 and passed in every run
+  before and since. Not yet reproduced; if it fails again, treat it as a real pathing race,
+  not noise. (`observed: 2026-08-18`)

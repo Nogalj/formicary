@@ -365,6 +365,9 @@ meaningfully change gameplay go to Logan instead of here.
   *not* reset when a crop is found, so a worker in a big field works its way round the field
   instead of re-reading the same corner. `CropScanner` is a separate class with no entity in it
   precisely so the budget can be asserted directly.
+  **[SUPERSEDED 2026-08-18: the Ep2 one-crop shuttle deleted the tick-budget cursor above
+  AND the whole trigger arrangement below -- see the Ep2 worker shuttle entry at the end of
+  this file.]**
 - **One counter covers all three deposit triggers.** The spec wants a trip when the inventory
   is full, when there are no more ripe crops nearby, or on a periodic timer.
   `idleHarvestTicks` (reset by every harvest, incremented every tick) collapses the last two:
@@ -1299,7 +1302,10 @@ Owner feedback, two items, both on the two tamed castes (`TamedWorkerAntEntity`,
   goal below pickup (`FollowOwnerGoal` through `RandomLookAroundGoal`) shifted from
   3-7 to 4-8 to make room; none of their own `canUse` guards depend on the literal number,
   only on `isBound()`, so the renumbering changes nothing about when they run.
-- **Pickup reuses `store()`, not a new inventory path -- and deliberately does not reset
+- **[PARTLY SUPERSEDED 2026-08-18: `idleHarvestTicks` no longer exists -- the Ep2 shuttle's
+  deposit precondition is simply a non-empty pack (see the Ep2 worker shuttle entry). The
+  `store()`/overflow-contract half of this bullet still holds.]**
+  **Pickup reuses `store()`, not a new inventory path -- and deliberately does not reset
   `idleHarvestTicks`.** `TamedWorkerAntEntity.pickUpGroundItem` mirrors `WorkerAntEntity
   .pickUpCarriedItem`'s vanilla bookkeeping (`onItemPickup` + `take` + `discard`, the same
   shape that already existed for the wild worker's `RelocateItemGoal`) and then hands the
@@ -1393,3 +1399,23 @@ jittered 384-block grid, sparse wilds between them.
   origin. On a 384 grid the origin is over 200 blocks from any centre on every seed
   tested, i.e. wilds -- those sections would have reported zero chambers and zero comb and
   been measuring the gate rather than the thing each was written to check.
+
+## Ep2 worker shuttle (2026-08-18)
+
+- **One crop per trip, and the nerf is the point.** Play-test round 2 (Logan): a bound
+  worker clearing a whole field before walking anywhere was "too good". `DepositToChestGoal`'s
+  only precondition is now a non-empty pack, so the act after a harvest is always the trip
+  home. The M6 three-trigger arrangement (pack full / field quiet / elapsed time) and its
+  `idleHarvestTicks` counter are deleted, not disabled. `isPackFull` survives -- the
+  ground-item ferry (`CollectDroppedItemsGoal`) still reads it.
+- **`CropScanner` is a stateless nearest-from-anchor sweep.** The tick-budget cursor
+  existed for tick-cadence scanning; under the shuttle a scan runs once per round trip, and
+  a cursor's "first ripe crop it lands on" answer is routinely across the field from a
+  worker standing at its chest. ~7.6k block reads once per trip is cheap.
+- **Replant is unconditional.** The ~9% wheat zero-seed roll used to leave the tile bare
+  and the farm decayed out of sight; the age-0 state is now replanted whether or not the
+  loot roll produced a seed (a seed is still consumed from the drops when there is one).
+- **Known tuning dial, deliberately left:** `DepositToChestGoal.RETRY_COOLDOWN_TICKS = 100`
+  runs in `stop()` after every trip and is decremented on alternating AI ticks, so it paces
+  the shuttle at roughly 200 ticks (~10s) per round trip. That deepens the nerf beyond what
+  the spec named. Left as-is pending Logan's play-test verdict.
