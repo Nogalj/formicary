@@ -67,7 +67,25 @@ NORMAL difficulty (Monsters safe).
   family: a real `ServerPlayer` left in the level by `makeMockServerPlayerInLevel` is
   visible to every other arena's target goals -- remove it via `PlayerList.remove` in the
   same test. (`verified: 2026-08-18`)
-- **Flake watch:** `bound_worker_collects_a_ground_item_and_deposits_it` (M6 pathing)
-  failed exactly once in an otherwise-unrelated run on 2026-08-18 and passed in every run
-  before and since. Not yet reproduced; if it fails again, treat it as a real pathing race,
-  not noise. (`observed: 2026-08-18`)
+- **A drop a test places does not stay where the test put it.** The four-double
+  `new ItemEntity(level, x, y, z, stack)` constructor delegates to the velocity overload with
+  `level.random.nextDouble() * 0.2 - 0.1` on X and Z and `0.2` up (read in
+  `reference/net/minecraft/world/entity/item/ItemEntity.java`), so every drop gets a random
+  horizontal kick and settles somewhere the test did not choose. A test that spawns a drop and
+  then asserts a mob reaches it is therefore sampling a distribution, not pinning a behaviour.
+  Use the explicit-velocity overload `new ItemEntity(level, x, y, z, stack, 0, 0, 0)` whenever
+  the drop's exact position is load-bearing -- `a_drop_just_outside_pickup_range_is_still_collected`
+  does, which is what makes it deterministic where its live-loop sibling was not.
+  (`verified: 2026-08-18`)
+- **RESOLVED -- the former "Flake watch" on `bound_worker_collects_a_ground_item_and_deposits_it`.**
+  Reproduced 2026-08-18 at 2 failures in 33 runs (~6%), then twice more with instrumentation.
+  It was **not** arena cross-contamination, which was the standing prime suspect: a diagnostic
+  dump taken at the timeout tick showed the 28-block neighbourhood around the arena held
+  exactly one item entity and exactly one tamed worker -- both the test's own -- and no
+  container anywhere near holding the deposited item. The real defect was a permanent pathing
+  deadlock in `CollectDroppedItemsGoal` (mechanism banked in `entity-ai.md`), and the only
+  random ingredient was the `ItemEntity` kick above deciding whether that run's drop settled
+  inside the deadlock band. A per-tick trace showed the worker frozen at 1.537 blocks from its
+  own drop with `navDone=true` from tick 25 to tick 600. Worth keeping as method: the
+  contamination hypothesis was cheap to *test* (dump the neighbourhood at failure) and would
+  have cost a wrong fix to assume. (`verified: 2026-08-18`)

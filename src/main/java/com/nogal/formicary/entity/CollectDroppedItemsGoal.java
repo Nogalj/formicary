@@ -34,6 +34,16 @@ public class CollectDroppedItemsGoal extends Goal {
     /** How close the worker has to be before it can pick up: 1.5 blocks, squared. */
     private static final double PICKUP_RANGE_SQR = 2.25;
 
+    /**
+     * How far the goal will close on its own once the path is spent: 3 blocks, squared.
+     *
+     * <p>Bounds the last-stretch nudge in {@link #tick()} to the gap a finished path can
+     * actually leave (at most about 2.2 blocks -- see there), so the nudge stays a final step
+     * and never becomes a substitute for pathfinding that could steer the ant off a ledge
+     * toward a drop it has no route to.
+     */
+    private static final double NUDGE_RANGE_SQR = 9.0;
+
     /** How far above/below the worker the search box reaches. */
     private static final double SEARCH_VERTICAL_REACH = 4.0;
 
@@ -128,6 +138,28 @@ public class CollectDroppedItemsGoal extends Goal {
         if (--this.repathTicks <= 0) {
             this.repathTicks = REPATH_INTERVAL_TICKS;
             this.ant.getNavigation().moveTo(this.target, this.speedModifier);
+        }
+
+        // The walk and the pickup used to be settled on different terms, and the gap between
+        // them was a permanent deadlock. `PathNavigation.moveTo(Entity, speed)` paths to the
+        // drop's BLOCK with accuracy 1, and `followThePath` retires the final node once the
+        // ant is within `maxDistanceToWaypoint` of it (bbWidth/2 = 0.45 for this 0.9-wide
+        // mob) -- so "arrived" can legitimately leave the ant a whole block short, up to
+        // about 2.2 away. PICKUP_RANGE_SQR is 1.5. Land in that band and nothing above ever
+        // moves the ant again: `moveTo` opens with `if (this.isDone()) return false;` without
+        // touching the mob, so the repath above is a no-op and APPROACH_TIMEOUT_TICKS only
+        // restarts the same stalemate. Whether a given drop lands in the band is luck --
+        // vanilla's `ItemEntity(Level, x, y, z, ItemStack)` gives every drop a random +-0.1
+        // horizontal kick -- which is exactly why it read as a flake.
+        //
+        // So close the last stretch with the move control: the same primitive
+        // `PathNavigation.tick()` itself uses to push the mob at its next waypoint, aimed at
+        // the drop rather than at a node that stops short of it. The approach timeout still
+        // bounds a drop that genuinely cannot be reached. (`docs/gotchas/entity-ai.md`.)
+        if (this.ant.getNavigation().isDone()
+                && this.ant.distanceToSqr(this.target) <= NUDGE_RANGE_SQR) {
+            this.ant.getMoveControl().setWantedPosition(this.target.getX(), this.target.getY(),
+                    this.target.getZ(), this.speedModifier);
         }
     }
 

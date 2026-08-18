@@ -66,6 +66,26 @@ keeps its original `verified:` date. Routed by the symptom index in CLAUDE.md.
   must override `getBaseExperienceReward()` itself. Verified in the decompiled `Animal.java`
   and caught by a GameTest asserting an orb value outside `Animal`'s 1-3 fallback range.
   (`verified: 2026-08-15`)
+- **A goal that walks to a target with `PathNavigation.moveTo` but completes on its own,
+  tighter range deadlocks permanently -- the mob stands next to the thing it wants, forever.**
+  `moveTo(Entity, speed)` is `createPath(entity.blockPosition(), accuracy = 1)`, and
+  `followThePath` retires the last node as soon as the mob is within `maxDistanceToWaypoint`
+  of it (`bbWidth / 2` for a mob wider than 0.75, so 0.45 for a 0.9-wide ant), so "arrived"
+  legitimately leaves the mob up to about 2.2 blocks from the real target. If the goal's own
+  completion range is tighter than that, the mob lands in the gap and **nothing ever moves it
+  again**: `moveTo(Path, speed)` opens with `if (this.isDone()) return false;` without
+  touching the mob, so a repath loop is a no-op and an approach-timeout-then-restart loop only
+  replays the same stalemate. Caught 2026-08-18 in `CollectDroppedItemsGoal`, whose pickup
+  range was 1.5 against that 2.2 arrival: a trace showed the worker frozen 1.537 blocks from
+  its drop, `navDone=true`, for 575 consecutive ticks. The fix is to close the last stretch
+  with `getMoveControl().setWantedPosition(...)` -- the same primitive `PathNavigation.tick()`
+  itself uses to push a mob at its next waypoint -- bounded to a few blocks so it stays a final
+  step rather than becoming a pathfinding substitute that could walk the mob off a ledge. Any
+  goal pairing `moveTo` with a hand-written reach wants checking against this: `RelocateItemGoal`
+  has the identical 1.5-block pickup on the same `moveTo(Entity)` approach and is **still
+  exposed** (its failure is only a wasted errand, so no test caught it); `HarvestCropsGoal` and
+  `DepositToChestGoal` use 2.0 and aim at block centres, which is narrower but not provably
+  safe. (`verified: 2026-08-18`)
 - **`xpReward = N` never produces one orb worth N.** `ExperienceOrb.award` splits the total
   through `getExperienceValue`'s tier ladder (1, 3, 7, 17, ...), so a reward of 8 always
   arrives as 7+1. A GameTest using `anyMatch(orb.getValue() == XP_REWARD)` works for 7 by

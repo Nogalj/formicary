@@ -371,6 +371,58 @@ public class TamingGameTests {
     }
 
     /**
+     * The regression guard for the 2026-08-18 pickup deadlock, and the deterministic half of
+     * {@link #bound_worker_collects_a_ground_item_and_deposits_it}.
+     *
+     * <p>That test walks the whole loop and so only lands in the failing geometry by luck --
+     * it failed about one run in sixteen, which is what kept the bug looking like noise for a
+     * day. The bug itself is not stochastic at all: {@code PathNavigation.moveTo(Entity,
+     * speed)} paths to the drop's <em>block</em> with accuracy 1 and retires the last node
+     * once the ant is within {@code maxDistanceToWaypoint} of it, so "arrived" can leave the
+     * ant a whole block short of a pickup range of 1.5 -- and {@code moveTo} opens with
+     * {@code if (this.isDone()) return false;}, so once that happens no repath ever moves the
+     * ant again. What was random was only whether a given drop settled inside the band, and
+     * that is down to the random +-0.1 kick vanilla's
+     * {@code ItemEntity(Level, x, y, z, ItemStack)} constructor gives every drop.
+     *
+     * <p>So this one removes the luck: the zero-velocity {@code ItemEntity} overload plus
+     * hand-placed positions put the ant and the drop 1.70 apart in adjacent blocks every
+     * single run. It fails on every run without the last-stretch nudge in
+     * {@link CollectDroppedItemsGoal#tick()} and passes on every run with it.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "farm_platform", timeoutTicks = 100)
+    public static void a_drop_just_outside_pickup_range_is_still_collected(GameTestHelper helper) {
+        BlockPos chest = new BlockPos(2, STAND_Y, 4);
+        helper.setBlock(chest, Blocks.CHEST);
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(4, STAND_Y, 4));
+        worker.tame(keeper);
+        worker.bindTo(helper.absolutePos(chest));
+
+        // The exact geometry the flake trace captured: the ant near the west edge of its
+        // block, the drop near the east edge of the block next door. 1.70 apart -- outside
+        // PICKUP_RANGE (1.5), inside the block the navigation already calls "arrived", so
+        // the path is satisfied by the ant's own block and moveTo never moves it again.
+        BlockPos floor = helper.absolutePos(new BlockPos(5, STAND_Y, 4));
+        double antX = floor.getX() + 0.15;
+        double z = floor.getZ() + 0.5;
+        worker.setPos(antX, floor.getY(), z);
+
+        // Explicit zero velocity: the ordinary ItemEntity constructor kicks the drop a
+        // random +-0.1, which is the randomness that made this read as a flake.
+        ItemEntity drop = new ItemEntity(helper.getLevel(), antX + 1.7, floor.getY(), z,
+                new ItemStack(Items.STICK, 4), 0.0, 0.0, 0.0);
+        drop.setPickUpDelay(0);
+        helper.getLevel().addFreshEntity(drop);
+
+        helper.succeedWhen(() -> helper.assertTrue(worker.getPack().countItem(Items.STICK) > 0,
+                "the worker should have closed the last stretch and pocketed the drop"));
+    }
+
+    /**
      * The pickup-delay decision (spec item 2: "respect items a player just dropped"): a
      * drop still inside its vanilla pickup-delay window is left alone, exactly the filter
      * {@link RelocateItemGoal} already applies for the wild worker.
