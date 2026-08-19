@@ -7,8 +7,6 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_SOLDI
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_WORKERS_MAX_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_WORKERS_MIN_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FLOOR_TOP;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FUNGAL_BLOOM_CHANCE_BY_TIER;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FUNGAL_CARPET_CHANCE_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_FUNGAL_BLOOM_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_FUNGAL_CARPET_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_SPORE_CROP_CHANCE;
@@ -313,8 +311,8 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                             && noise.isInLarderRoom(columnLarders, x, y, z);
                     boolean here = run(airRun, localX + 1, localZ + 1, y, bottom, top) > 0;
                     if (here) {
-                        decorateFloorSpace(chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z, tier,
-                                field, throne, nursery, garden, bottom, top);
+                        decorateFloorSpace(chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z,
+                                throne, nursery, garden, bottom, top);
                     } else {
                         decorateSurface(noise, chunk, cursor, randomFactory, airRun, localX, localZ, x, y, z, tier,
                                 field, throne, nursery, larder, bottom, top);
@@ -423,23 +421,24 @@ public class ColonyChunkGenerator extends ChunkGenerator {
     }
 
     /**
-     * Air standing on a floor: fungus, carpet, egg clusters.
+     * Air standing on a floor: egg clusters, and a garden chamber's fungus.
      *
-     * <p>Egg clusters have no ambient chance at all after play-test round 1 -- the only two
-     * branches that place one are the throne chamber and the nursery chamber below. Brood
-     * scattered along a corridor was the same mistake as speckled comb: it made the block
-     * common enough to be scenery and left the rooms that are supposed to be full of it
-     * indistinguishable from the corridor outside.
+     * <p><b>Every branch here is now a chamber branch</b> (play-test round 2). Egg clusters
+     * lost their ambient chance in round 1 and the fungal carpet/bloom pair lost theirs in
+     * round 2, for the same reason both times: a block scattered across every roomy floor in
+     * the dimension is scenery, and it makes the room that is supposed to be full of it read
+     * exactly like the corridor outside. Brood is in brood rooms, fungus is in farms, comb is
+     * in patches -- one rule, three applications.
      *
-     * <p>The ambient per-tier chances are scaled by the colony field (Ep2): a wild tunnel
-     * gets no fungal growth, a core gets exactly what it always did. The chamber branches
-     * above them are NOT scaled -- a room only exists where {@code f} already cleared
-     * {@code CHAMBER_ELIGIBILITY_MIN_F}, and scaling its dressing on top would leave the
-     * rooms out on the ring's edge conspicuously bare inside.
+     * <p>A consequence worth stating: this method no longer takes the tier or the colony
+     * field, because nothing ambient is left to scale by them. A chamber's own dressing was
+     * never scaled -- the room only exists where {@code f} already cleared
+     * {@code CHAMBER_ELIGIBILITY_MIN_F}, and thinning its interior on top of that would leave
+     * the rooms out on the ring's edge conspicuously bare inside.
      */
     private void decorateFloorSpace(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
             PositionalRandomFactory randomFactory, byte[] airRun, int localX, int localZ,
-            int x, int y, int z, int tier, double field,
+            int x, int y, int z,
             boolean throne, boolean nursery, boolean garden, int bottom, int top) {
         boolean solidBelow = run(airRun, localX + 1, localZ + 1, y - 1, bottom, top) == 0;
         if (!solidBelow || run(airRun, localX + 1, localZ + 1, y + 1, bottom, top) == 0) {
@@ -468,17 +467,8 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         if (garden) {
             // Same reasoning as the nursery branch above for not gating on `roomy`.
             decorateGardenFloor(chunk, cursor, roll, x, y, z);
-            return;
         }
-        double cumulative = FUNGAL_BLOOM_CHANCE_BY_TIER[tier] * field;
-        if (roll < cumulative) {
-            chunk.setBlockState(cursor.set(x, y, z), ModBlocks.FUNGAL_BLOOM.get().defaultBlockState(), false);
-            return;
-        }
-        cumulative += FUNGAL_CARPET_CHANCE_BY_TIER[tier] * field;
-        if (roll < cumulative) {
-            chunk.setBlockState(cursor.set(x, y, z), ModBlocks.FUNGAL_CARPET.get().defaultBlockState(), false);
-        }
+        // No ambient branch: outside a chamber a carved floor is bare soil (round 2).
     }
 
     /**

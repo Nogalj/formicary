@@ -192,8 +192,14 @@ public final class ColonyGeneratorTunables {
     /** A floor is "roomy" (chamber, not tunnel) if there is still air this far above it. */
     public static final int ROOMY_CLEARANCE = 4;
 
-    public static final double[] FUNGAL_CARPET_CHANCE_BY_TIER = {0.00, 0.02, 0.16, 0.025};
-    public static final double[] FUNGAL_BLOOM_CHANCE_BY_TIER = {0.00, 0.01, 0.07, 0.012};
+    // Ep2 play-test round 2: there are no ambient fungal chances any more. The former
+    // FUNGAL_CARPET_CHANCE_BY_TIER / FUNGAL_BLOOM_CHANCE_BY_TIER pair sprayed carpet and
+    // bloom across every roomy floor in three of the four tiers, which made the Fungus
+    // Garden chambers -- the rooms the fungus is supposed to BE -- indistinguishable from
+    // the corridor outside them. Fungus is now farmed content: it exists in a garden
+    // chamber (see the GARDEN_* floor chances below) and nowhere else in the carve. Same
+    // argument the comb-patch field made in round 1, applied to the other growth.
+
     /** Royal Depths' sparse amber accents: Resin Block exposed in a wall. */
     public static final double[] RESIN_BLOCK_CHANCE_BY_TIER = {0.020, 0.000, 0.000, 0.000};
 
@@ -770,9 +776,15 @@ public final class ColonyGeneratorTunables {
     // reaches the crop's own canSurvive bar (8) at that one age, and the dimension has no
     // skylight to make up the difference at any other age.
 
-    public static final double GARDEN_SPORE_CROP_CHANCE = 0.12;
-    public static final double GARDEN_FUNGAL_BLOOM_CHANCE = 0.15;
-    public static final double GARDEN_FUNGAL_CARPET_CHANCE = 0.50;
+    // Round 2 raises all three together (0.12/0.15/0.50 -> 0.16/0.24/0.52). They are
+    // cumulative bands on one roll, so the sum IS the floor coverage: 0.77 before, 0.92
+    // now -- a garden reads as overgrown rather than as a room with some fungus in it.
+    // That is also what pays for the ambient chances deleted above: the fungus a player
+    // used to meet everywhere is now concentrated where it is farmed.
+
+    public static final double GARDEN_SPORE_CROP_CHANCE = 0.16;
+    public static final double GARDEN_FUNGAL_BLOOM_CHANCE = 0.24;
+    public static final double GARDEN_FUNGAL_CARPET_CHANCE = 0.52;
 
     // ------------------------------------------------------------------
     // Larder chambers (Ep2 D3) -- the colony's food storage rooms, cloned end to end from
