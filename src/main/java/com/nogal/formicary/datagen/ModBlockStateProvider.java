@@ -32,7 +32,6 @@ public class ModBlockStateProvider extends BlockStateProvider {
         simpleBlock(ModBlocks.AMBER_EARTH.get());
         simpleBlock(ModBlocks.DEEP_LOAM.get());
         simpleBlock(ModBlocks.HARDENED_SOIL.get());
-        simpleBlock(ModBlocks.RESIN_WEEP.get());
         simpleBlock(ModBlocks.RESIN_BLOCK.get());
         // Plain cube-all, no rotation: Ep2 task I2 re-diagnosis (2026-08-18) found
         // the 2026-08-13 fix's per-face CLOCKWISE_90 on UP/DOWN was itself the bug,
@@ -77,14 +76,14 @@ public class ModBlockStateProvider extends BlockStateProvider {
         // Ep2 task H3: decorative families. Each base block is a plain cube-all (its
         // texture already carries the "cut" look -- mortar grid, tile grid, gloss line
         // -- so no hand-built model is needed, same as the combs above since Ep2 task
-        // I2), and every stairs/slab/wall reuses that same single texture via the
-        // stairsBlock/slabBlock/wallBlock overloads -- the "dedicated provider helpers"
-        // the task brief points at.
+        // I2), and every stairs/slab reuses that same single texture via the
+        // stairsBlock/slabBlock overloads -- the "dedicated provider helpers" the task
+        // brief points at. (Ep2 play-test revision, WP-1 item 4: the packed_soil_bricks
+        // wallBlock() call is gone along with packed_soil_brick_wall.)
         simpleBlock(ModBlocks.PACKED_SOIL_BRICKS.get());
         stairsBlock(ModBlocks.PACKED_SOIL_BRICK_STAIRS.get(), blockTexture(ModBlocks.PACKED_SOIL_BRICKS.get()));
         slabBlock(ModBlocks.PACKED_SOIL_BRICK_SLAB.get(), blockTexture(ModBlocks.PACKED_SOIL_BRICKS.get()),
                 blockTexture(ModBlocks.PACKED_SOIL_BRICKS.get()));
-        wallBlock(ModBlocks.PACKED_SOIL_BRICK_WALL.get(), blockTexture(ModBlocks.PACKED_SOIL_BRICKS.get()));
 
         simpleBlock(ModBlocks.HARDENED_SOIL_TILES.get());
         stairsBlock(ModBlocks.HARDENED_SOIL_TILE_STAIRS.get(), blockTexture(ModBlocks.HARDENED_SOIL_TILES.get()));

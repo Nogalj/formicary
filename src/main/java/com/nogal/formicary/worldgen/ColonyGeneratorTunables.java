@@ -194,8 +194,6 @@ public final class ColonyGeneratorTunables {
 
     public static final double[] FUNGAL_CARPET_CHANCE_BY_TIER = {0.00, 0.02, 0.16, 0.025};
     public static final double[] FUNGAL_BLOOM_CHANCE_BY_TIER = {0.00, 0.01, 0.07, 0.012};
-    /** Resin Weep embedded in walls / ceilings. */
-    public static final double[] RESIN_WEEP_CHANCE_BY_TIER = {0.035, 0.010, 0.045, 0.008};
     /** Royal Depths' sparse amber accents: Resin Block exposed in a wall. */
     public static final double[] RESIN_BLOCK_CHANCE_BY_TIER = {0.020, 0.000, 0.000, 0.000};
 
@@ -580,7 +578,6 @@ public final class ColonyGeneratorTunables {
 
     public static final double THRONE_ROYAL_COMB_CHANCE = 0.090;
     public static final double THRONE_BROOD_COMB_CHANCE = 0.060;
-    public static final double THRONE_RESIN_WEEP_CHANCE = 0.050;
     public static final double THRONE_RESIN_BLOCK_CHANCE = 0.040;
     public static final double THRONE_EGG_CLUSTER_CHANCE = 0.060;
 
@@ -680,7 +677,6 @@ public final class ColonyGeneratorTunables {
     public static final double NURSERY_BROOD_COMB_CHANCE = 0.320;
     public static final double NURSERY_ROYAL_COMB_CHANCE = 0.012;
     public static final double NURSERY_EGG_CLUSTER_CHANCE = 0.140;
-    public static final double NURSERY_RESIN_WEEP_CHANCE = 0.020;
 
     /** Larvae seeded on a nursery chamber's floor when its chunk generates. */
     public static final int NURSERY_LARVAE_MIN = 2;

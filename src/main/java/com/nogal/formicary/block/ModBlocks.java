@@ -10,7 +10,6 @@ import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.TransparentBlock;
-import net.minecraft.world.level.block.WallBlock;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
@@ -59,13 +58,6 @@ public class ModBlocks {
                     .strength(2.0F, 6.0F));
 
     // --- Resources ---
-
-    public static final DeferredBlock<Block> RESIN_WEEP = BLOCKS.registerSimpleBlock(
-            "resin_weep",
-            BlockBehaviour.Properties.of()
-                    .mapColor(MapColor.GOLD)
-                    .sound(SoundType.ROOTED_DIRT)
-                    .strength(0.5F));
 
     public static final DeferredBlock<Block> RESIN_BLOCK = BLOCKS.registerSimpleBlock(
             "resin_block",
@@ -209,7 +201,7 @@ public class ModBlocks {
                     .sound(SoundType.AMETHYST)
                     .strength(3.0F, 6.0F));
 
-    // --- Ep2 task H3: decorative families -- packed_soil_bricks (+ stairs/slab/wall),
+    // --- Ep2 task H3: decorative families -- packed_soil_bricks (+ stairs/slab),
     // hardened_soil_tiles (+ stairs/slab), polished_resin (+ stairs/slab). Every shape in
     // a family reuses that family's parent block's exact BlockBehaviour.Properties
     // (mapColor/sound/strength), matching the task brief's "mineable tags matching
@@ -220,15 +212,19 @@ public class ModBlocks {
     // Deliberately NOT added to ModBlockTags.COLONY_FABRIC even though two parents
     // (Packed Soil, Hardened Soil) are: that tag gates the DIMENSION'S OWN raw terrain
     // behind the chitin set (spec section 5), and these are player-crafted building
-    // blocks made FROM harvested fabric, not fabric themselves -- gating a wall a player
-    // built would punish building, not protect the dimension.
+    // blocks made FROM harvested fabric, not fabric themselves -- gating a build a player
+    // made would punish building, not protect the dimension.
     //
-    // Stairs/slab/wall base states reference their OWN family's base block (not the raw
+    // Stairs/slab base states reference their OWN family's base block (not the raw
     // parent), the same way vanilla's oak_stairs point at oak_planks rather than at a log
     // -- and it is a safe forward reference: DeferredRegister iterates its entries in
     // registration order when the registry event fires, so by the time each shape's
     // supplier resolves, its family's base block (registered immediately above it, in the
     // same DeferredRegister) has already bound its DeferredBlock.
+    //
+    // Ep2 play-test revision (WP-1 item 4): packed_soil_brick_wall removed -- see
+    // ModRecipeProvider/ModBlockStateProvider/ModItemModelProvider/ModBlockLootSubProvider
+    // for the matching recipe/model/loot removals.
 
     private static final BlockBehaviour.Properties PACKED_SOIL_BRICK_PROPERTIES = BlockBehaviour.Properties.of()
             .mapColor(MapColor.DIRT)
@@ -245,9 +241,6 @@ public class ModBlocks {
 
     public static final DeferredBlock<SlabBlock> PACKED_SOIL_BRICK_SLAB = BLOCKS.registerBlock(
             "packed_soil_brick_slab", SlabBlock::new, PACKED_SOIL_BRICK_PROPERTIES);
-
-    public static final DeferredBlock<WallBlock> PACKED_SOIL_BRICK_WALL = BLOCKS.registerBlock(
-            "packed_soil_brick_wall", WallBlock::new, PACKED_SOIL_BRICK_PROPERTIES);
 
     private static final BlockBehaviour.Properties HARDENED_SOIL_TILE_PROPERTIES = BlockBehaviour.Properties.of()
             .mapColor(MapColor.COLOR_GRAY)

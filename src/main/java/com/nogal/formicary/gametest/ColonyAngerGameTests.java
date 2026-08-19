@@ -83,21 +83,6 @@ public class ColonyAngerGameTests {
         helper.succeed();
     }
 
-    /** Foraging is not theft: Resin Weep is not hive-tagged, so nothing is provoked. */
-    @PrefixGameTestTemplate(false)
-    @GameTest(template = "platform")
-    public static void resin_weep_break_does_not_anger(GameTestHelper helper) {
-        SoldierAntEntity soldier = helper.spawn(ModEntities.SOLDIER_ANT.get(), NEAR_ANT);
-        WorkerAntEntity worker = helper.spawn(ModEntities.WORKER_ANT.get(), NEAR_ANT);
-        Player forager = helper.makeMockPlayer(GameType.SURVIVAL);
-
-        breakAsPlayer(helper, NEAR_BLOCK, ModBlocks.RESIN_WEEP.get(), forager);
-
-        helper.assertFalse(soldier.isAngry(), "harvesting resin must not anger a soldier");
-        helper.assertFalse(worker.isFleeing(), "harvesting resin must not scare a worker");
-        helper.succeed();
-    }
-
     /** Trigger (a), through vanilla's own damage pipeline: hurting one ant rouses the rest. */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "platform")

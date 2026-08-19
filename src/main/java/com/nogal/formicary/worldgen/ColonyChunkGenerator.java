@@ -21,10 +21,8 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_EGG_C
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_LARVAE_MAX;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_LARVAE_MIN;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_RADIUS;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_RESIN_WEEP_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_ROYAL_COMB_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.RESIN_BLOCK_CHANCE_BY_TIER;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.RESIN_WEEP_CHANCE_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ROOMY_CLEARANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ROYAL_COMB_CHANCE_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SPAWN_CLUSTERS_PER_CHUNK_BY_TIER;
@@ -36,7 +34,6 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_BROOD_
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_DAIS_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_EGG_CLUSTER_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_RESIN_BLOCK_CHANCE;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_RESIN_WEEP_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_ROYAL_COMB_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.TIER_COUNT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierIndex;
@@ -572,11 +569,6 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             }
         }
         if (sideOrCeiling) {
-            cumulative += RESIN_WEEP_CHANCE_BY_TIER[tier] * field;
-            if (roll < cumulative) {
-                chunk.setBlockState(cursor.set(x, y, z), ModBlocks.RESIN_WEEP.get().defaultBlockState(), false);
-                return;
-            }
             cumulative += RESIN_BLOCK_CHANCE_BY_TIER[tier] * field;
             if (roll < cumulative) {
                 chunk.setBlockState(cursor.set(x, y, z), ModBlocks.RESIN_BLOCK.get().defaultBlockState(), false);
@@ -607,13 +599,6 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         cumulative += THRONE_RESIN_BLOCK_CHANCE;
         if (roll < cumulative) {
             chunk.setBlockState(cursor.set(x, y, z), ModBlocks.RESIN_BLOCK.get().defaultBlockState(), false);
-            return;
-        }
-        if (sideOrCeiling) {
-            cumulative += THRONE_RESIN_WEEP_CHANCE;
-            if (roll < cumulative) {
-                chunk.setBlockState(cursor.set(x, y, z), ModBlocks.RESIN_WEEP.get().defaultBlockState(), false);
-            }
         }
     }
 
@@ -636,13 +621,6 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         cumulative += NURSERY_BROOD_COMB_CHANCE;
         if (roll < cumulative) {
             chunk.setBlockState(cursor.set(x, y, z), ModBlocks.BROOD_COMB.get().defaultBlockState(), false);
-            return;
-        }
-        if (sideOrCeiling) {
-            cumulative += NURSERY_RESIN_WEEP_CHANCE;
-            if (roll < cumulative) {
-                chunk.setBlockState(cursor.set(x, y, z), ModBlocks.RESIN_WEEP.get().defaultBlockState(), false);
-            }
         }
     }
 
