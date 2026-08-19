@@ -1419,3 +1419,50 @@ jittered 384-block grid, sparse wilds between them.
   runs in `stop()` after every trip and is decremented on alternating AI ticks, so it paces
   the shuttle at roughly 200 ticks (~10s) per round trip. That deepens the nerf beyond what
   the spec named. Left as-is pending Logan's play-test verdict.
+
+## Play-test round 2 -- worldgen (2026-08-19)
+
+- **Fungus is farmed content, not scenery.** The ambient `FUNGAL_CARPET/BLOOM_CHANCE_BY_TIER`
+  pair is deleted outright rather than turned down. It sprayed growth over every roomy floor
+  in three tiers, which made a Fungus Garden chamber read exactly like the corridor outside
+  it -- the identical mistake speckled comb was in round 1, and the same fix. The three
+  garden floor chances rise together (0.12/0.15/0.50 -> 0.16/0.24/0.52); they are cumulative
+  bands on one roll, so total floor coverage goes 0.77 -> 0.92.
+- **Chambers staff themselves, rather than the tier's cluster density going up.** Per nursery
+  2-3 workers + 1-2 soldiers, per garden 2-3 workers + 1 soldier, seeded by the chunk that
+  holds the chamber's centre column exactly as the brood and the queen are.
+  `SPAWN_CLUSTERS_PER_CHUNK_BY_TIER` is a density -- raising it puts more ants in the tier and
+  still leaves any given room empty about as often as before. "Every nursery has somebody in
+  it" is a statement about a nursery, and only a per-chamber placement makes it true.
+  No `setPersistenceRequired`: both castes already override `removeWhenFarAway` to false at
+  class level.
+- **Connectivity ramps are colony infrastructure now.** A ramp is realized only where the
+  colony field at its own axis is >= `CHAMBER_ELIGIBILITY_MIN_F`, gated inside
+  `ColonyNoise#shaftsNear` so `isAir`, the probe, the ASCII slices and the dev commands
+  cannot disagree about which ramps exist. Explicitly left ungated, because between them they
+  are the no-softlock guarantee: the worm tunnels, the ceiling membrane, the arrival pockets.
+  A player who arrives in the wilds can still see and reach an exit straight up through the
+  cap; what they cannot do is descend a ramp nobody dug. Measured (seed 1234567): 222 of 625
+  cells realize a ramp, fewest 21 ramps per colony against a required floor of 3.
+- **A chamber now needs a realized ramp as well as an eligible centre**, and the second test
+  is not implied by the first. A chamber centre sits 24 blocks from its axis and the colony
+  falloff moves by up to 0.9 over that distance, so a room pointing outward from a fringe ramp
+  can clear the 0.2 gate while its own ramp does not -- and that room's only doorway would
+  open onto solid soil 16 blocks of dead-end corridor from anything. Gated on the chamber
+  rather than by resurrecting the ramp: a ramp that exists because a larder wanted it is
+  exactly the descent-from-nowhere the gate removes. The throne is deliberately exempt
+  (its anchor is provably always realized -- the ramp cell containing the colony centre is
+  within 41.9 blocks of f = 1.0); `NoiseProbe` asserts that tautology instead of trusting it.
+- **The probe's connectivity slab and ASCII slices moved to a colony**, joining the five
+  sections Ep2 already moved. Same argument, one step further: with the spine gated too, a
+  128-block slab at the origin contains no ramp at all, so "can you walk to the Royal Depths"
+  measured there would be measuring the gate.
+- **Landings are rounded, and the chamber floor minimums moved up 2 to pay for it.** Flat
+  floor disc (it is where the ramp's walkway crosses -- a step there is a step in the spine),
+  domed ceiling (+2 at the centre), tapered wall with a one-block fillet at the bottom. The
+  dome is the same `radius * sqrt(1 - t^2)` curve the four chamber kinds already use. Because
+  `shaftState` outranks every chamber, a taller landing reaches further into the tier above
+  its boundary, so `NURSERY/GARDEN/LARDER_FLOOR_MIN_Y` now read `LANDING_INTERIOR_HEIGHT`
+  (8) instead of `LANDING_HEIGHT` (6): floors land in `[56, 80)`, `[104, 128)`, `[152, 176)`.
+  Leaving them at 6 would have re-opened the exact bug `NURSERY_FLOOR_MIN_Y` was written to
+  close -- a corridor floor cut out from under itself by the landing's air.

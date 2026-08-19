@@ -34,8 +34,9 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_SHELL_
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_SPACING;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_WALL_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.HARDENED_ACCENT_THRESHOLD_BY_TIER;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_INTERIOR_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_WALL_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_APPROACH_DISTANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_COMB_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_COMB_RADIUS;
@@ -44,6 +45,7 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_CORRID
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_CORRIDOR_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_CORRIDOR_START;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_DOME_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_ELIGIBILITY_MIN_F;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_FLOOR_MIN_Y;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_MAX_REACH;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_RADIUS;
@@ -178,25 +180,77 @@ public final class ColonyNoise {
         return new Shaft(x, z, phase);
     }
 
+    public static final Shaft[] NO_SHAFTS = new Shaft[0];
+
     /**
-     * Every shaft that can possibly reach into the 16x16 area rooted at
+     * Whether a cell's ramp is <b>realized</b> -- i.e. actually carved into the world
+     * (play-test round 2, item 5).
+     *
+     * <p>Ramps used to be unconditional everywhere on the 48-block grid, which made 4000
+     * blocks of wilds look like a maintained mineshaft with nothing in it. They are now
+     * colony infrastructure: a colony digs its own vertical circulation, and the ground
+     * between colonies has worm tunnels and nothing else.
+     *
+     * <p>The test is on the <b>axis</b>, at the same {@link
+     * ColonyGeneratorTunables#CHAMBER_ELIGIBILITY_MIN_F} the chambers use, and it is
+     * all-or-nothing for the whole column: a ramp that existed for part of its height would
+     * be a descent that ends in a wall, which is the one thing the connectivity spine may
+     * never be.
+     *
+     * <p><b>What is deliberately NOT gated</b>, because between them they are the mod's
+     * no-softlock guarantee: the worm tunnels, the ceiling membrane, and the arrival pockets.
+     * A player who arrives in the wilds can still see and reach an exit through the cap
+     * directly above them; what they cannot do is descend a ramp that a colony never dug.
+     * That is inconvenience by design, and the walk to the next colony is bounded by
+     * {@code NoiseProbe}'s own findability measurement.
+     */
+    public boolean isShaftRealized(Shaft shaft) {
+        return colonyField(shaft.axisX(), shaft.axisZ()) >= CHAMBER_ELIGIBILITY_MIN_F;
+    }
+
+    /** As {@link #isShaftRealized(Shaft)}, against a colony set already resolved. */
+    private boolean isShaftRealized(Colony[] colonies, Shaft shaft) {
+        return colonyField(colonies, shaft.axisX(), shaft.axisZ()) >= CHAMBER_ELIGIBILITY_MIN_F;
+    }
+
+    /**
+     * Every <b>realized</b> shaft that can possibly reach into the 16x16 area rooted at
      * ({@code blockMinX}, {@code blockMinZ}).
      *
      * <p>The 3x3 cell neighbourhood is provably enough: a cell's axis lands within
      * {@code SHAFT_JITTER/2} of its centre, so the nearest axis two cells away is at least
      * {@code 2*SHAFT_SPACING - SHAFT_JITTER/2 - 16} = 88 blocks from the chunk, far outside
      * {@link ColonyGeneratorTunables#SHAFT_MAX_REACH}.
+     *
+     * <p>Filtering here, rather than at each consumer, is the point: {@link #isAir}, the
+     * probe, the cross-sections and the dev commands all reach the spine through this one
+     * method, so they cannot disagree about which ramps exist. It can return an empty array
+     * -- out in the wilds that is the correct answer.
+     *
+     * <p>One colony neighbourhood serves all nine axes. An axis sits at most
+     * {@code SHAFT_SPACING + SHAFT_JITTER/2} = 56 blocks outside the chunk, and
+     * {@link #coloniesNear}'s own derivation leaves 528 blocks to the nearest excluded
+     * centre against an outer radius of 150, so 56 blocks of slack changes nothing.
      */
     public Shaft[] shaftsNear(int blockMinX, int blockMinZ) {
         int cellX = Math.floorDiv(blockMinX, SHAFT_SPACING);
         int cellZ = Math.floorDiv(blockMinZ, SHAFT_SPACING);
-        Shaft[] out = new Shaft[9];
-        int i = 0;
+        Colony[] colonies = coloniesNear(blockMinX, blockMinZ);
+        Shaft[] scratch = new Shaft[9];
+        int count = 0;
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
-                out[i++] = shaftForCell(cellX + dx, cellZ + dz);
+                Shaft shaft = shaftForCell(cellX + dx, cellZ + dz);
+                if (isShaftRealized(colonies, shaft)) {
+                    scratch[count++] = shaft;
+                }
             }
         }
+        if (count == 0) {
+            return NO_SHAFTS;
+        }
+        Shaft[] out = new Shaft[count];
+        System.arraycopy(scratch, 0, out, 0, count);
         return out;
     }
 
@@ -278,16 +332,43 @@ public final class ColonyNoise {
 
             if (landingVerdict == SHAFT_NONE && distance <= LANDING_RADIUS + widen) {
                 for (int band = 1; band < TIER_COUNT; band++) {
-                    int boundary = MIN_Y + band * TIER_HEIGHT;
-                    if (y >= boundary && y < boundary + LANDING_HEIGHT) {
+                    int height = y - (MIN_Y + band * TIER_HEIGHT);
+                    if (height >= 0 && height < LANDING_INTERIOR_HEIGHT
+                            && distance <= landingRadius(height) + widen) {
                         landingVerdict = SHAFT_AIR;
-                    } else if (y == boundary - 1) {
+                    } else if (height == -1) {
                         landingVerdict = SHAFT_SOLID;
                     }
                 }
             }
         }
         return landingVerdict;
+    }
+
+    /**
+     * The landing's radius at {@code height} air blocks above its floor disc -- the rounded
+     * profile play-test round 2 gave it, in one place so {@link NoiseProbe} measures the
+     * shape the carve actually uses.
+     *
+     * <p>Three segments, bottom to top: a one-block fillet where the wall meets the floor,
+     * {@link ColonyGeneratorTunables#LANDING_WALL_HEIGHT} of straight wall at the full
+     * radius, then the dome's quarter-ellipse up to
+     * {@link ColonyGeneratorTunables#LANDING_INTERIOR_HEIGHT}. The dome is the same
+     * {@code radius * sqrt(1 - t^2)} curve {@link #isInsideThrone} and its three siblings
+     * use, so the dimension has one dome idiom rather than two.
+     *
+     * <p>The <b>floor disc itself is deliberately not tapered</b>: it is forced solid at the
+     * full radius one block below this, because that disc is where the ramp's walkway crosses
+     * the landing and a step there would be a step in the connectivity spine.
+     */
+    public static double landingRadius(int height) {
+        double radius = LANDING_RADIUS;
+        if (height > LANDING_WALL_HEIGHT) {
+            double t = (double) (height - LANDING_WALL_HEIGHT)
+                    / (LANDING_INTERIOR_HEIGHT - LANDING_WALL_HEIGHT);
+            radius *= Math.sqrt(Math.max(0.0, 1.0 - t * t));
+        }
+        return height == 0 ? radius - 1.0 : radius;
     }
 
     /** Additive-only wall jitter in blocks, always in {@code [0, WALL_JITTER_AMOUNT]}. */
@@ -406,7 +487,35 @@ public final class ColonyNoise {
      * ring but whose chamber jittered out into the wilds is a room in the wilds.
      */
     public boolean isChamberEligible(double x, double z) {
-        return colonyField(x, z) > CHAMBER_ELIGIBILITY_MIN_F;
+        return isChamberEligible(x, z, CHAMBER_ELIGIBILITY_MIN_F);
+    }
+
+    /** As above, against a chamber kind's own eligibility floor. */
+    public boolean isChamberEligible(double x, double z, double minField) {
+        return colonyField(x, z) > minField;
+    }
+
+    /**
+     * Whether a chamber hung off {@code anchor} actually generates: its own centre must be
+     * inside a colony, <b>and</b> the ramp it hangs off must be one that got dug.
+     *
+     * <p>The second half is new in play-test round 2 and is not redundant. Every one of these
+     * rooms is reachable "by construction" only in the sense that its corridor lands on its
+     * ramp's walkway at the exact height that walkway reaches -- so a room whose ramp is not
+     * realized is a room whose only doorway opens onto solid soil, 16 blocks of dead-end
+     * corridor from anything. The two tests can genuinely disagree: the chamber centre sits
+     * {@code APPROACH_DISTANCE} = 24 blocks from the axis, and the colony falloff moves by up
+     * to 0.9 over that distance, so a chamber pointing outward from a fringe ramp can clear
+     * the gate while its own ramp does not.
+     *
+     * <p>This is deliberately a gate on the CHAMBER rather than an exception carved into
+     * {@link #isShaftRealized} for ramps that happen to have rooms on them: the spine has to
+     * mean the same thing everywhere, and a ramp resurrected out in the wilds because a
+     * larder wanted it would be exactly the "descent from nowhere to nowhere" the gate exists
+     * to remove.
+     */
+    private boolean isChamberAnchored(Shaft anchor, double centreX, double centreZ, double minField) {
+        return isShaftRealized(anchor) && isChamberEligible(centreX, centreZ, minField);
     }
 
     // ------------------------------------------------------------------
@@ -528,6 +637,15 @@ public final class ColonyNoise {
      * plus any whole number of {@link #RAMP_PERIOD}s; the turn taken is the first one at or
      * above {@link ColonyGeneratorTunables#THRONE_FLOOR_MIN_Y}, which keeps the whole room
      * (13 of interior plus its shell) inside the Royal Depths band.
+     *
+     * <p><b>Not gated on {@link #isShaftRealized}</b>, unlike the three 96-grid chambers,
+     * because for a throne the gate is provably a tautology: this ramp's cell is the one
+     * containing the COLONY CENTRE, so its axis lands within
+     * {@code SHAFT_SPACING/2 * sqrt(2) + SHAFT_JITTER/2} = 41.9 blocks of a point where the
+     * field is 1.0 -- well inside {@link ColonyGeneratorTunables#COLONY_CORE_RADIUS} = 100,
+     * where the field is still exactly 1.0. Writing the test anyway would let "one throne per
+     * colony" quietly become "one throne per colony, usually"; {@link NoiseProbe} asserts the
+     * tautology instead, which is the honest place for it.
      */
     private Throne throneForCell(int cellX, int cellZ) {
         // y = 1 rather than 0 so this never draws the same stream as shaftForCell -- and
@@ -725,7 +843,7 @@ public final class ColonyNoise {
      * seed-chosen bearing with its floor set to the ramp's own walkway height there.
      *
      * <p>The floor is the first ramp turn at or above
-     * {@link ColonyGeneratorTunables#NURSERY_FLOOR_MIN_Y}, which puts it in {@code [54, 78)}
+     * {@link ColonyGeneratorTunables#NURSERY_FLOOR_MIN_Y}, which puts it in {@code [56, 80)}
      * -- the room and its shell therefore stay inside the Nurseries band, and can never
      * collide with a throne chamber (whose floors live in {@code [8, 33)}).
      */
@@ -750,7 +868,7 @@ public final class ColonyNoise {
         double centreXd = shaft.axisX() + NURSERY_APPROACH_DISTANCE * dirX;
         double centreZd = shaft.axisZ() + NURSERY_APPROACH_DISTANCE * dirZ;
         return new Nursery(centreXd, centreZd, shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY,
-                isChamberEligible(centreXd, centreZd));
+                isChamberAnchored(shaft, centreXd, centreZd, CHAMBER_ELIGIBILITY_MIN_F));
     }
 
     /**
@@ -838,9 +956,9 @@ public final class ColonyNoise {
      *
      * <p>The floor is the first ramp turn at or above
      * {@link ColonyGeneratorTunables#GARDEN_FLOOR_MIN_Y}, which puts it in
-     * {@code [102, 126)} -- the room and its shell therefore stay inside the Fungal
+     * {@code [104, 128)} -- the room and its shell therefore stay inside the Fungal
      * Gardens band, and can never collide with a throne or nursery chamber (whose floors
-     * live in the disjoint bands {@code [8, 33)} and {@code [54, 78)}).
+     * live in the disjoint bands {@code [8, 33)} and {@code [56, 80)}).
      */
     private Garden gardenForCell(int cellX, int cellZ) {
         // y = 3: a fourth independent stream, so this never draws the same numbers as
@@ -863,7 +981,7 @@ public final class ColonyNoise {
         double centreXd = shaft.axisX() + GARDEN_APPROACH_DISTANCE * dirX;
         double centreZd = shaft.axisZ() + GARDEN_APPROACH_DISTANCE * dirZ;
         return new Garden(centreXd, centreZd, shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY,
-                isChamberEligible(centreXd, centreZd));
+                isChamberAnchored(shaft, centreXd, centreZd, CHAMBER_ELIGIBILITY_MIN_F));
     }
 
     /**
@@ -957,10 +1075,18 @@ public final class ColonyNoise {
      *
      * <p>The floor is the first ramp turn at or above
      * {@link ColonyGeneratorTunables#LARDER_FLOOR_MIN_Y}, which puts it in
-     * {@code [150, 174)} -- the room and its shell therefore stay inside the Upper
+     * {@code [152, 176)} -- the room and its shell therefore stay inside the Upper
      * Galleries band, and can never collide with a throne, nursery or garden chamber
-     * (whose floors live in the disjoint bands {@code [8, 33)}, {@code [54, 78)} and
-     * {@code [102, 126)}).
+     * (whose floors live in the disjoint bands {@code [8, 33)}, {@code [56, 80)} and
+     * {@code [104, 128)}).
+     *
+     * <p>That disjointness is <b>not</b> a comfortable margin, and anything that moves a
+     * chamber kind's band has to look here first: the nursery, garden and larder grids all
+     * have the same 96-block cell with the same {@code cell*96 + 48} centre, so all three
+     * resolve the <em>same</em> anchor ramp, hang at the same 24-block approach distance,
+     * and (measured, seed 1234567) land within about a block of each other in XZ. The only
+     * thing keeping three rooms out of one another is that they are 48 blocks apart
+     * vertically.
      */
     private Larder larderForCell(int cellX, int cellZ) {
         // y = 4: a fifth independent stream, so this never draws the same numbers as
@@ -1006,7 +1132,7 @@ public final class ColonyNoise {
 
         return new Larder(centreXd, centreZd, shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY,
                 combX1, combZ1, combX2, combZ2, floorY + LARDER_COMB_HEIGHT,
-                isChamberEligible(centreXd, centreZd));
+                isChamberAnchored(shaft, centreXd, centreZd, LARDER_ELIGIBILITY_MIN_F));
     }
 
     /**
@@ -1481,9 +1607,12 @@ public final class ColonyNoise {
      * through the noise and force their own shells solid, but never override a ramp floor
      * or a ramp walkway. That keeps M4a's walkability guarantee exactly as it was -- the
      * rooms hang off the spine, they do not cut into it. The four chamber kinds cannot
-     * interact: their floors live in disjoint Y bands ({@code [8, 33)}, {@code [52, 76)},
-     * {@code [102, 126)}, {@code [150, 174)}), so their order relative to each other is
-     * arbitrary.
+     * interact: their floors live in disjoint Y bands ({@code [8, 33)}, {@code [56, 80)},
+     * {@code [104, 128)}, {@code [152, 176)}), so their order relative to each other is
+     * arbitrary. (The middle two used to be listed here as {@code [52, 76)} and
+     * {@code [102, 126)}; the first of those was simply wrong -- {@code NURSERY_FLOOR_MIN_Y}
+     * has been 54 since it was written -- and both moved up 2 when round 2 domed the
+     * landings. See {@link #larderForCell} for why the disjointness is load-bearing.)
      */
     public boolean isAir(double field, Shaft[] columnShafts, Throne[] columnThrones, Nursery[] columnNurseries,
             Garden[] columnGardens, Larder[] columnLarders, int x, int y, int z) {

@@ -144,9 +144,41 @@ public final class ColonyGeneratorTunables {
      * A round landing chamber centred on the ramp axis at each tier boundary. Purely for
      * readability -- it marks the tier change and gives the spine somewhere to open out --
      * the ramp itself keeps its floor straight through it.
+     *
+     * <p><b>Rounded in play-test round 2</b> (it used to be a flat cylinder: one radius at
+     * every height, a square rim top and bottom). The three parts of the new silhouette each
+     * have a constraint behind them:
+     * <ul>
+     *   <li>The <b>floor disc stays flat</b> at the full radius. It is where the ramp's
+     *       walkway crosses the landing, so doming or dishing it would put a step in the
+     *       spine -- the one thing this whole section exists not to do.</li>
+     *   <li>The <b>ceiling domes</b>, rising {@link #LANDING_DOME_RISE} at the centre. That
+     *       is what makes the landing read as a room rather than as a wide bit of corridor.
+     *       It is also the constant the chamber floor minimums are derived from -- see
+     *       {@link #NURSERY_FLOOR_MIN_Y} -- because a taller landing reaches further up into
+     *       the tier above its boundary.</li>
+     *   <li>The <b>wall tapers</b>: {@link #LANDING_WALL_HEIGHT} of straight wall, then the
+     *       dome's curve above it, and one block of fillet at the very bottom so the rim
+     *       meets the floor on a curve. The taper is what stops the shape reading as a
+     *       cylinder with a lid.</li>
+     * </ul>
+     * The rim keeps 5 air blocks of headroom and the centre 8, so headroom everywhere the
+     * ramp's annulus crosses the disc stays comfortably above {@link #RAMP_AIR_HEIGHT}.
      */
     public static final double LANDING_RADIUS = 11.0;
+    /** Air blocks above the landing's floor disc at its RIM -- the shortest the room gets. */
     public static final int LANDING_HEIGHT = 6;
+    /** How much taller the dome's centre is than {@link #LANDING_HEIGHT}. */
+    public static final int LANDING_DOME_RISE = 2;
+    /** Straight wall before the dome's curve starts, in air blocks above the floor disc. */
+    public static final int LANDING_WALL_HEIGHT = 3;
+    /**
+     * The tallest the landing ever gets, at its centre. This -- not {@link #LANDING_HEIGHT}
+     * -- is what every chamber floor minimum has to clear, since {@code shaftState} outranks
+     * every chamber and a corridor whose walkway fell inside the dome would have its floor
+     * cut out from under it.
+     */
+    public static final int LANDING_INTERIOR_HEIGHT = LANDING_HEIGHT + LANDING_DOME_RISE;
 
     /** Widest a shaft's carve can reach from its axis; used to prune the per-column search. */
     public static final double SHAFT_MAX_REACH =
@@ -393,6 +425,23 @@ public final class ColonyGeneratorTunables {
      * named tunable for the near-arrival experience.
      */
     public static final double CHAMBER_ELIGIBILITY_MIN_F = 0.2;
+
+    /**
+     * The larder's own, slightly looser floor (play-test round 2, item 7): 0.15 instead of
+     * the shared 0.2, which is about 140 blocks from a colony centre against 134.
+     *
+     * <p>The larder is the one chamber kind that is pure reward -- no brood, no farm, no
+     * queen, just a stocked room -- so it is the one whose scarcity was worth relaxing when
+     * the play-test asked for more of them. It is a small relaxation on purpose: the ring is
+     * already the outer edge of a colony, and this is the only chamber constant in the file
+     * that differs from the shared gate, which is why it is named rather than inlined.
+     *
+     * <p>It does <b>not</b> put larders out in the wilds. A chamber also has to hang off a
+     * realized ramp ({@code ColonyNoise#isChamberAnchored}), and ramps are gated at the
+     * shared 0.2, so the extra band this opens up is only the sliver where a larder points
+     * outward from a ramp that a colony did dig.
+     */
+    public static final double LARDER_ELIGIBILITY_MIN_F = 0.15;
 
     /**
      * Ender ants runtime-spawn where the field is <em>below</em> this -- i.e. out in the
@@ -651,19 +700,24 @@ public final class ColonyGeneratorTunables {
     /**
      * Lowest floor the chamber will sit at. The ramp turn chosen is the first one at or
      * above this and the ramp descends 24 blocks per turn, so the floor lands in
-     * {@code [54, 78)} and the interior ({@code floor + 7}) plus its shell stays inside the
+     * {@code [56, 80)} and the interior ({@code floor + 7}) plus its shell stays inside the
      * Nurseries band ({@code y < 96}).
      *
-     * <p>The {@code + LANDING_HEIGHT} is load-bearing, not padding. A landing chamber is
-     * carved around every ramp axis at each tier boundary -- radius 11, {@code y} in
-     * {@code [48, 54)} for this one -- and {@link ColonyNoise#shaftState} outranks every
-     * chamber, so a corridor whose forced-solid walkway fell inside that band had the floor
-     * cut out from under it for the 1-2 blocks where the landing disc overhangs the ramp's
-     * annulus. The probe caught it as a chamber with 113 standable floor blocks and 0 of
-     * them reachable; the room was fine, the doorway opened onto a five-block drop into the
-     * landing.
+     * <p>The {@code + LANDING_INTERIOR_HEIGHT} is load-bearing, not padding. A landing
+     * chamber is carved around every ramp axis at each tier boundary -- radius 11, {@code y}
+     * in {@code [48, 56)} at its domed centre for this one -- and
+     * {@link ColonyNoise#shaftState} outranks every chamber, so a corridor whose forced-solid
+     * walkway fell inside that band had the floor cut out from under it for the 1-2 blocks
+     * where the landing disc overhangs the ramp's annulus. The probe caught it as a chamber
+     * with 113 standable floor blocks and 0 of them reachable; the room was fine, the doorway
+     * opened onto a five-block drop into the landing.
+     *
+     * <p>Round 2 domed the landing, which is why this reads {@link #LANDING_INTERIOR_HEIGHT}
+     * rather than {@link #LANDING_HEIGHT}: the rim is still 6 tall but the centre is 8, and
+     * the corridor runs from 3 blocks out -- straight through where the dome is tallest. The
+     * two blocks the floors moved up are exactly the two the ceiling gained.
      */
-    public static final int NURSERY_FLOOR_MIN_Y = MIN_Y + TIER_HEIGHT + LANDING_HEIGHT;
+    public static final int NURSERY_FLOOR_MIN_Y = MIN_Y + TIER_HEIGHT + LANDING_INTERIOR_HEIGHT;
 
     /**
      * Widest a chamber's carve can reach from its centre; used to prune the per-column
@@ -779,14 +833,14 @@ public final class ColonyGeneratorTunables {
     /**
      * Lowest floor the chamber will sit at -- tier 2 (Fungal Gardens) rather than the
      * nursery's tier 1, same landing-clearance reasoning as {@link #NURSERY_FLOOR_MIN_Y}
-     * (see its javadoc): the {@code + LANDING_HEIGHT} keeps a corridor from opening onto
-     * the landing disc's drop where it overhangs the ramp's annulus at the tier boundary.
-     * The ramp turn chosen is the first one at or above this, and the ramp descends 24
-     * blocks per turn, so the floor lands in {@code [102, 126)} -- the interior
+     * (see its javadoc): the {@code + LANDING_INTERIOR_HEIGHT} keeps a corridor from opening
+     * onto the landing disc's drop where it overhangs the ramp's annulus at the tier
+     * boundary. The ramp turn chosen is the first one at or above this, and the ramp descends
+     * 24 blocks per turn, so the floor lands in {@code [104, 128)} -- the interior
      * ({@code floor + 7}) plus its shell stays inside the Fungal Gardens band
-     * ({@code y < 144}) with 8+ blocks to spare even at the top of that range.
+     * ({@code y < 144}) with 8 blocks to spare even at the top of that range.
      */
-    public static final int GARDEN_FLOOR_MIN_Y = MIN_Y + 2 * TIER_HEIGHT + LANDING_HEIGHT;
+    public static final int GARDEN_FLOOR_MIN_Y = MIN_Y + 2 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT;
 
     /**
      * Widest a chamber's carve can reach from its centre; used to prune the per-column
@@ -875,12 +929,14 @@ public final class ColonyGeneratorTunables {
      * Lowest floor the chamber will sit at -- tier 3 (Upper Galleries) rather than the
      * nursery's tier 1, same landing-clearance reasoning as {@link #NURSERY_FLOOR_MIN_Y}
      * (see its javadoc). The ramp turn chosen is the first one at or above this, and the
-     * ramp descends 24 blocks per turn, so the floor lands in {@code [150, 174)} -- the
-     * interior ({@code floor + 7}) plus its shell stays comfortably under both the tier's
-     * own ceiling ({@code y < 192}) and the actual carvable roof
-     * ({@link #CEILING_BOTTOM} = 186), the tighter of the two.
+     * ramp descends 24 blocks per turn, so the floor lands in {@code [152, 176)} -- the
+     * interior ({@code floor + 7}) plus its shell tops out at {@code y = 184}, under both
+     * the tier's own ceiling ({@code y < 192}) and the actual carvable roof
+     * ({@link #CEILING_BOTTOM} = 186), the tighter of the two. Two blocks of margin against
+     * the roof rather than the four it had before round 2 domed the landings; the interior
+     * itself tops out at 182.
      */
-    public static final int LARDER_FLOOR_MIN_Y = MIN_Y + 3 * TIER_HEIGHT + LANDING_HEIGHT;
+    public static final int LARDER_FLOOR_MIN_Y = MIN_Y + 3 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT;
 
     /**
      * Widest a chamber's carve can reach from its centre; used to prune the per-column

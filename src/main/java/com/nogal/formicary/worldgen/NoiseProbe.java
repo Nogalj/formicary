@@ -38,7 +38,9 @@ import net.minecraft.world.level.levelgen.XoroshiroRandomSource;
  * <p>Since Ep2 the sections whose subject only exists inside a nest ({@link #nurseries},
  * {@link #gardens}, {@link #larders}, {@link #combPatches}, {@link #spawnDensity}) sample
  * around the colony nearest the origin rather than around the origin itself -- see
- * {@link #anchor}.
+ * {@link #anchor}. Play-test round 2 added {@link #connectivity}, {@link #shafts} and the
+ * ASCII slices to that list, because the connectivity ramps became colony infrastructure
+ * too: out in the wilds there is no spine to measure.
  */
 public final class NoiseProbe {
 
@@ -59,6 +61,7 @@ public final class NoiseProbe {
             palette(noise);
             membranes(noise);
             connectivity(noise);
+            shafts(noise);
             colonies(noise);
             thrones(noise);
             nurseries(noise);
@@ -94,22 +97,38 @@ public final class NoiseProbe {
         if (what.equals("palette")) {
             palette(noise);
         }
+        if (what.equals("shaft")) {
+            shafts(noise);
+        }
         if (what.equals("all") || what.equals("slices")) {
-            // Slice straight through the ramp axis nearest the origin, so the connectivity
-            // spine shows up in section rather than being missed between two shafts.
-            ColonyNoise.Shaft[] near = noise.shaftsNear(0, 0);
-            ColonyNoise.Shaft closest = near[0];
-            for (ColonyNoise.Shaft s : near) {
-                if (Math.hypot(s.axisX(), s.axisZ()) < Math.hypot(closest.axisX(), closest.axisZ())) {
-                    closest = s;
+            // Slice straight through a ramp axis, so the connectivity spine shows up in
+            // section rather than being missed between two shafts. Anchored on a COLONY
+            // since play-test round 2: ramps are colony infrastructure now, and
+            // `shaftsNear(0, 0)` out in the wilds legitimately returns nothing at all.
+            ColonyNoise.Colony anchor = anchor(noise);
+            int anchorX = (int) Math.round(anchor.centreX());
+            int anchorZ = (int) Math.round(anchor.centreZ());
+            ColonyNoise.Shaft[] near = noise.shaftsNear(anchorX, anchorZ);
+            if (near.length == 0) {
+                System.out.printf(Locale.ROOT,
+                        "%nno realized ramp near the anchor colony at (%d, %d) -- skipping the slices%n",
+                        anchorX, anchorZ);
+            } else {
+                ColonyNoise.Shaft closest = near[0];
+                for (ColonyNoise.Shaft s : near) {
+                    if (Math.hypot(s.axisX() - anchorX, s.axisZ() - anchorZ)
+                            < Math.hypot(closest.axisX() - anchorX, closest.axisZ() - anchorZ)) {
+                        closest = s;
+                    }
                 }
+                System.out.printf(Locale.ROOT, "%nnearest ramp axis to the anchor colony: (%.1f, %.1f)%n",
+                        closest.axisX(), closest.axisZ());
+                crossSectionXY(noise, (int) Math.round(closest.axisZ()), (int) Math.round(closest.axisX()));
+                crossSectionXZ(noise, 168, anchorX, anchorZ);
+                crossSectionXZ(noise, 120, anchorX, anchorZ);
+                crossSectionXZ(noise, 72, anchorX, anchorZ);
+                crossSectionXZ(noise, 24, anchorX, anchorZ);
             }
-            System.out.printf(Locale.ROOT, "%nnearest ramp axis: (%.1f, %.1f)%n", closest.axisX(), closest.axisZ());
-            crossSectionXY(noise, (int) Math.round(closest.axisZ()), (int) Math.round(closest.axisX()));
-            crossSectionXZ(noise, 168);
-            crossSectionXZ(noise, 120);
-            crossSectionXZ(noise, 72);
-            crossSectionXZ(noise, 24);
         }
     }
 
@@ -290,14 +309,30 @@ public final class NoiseProbe {
      * symmetric, so any path it finds is walkable in both directions by construction: a
      * one-block rise is a jump, a one-block fall is reversible. Anything steeper is
      * excluded even though a player could survive falling down it.
+     *
+     * <p><b>Anchored on a colony since play-test round 2</b>, for the same reason the chamber
+     * sections were anchored in Ep2 and with the same care about what that does and does not
+     * weaken. The claim being asserted is unchanged and is still geometric: <em>inside a
+     * colony</em>, a player who cannot mine can walk the full 192 blocks from the Upper
+     * Galleries to the Royal Depths and back. What changed underneath it is that the ramps
+     * are now colony infrastructure ({@code ColonyNoise#isShaftRealized}), so a slab at the
+     * origin -- 200+ blocks out in the wilds on essentially every seed -- contains no spine
+     * at all and would measure the gate rather than the descent. That the wilds have no
+     * vertical circulation is the deliberate design of item 5, not a regression: the
+     * membrane, the arrival pockets and the worm tunnels are all ungated, so the exit is
+     * still reachable from anywhere, and the walk to a colony is bounded by
+     * {@link #colonyFindability}.
      */
     private static void connectivity(ColonyNoise noise) {
         int half = SLAB / 2;
+        ColonyNoise.Colony anchor = anchor(noise);
+        int anchorX = (int) Math.round(anchor.centreX());
+        int anchorZ = (int) Math.round(anchor.centreZ());
         boolean[] air = new boolean[SLAB * SLAB * HEIGHT];
         for (int ix = 0; ix < SLAB; ix++) {
             for (int iz = 0; iz < SLAB; iz++) {
-                int x = ix - half;
-                int z = iz - half;
+                int x = anchorX + ix - half;
+                int z = anchorZ + iz - half;
                 Col col = col(noise, x, z);
                 for (int y = 0; y < HEIGHT; y++) {
                     air[index(ix, y, iz)] = air(noise, col, x, MIN_Y + y, z);
@@ -370,14 +405,169 @@ public final class NoiseProbe {
         }
 
         System.out.printf(Locale.ROOT,
-                "%nwalkable connectivity (%dx%dx%d slab, step height 1, symmetric):%n"
+                "%nwalkable connectivity (%dx%dx%d slab centred on the colony at (%d, %d),"
+                        + " step height 1, symmetric):%n"
                         + "  standable positions: %d, reachable on foot from the Upper Galleries: %d (%.1f%%)%n"
                         + "  deepest standable Y reached = %d   (dimension floor cap top = %d, Royal Depths = y[%d,%d))%n",
-                SLAB, SLAB, HEIGHT, standCount, reached, 100.0 * reached / standCount,
+                SLAB, SLAB, HEIGHT, anchorX, anchorZ, standCount, reached, 100.0 * reached / standCount,
                 MIN_Y + deepest, FLOOR_TOP, tierMinY(0), tierMaxY(0));
         System.out.println(MIN_Y + deepest < tierMaxY(0)
                 ? "  PASS: the Royal Depths are reachable on foot from the top tier (and back, edges are symmetric)."
                 : "  FAIL: cannot walk from the Upper Galleries into the Royal Depths.");
+    }
+
+    /** Cell rings swept by {@link #shafts}: 25x25 shaft cells around the anchor colony. */
+    private static final int SHAFT_CELL_SWEEP = 12;
+
+    /**
+     * The connectivity spine's own invariants, after play-test round 2 made ramps colony
+     * infrastructure rather than a global grid.
+     *
+     * <p>Two assertions, and they pull in opposite directions on purpose -- which is what
+     * makes the pair meaningful where either alone would not be:
+     * <ol>
+     *   <li><b>Every realized shaft is inside a colony</b> ({@code f >= }
+     *       {@link ColonyGeneratorTunables#CHAMBER_ELIGIBILITY_MIN_F} at its axis). This is
+     *       the gate itself, asserted as a geometric invariant rather than measured as a
+     *       statistic: one ramp left standing in the wilds is a bug. Sampled through
+     *       {@link ColonyNoise#shaftsNear}, the same seam generation reads, so the probe
+     *       cannot pass on a truth the carve does not share.</li>
+     *   <li><b>Every colony contains at least 3 realized shafts.</b> The counterweight, and
+     *       the one that would actually fire if the gate were made too strict: a colony with
+     *       one ramp is a colony where every chamber hangs off the same axis, and a colony
+     *       with none has no vertical circulation at all -- the softlock the design notes
+     *       rule out. Three is a floor, not a target; the real number is reported next to
+     *       it.</li>
+     * </ol>
+     *
+     * <p>The throne's own anchor is checked here too. {@code ColonyNoise#throneForCell}
+     * deliberately does <em>not</em> gate on realization, on the argument that the ramp whose
+     * cell holds the colony centre is always within 41.9 blocks of a point where the field is
+     * 1.0. That argument is exactly the kind that stops being true after a retune of
+     * {@code SHAFT_SPACING} or {@code COLONY_CORE_RADIUS}, so it is asserted rather than
+     * trusted.
+     */
+    private static void shafts(ColonyNoise noise) {
+        ColonyNoise.Colony anchor = anchor(noise);
+        int anchorX = (int) Math.round(anchor.centreX());
+        int anchorZ = (int) Math.round(anchor.centreZ());
+        System.out.printf(Locale.ROOT,
+                "%nconnectivity ramps (one per %d-block cell, realized only inside a colony, f >= %.2f):%n",
+                ColonyGeneratorTunables.SHAFT_SPACING, ColonyGeneratorTunables.CHAMBER_ELIGIBILITY_MIN_F);
+
+        // (1) Every shaft generation can see, over a wide sweep, is in a colony.
+        int realized = 0;
+        int cells = 0;
+        int outsideColony = 0;
+        double worstField = 1.0;
+        int anchorCellX = Math.floorDiv(anchorX, ColonyGeneratorTunables.SHAFT_SPACING);
+        int anchorCellZ = Math.floorDiv(anchorZ, ColonyGeneratorTunables.SHAFT_SPACING);
+        for (int cx = -SHAFT_CELL_SWEEP; cx <= SHAFT_CELL_SWEEP; cx++) {
+            for (int cz = -SHAFT_CELL_SWEEP; cz <= SHAFT_CELL_SWEEP; cz++) {
+                int cellX = anchorCellX + cx;
+                int cellZ = anchorCellZ + cz;
+                cells++;
+                for (ColonyNoise.Shaft shaft : noise.shaftsNear(cellX * ColonyGeneratorTunables.SHAFT_SPACING,
+                        cellZ * ColonyGeneratorTunables.SHAFT_SPACING)) {
+                    // shaftsNear returns the 3x3 ring, so a shaft is seen up to nine times;
+                    // only count the one belonging to this cell to keep the ratio honest.
+                    // An axis lands within SHAFT_JITTER/2 = 8 of its cell centre, so
+                    // floorDiv recovers its cell exactly.
+                    if (!ownsCell(shaft, cellX, cellZ)) {
+                        continue;
+                    }
+                    realized++;
+                    double field = noise.colonyField(shaft.axisX(), shaft.axisZ());
+                    worstField = Math.min(worstField, field);
+                    if (field < ColonyGeneratorTunables.CHAMBER_ELIGIBILITY_MIN_F) {
+                        outsideColony++;
+                    }
+                }
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "  %d realized ramps over %d sampled cells (%.1f%%); lowest colony field at a realized axis %.3f%n",
+                realized, cells, 100.0 * realized / cells, worstField);
+        boolean pass = outsideColony == 0;
+        System.out.println(pass
+                ? "  PASS: every ramp the carve realizes stands inside a colony."
+                : "  FAIL: " + outsideColony + " realized ramp(s) stand out in the wilds.");
+
+        // (2) Every colony has enough of them, and the throne's anchor is one of them.
+        int colonies = 0;
+        int starved = 0;
+        int fewest = Integer.MAX_VALUE;
+        int thronesOnUnrealizedRamps = 0;
+        for (int cx = -COLONY_CELL_SWEEP; cx <= COLONY_CELL_SWEEP; cx++) {
+            for (int cz = -COLONY_CELL_SWEEP; cz <= COLONY_CELL_SWEEP; cz++) {
+                ColonyNoise.Colony colony = noise.colonyCenterForCell(cx, cz);
+                colonies++;
+                int here = countRealizedShaftsIn(noise, colony);
+                fewest = Math.min(fewest, here);
+                if (here < 3) {
+                    starved++;
+                }
+                ColonyNoise.Throne throne = noise.nearestThrone((int) Math.round(colony.centreX()),
+                        (int) Math.round(colony.centreZ()));
+                if (!noise.isShaftRealized(new ColonyNoise.Shaft(throne.axisX(), throne.axisZ(), 0.0))) {
+                    thronesOnUnrealizedRamps++;
+                }
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "  ramps per colony over %d colonies: fewest %d (required >= 3); thrones hanging off an"
+                        + " unrealized ramp: %d%n",
+                colonies, fewest, thronesOnUnrealizedRamps);
+        boolean populated = starved == 0 && thronesOnUnrealizedRamps == 0;
+        System.out.println(populated
+                ? "  PASS: every colony digs at least 3 ramps, and every queen's chamber hangs off one of them."
+                : "  FAIL: " + starved + " colony/colonies have fewer than 3 ramps, and "
+                        + thronesOnUnrealizedRamps + " throne(s) hang off a ramp that is not there.");
+
+        System.out.println(pass && populated
+                ? "  SHAFT SECTION: ALL PASS"
+                : "  SHAFT SECTION: FAILED -- see the FAIL lines above.");
+    }
+
+    /**
+     * Whether a shaft is the one belonging to a given cell rather than a ring neighbour.
+     * An axis lands within {@code SHAFT_JITTER/2} = 8 blocks of its cell centre, so
+     * {@code floorDiv} recovers its cell exactly.
+     */
+    private static boolean ownsCell(ColonyNoise.Shaft shaft, int cellX, int cellZ) {
+        return Math.floorDiv((int) Math.floor(shaft.axisX()), ColonyGeneratorTunables.SHAFT_SPACING) == cellX
+                && Math.floorDiv((int) Math.floor(shaft.axisZ()), ColonyGeneratorTunables.SHAFT_SPACING) == cellZ;
+    }
+
+    /**
+     * How many realized ramps stand inside one colony's outer radius.
+     *
+     * <p>Counted by sweeping the shaft cells that can reach that radius and asking
+     * {@link ColonyNoise#isShaftRealized} directly, rather than by calling
+     * {@code shaftsNear} at the centre -- that would only ever see a 3x3 ring, which is a
+     * 144-block window inside a 300-block colony.
+     */
+    private static int countRealizedShaftsIn(ColonyNoise noise, ColonyNoise.Colony colony) {
+        int reach = (int) Math.ceil(ColonyGeneratorTunables.COLONY_OUTER_RADIUS
+                / ColonyGeneratorTunables.SHAFT_SPACING) + 1;
+        int centreCellX = Math.floorDiv((int) Math.round(colony.centreX()), ColonyGeneratorTunables.SHAFT_SPACING);
+        int centreCellZ = Math.floorDiv((int) Math.round(colony.centreZ()), ColonyGeneratorTunables.SHAFT_SPACING);
+        int count = 0;
+        for (int dx = -reach; dx <= reach; dx++) {
+            for (int dz = -reach; dz <= reach; dz++) {
+                int blockX = (centreCellX + dx) * ColonyGeneratorTunables.SHAFT_SPACING;
+                int blockZ = (centreCellZ + dz) * ColonyGeneratorTunables.SHAFT_SPACING;
+                for (ColonyNoise.Shaft shaft : noise.shaftsNear(blockX, blockZ)) {
+                    // Own cell only, as in shafts(), and inside this colony's outer radius.
+                    if (ownsCell(shaft, centreCellX + dx, centreCellZ + dz)
+                            && Math.hypot(shaft.axisX() - colony.centreX(), shaft.axisZ() - colony.centreZ())
+                                    <= ColonyGeneratorTunables.COLONY_OUTER_RADIUS) {
+                        count++;
+                    }
+                }
+            }
+        }
+        return count;
     }
 
     // ------------------------------------------------------------------
@@ -1778,13 +1968,19 @@ public final class NoiseProbe {
         }
     }
 
-    /** Horizontal slice at one Y -- shows tunnel widths and chamber spans in plan view. */
-    private static void crossSectionXZ(ColonyNoise noise, int y) {
-        System.out.printf(Locale.ROOT, "%nplan slice at y=%d (tier %d %s), x/z in [-60,60):%n",
-                y, tierIndex(y), tierName(tierIndex(y)));
-        for (int z = -60; z < 60; z++) {
+    /**
+     * Horizontal slice at one Y -- shows tunnel widths and chamber spans in plan view.
+     *
+     * <p>Centred on a caller-supplied point since play-test round 2 rather than on the
+     * origin: with ramps and chambers both gated on the colony field, a plan view of the
+     * wilds is a page of worm tunnels that says nothing about either.
+     */
+    private static void crossSectionXZ(ColonyNoise noise, int y, int centreX, int centreZ) {
+        System.out.printf(Locale.ROOT, "%nplan slice at y=%d (tier %d %s), x in [%d,%d), z in [%d,%d):%n",
+                y, tierIndex(y), tierName(tierIndex(y)), centreX - 60, centreX + 60, centreZ - 60, centreZ + 60);
+        for (int z = centreZ - 60; z < centreZ + 60; z++) {
             StringBuilder row = new StringBuilder();
-            for (int x = -60; x < 60; x++) {
+            for (int x = centreX - 60; x < centreX + 60; x++) {
                 Col col = col(noise, x, z);
                 if (!air(noise, col, x, y, z)) {
                     row.append(noise.shaftState(col.shafts(), x, y, z) == ColonyNoise.SHAFT_SOLID ? '_' : '#');
