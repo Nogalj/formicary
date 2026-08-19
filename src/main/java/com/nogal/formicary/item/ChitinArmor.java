@@ -13,13 +13,15 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
 /**
  * The fabric mining gate (spec section 5): the dimension's tier soils and Hardened Soil
- * are effectively unmineable unless the player is wearing all four Chitin Armor pieces.
+ * are effectively unmineable unless the player is wearing all four Chitin Armor pieces
+ * OR holding the Mandible Pickaxe in the main hand (Ep2 play-test revision, WP-1 item 3
+ * -- the pickaxe bypass applies regardless of armor).
  *
  * <p>Deliberately not an absolute block -- a player trapped in the fabric without the set
- * can still dig out, just 25x slower and with nothing to show for it. The "nothing to
- * show for it" half lives in the loot table condition
- * ({@code loot/WearingFullChitinCondition}); this class owns the speed half and the
- * {@link #hasFullSet(Player)} check both halves share.
+ * (or the pickaxe) can still dig out, just 25x slower and with nothing to show for it.
+ * The "nothing to show for it" half lives in the loot table condition
+ * ({@code loot/WearingFullChitinCondition}, which OR's in the same pickaxe bypass); this
+ * class owns the speed half and the {@link #hasFullSet(Player)} check both halves share.
  *
  * <p>Event name verified against the decompiled 21.0.167 sources:
  * {@code net.neoforged.neoforge.event.entity.player.PlayerEvent.BreakSpeed}, with
@@ -62,14 +64,20 @@ public final class ChitinArmor {
         if (!event.getState().is(ModBlockTags.COLONY_FABRIC)) {
             return;
         }
-        if (hasFullSet(event.getEntity())) {
-            // Full set: normal speed, event untouched.
+        if (hasFullSet(event.getEntity()) || holdsMandiblePickaxe(event.getEntity())) {
+            // Full set, or the Mandible Pickaxe alone (Ep2 play-test revision, WP-1 item
+            // 3): normal speed, event untouched.
             return;
         }
         // Scale whatever speed the pipeline has arrived at, not the original, so this
         // composes with other handlers instead of stomping them. The event ctor seeds
         // newSpeed with originalSpeed, so a lone handler still sees original / 25.
         event.setNewSpeed(event.getNewSpeed() / UNGATED_SPEED_DIVISOR);
+    }
+
+    /** True when the player's main-hand stack is the Mandible Pickaxe, armor aside. */
+    private static boolean holdsMandiblePickaxe(Player player) {
+        return player != null && player.getMainHandItem().is(ModItems.MANDIBLE_PICKAXE.get());
     }
 
     private ChitinArmor() {
