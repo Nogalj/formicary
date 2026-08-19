@@ -1466,3 +1466,12 @@ jittered 384-block grid, sparse wilds between them.
   (8) instead of `LANDING_HEIGHT` (6): floors land in `[56, 80)`, `[104, 128)`, `[152, 176)`.
   Leaving them at 6 would have re-opened the exact bug `NURSERY_FLOOR_MIN_Y` was written to
   close -- a corridor floor cut out from under itself by the landing's air.
+- **The probe's landing check measures ramp-floor headroom, not raw clearance.** Two wrong
+  metrics were written and thrown away first, and both looked like real failures: clearance
+  counted upward from the tier boundary reads 0 for any column whose ramp floor happens to
+  sit there (132 false pinches), and counting every `SHAFT_SOLID` block in the annulus as a
+  ramp floor picks up the landing's own floor disc at `boundary - 1`, which is a floor to
+  stand on rather than a walkway with a headroom contract (114 more). What is asserted is the
+  property the spine actually needs: every ramp floor block inside the landing's Y range
+  still carries `RAMP_AIR_HEIGHT` of air above it. 0 of ~537 per landing per tier boundary,
+  on all three seeds.

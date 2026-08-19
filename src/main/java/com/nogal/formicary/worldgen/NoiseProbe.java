@@ -524,9 +524,138 @@ public final class NoiseProbe {
                 : "  FAIL: " + starved + " colony/colonies have fewer than 3 ramps, and "
                         + thronesOnUnrealizedRamps + " throne(s) hang off a ramp that is not there.");
 
-        System.out.println(pass && populated
+        boolean landings = landings(noise);
+
+        System.out.println(pass && populated && landings
                 ? "  SHAFT SECTION: ALL PASS"
                 : "  SHAFT SECTION: FAILED -- see the FAIL lines above.");
+    }
+
+    /**
+     * The rounded landing disc (play-test round 2, item 6), measured rather than eyeballed.
+     *
+     * <p>Three things have to be true at once, and the first two pull against the third --
+     * which is the whole reason the shape needed a probe rather than a look:
+     * <ol>
+     *   <li><b>It is domed.</b> Interior clearance at the centre exceeds clearance at the
+     *       rim, or the "rounded" in the task is a comment rather than a carve.</li>
+     *   <li><b>The ramp junction keeps its headroom.</b> Every column where the ramp's own
+     *       annulus crosses the disc has at least {@link
+     *       ColonyGeneratorTunables#RAMP_AIR_HEIGHT} of air above the floor. Taper the wall
+     *       too aggressively and the landing becomes a place the spine gets shorter, which
+     *       is the one thing it may not be.</li>
+     *   <li><b>It is walkable from the ramp</b>, by the same symmetric one-block-step BFS
+     *       every chamber gets -- seeded from the ramp walkway alone, so a PASS means the
+     *       disc joins the spine rather than joining some noise pocket beside it.</li>
+     * </ol>
+     */
+    private static boolean landings(ColonyNoise noise) {
+        ColonyNoise.Colony anchor = anchor(noise);
+        ColonyNoise.Shaft[] near = noise.shaftsNear((int) Math.round(anchor.centreX()),
+                (int) Math.round(anchor.centreZ()));
+        if (near.length == 0) {
+            System.out.println("  FAIL: the anchor colony has no realized ramp to hang a landing on.");
+            return false;
+        }
+        ColonyNoise.Shaft shaft = near[0];
+
+        // (1) The profile itself, straight off the shared arithmetic the carve uses.
+        StringBuilder profile = new StringBuilder();
+        for (int h = 0; h < ColonyGeneratorTunables.LANDING_INTERIOR_HEIGHT; h++) {
+            profile.append(String.format(Locale.ROOT, " h%d r=%.1f", h, ColonyNoise.landingRadius(h)));
+        }
+        System.out.printf(Locale.ROOT, "%n  landing profile (radius per air layer):%s%n", profile);
+
+        boolean tapers = ColonyNoise.landingRadius(ColonyGeneratorTunables.LANDING_INTERIOR_HEIGHT - 1)
+                < ColonyNoise.landingRadius(ColonyGeneratorTunables.LANDING_WALL_HEIGHT)
+                && ColonyNoise.landingRadius(0)
+                        < ColonyNoise.landingRadius(ColonyGeneratorTunables.LANDING_WALL_HEIGHT);
+        System.out.println(tapers
+                ? "  PASS: the profile tapers at both ends -- the silhouette is a dome, not a cylinder."
+                : "  FAIL: the landing profile is flat; nothing was rounded.");
+
+        boolean pass = tapers;
+        for (int band = 1; band < TIER_COUNT; band++) {
+            int boundary = MIN_Y + band * ColonyGeneratorTunables.TIER_HEIGHT;
+            int centreX = (int) Math.round(shaft.axisX());
+            int centreZ = (int) Math.round(shaft.axisZ());
+            Col centre = col(noise, centreX, centreZ);
+            int centreClearance = 0;
+            while (air(noise, centre, centreX, boundary + centreClearance, centreZ)) {
+                centreClearance++;
+            }
+
+            // Headroom across the ramp's annulus, measured as the property that actually
+            // matters: every RAMP FLOOR block inside the landing's Y range still carries
+            // RAMP_AIR_HEIGHT of air above it. Sampling raw clearance up from the boundary
+            // measures nothing -- a column whose ramp floor happens to sit at the boundary
+            // reads zero and is perfectly healthy.
+            int floorsChecked = 0;
+            int pinched = 0;
+            for (int step = 0; step < 72; step++) {
+                double bearing = step * Math.PI / 36.0;
+                for (double radius = ColonyGeneratorTunables.RAMP_CENTER_RADIUS
+                        - ColonyGeneratorTunables.RAMP_HALF_WIDTH;
+                        radius <= ColonyGeneratorTunables.RAMP_CENTER_RADIUS
+                                + ColonyGeneratorTunables.RAMP_HALF_WIDTH; radius += 0.5) {
+                    int x = (int) Math.round(shaft.axisX() + Math.cos(bearing) * radius);
+                    int z = (int) Math.round(shaft.axisZ() + Math.sin(bearing) * radius);
+                    // Rounding to a block can push a sample off the annulus, and a column
+                    // outside it reports the landing's own floor disc as SHAFT_SOLID -- which
+                    // is a wall footing, not a walkway, and has no headroom requirement. Only
+                    // columns provably inside the un-widened annulus are ramp.
+                    double actual = Math.hypot(x - shaft.axisX(), z - shaft.axisZ());
+                    if (actual < ColonyGeneratorTunables.RAMP_CENTER_RADIUS
+                            - ColonyGeneratorTunables.RAMP_HALF_WIDTH
+                            || actual > ColonyGeneratorTunables.RAMP_CENTER_RADIUS
+                            + ColonyGeneratorTunables.RAMP_HALF_WIDTH) {
+                        continue;
+                    }
+                    Col col = col(noise, x, z);
+                    for (int y = boundary - ColonyGeneratorTunables.LANDING_INTERIOR_HEIGHT;
+                            y < boundary + ColonyGeneratorTunables.LANDING_INTERIOR_HEIGHT; y++) {
+                        // y == boundary - 1 is the landing's own floor disc, which is forced
+                        // solid across the whole radius and is a floor to stand ON, not a
+                        // walkway with a headroom contract -- the ramp's next turn routinely
+                        // passes a block or two above it. Skipping that one layer costs a
+                        // handful of samples out of 1300 and is what keeps this measuring
+                        // the spine rather than the room.
+                        if (y == boundary - 1
+                                || noise.shaftState(col.shafts(), x, y, z) != ColonyNoise.SHAFT_SOLID) {
+                            continue;
+                        }
+                        floorsChecked++;
+                        for (int up = 1; up <= ColonyGeneratorTunables.RAMP_AIR_HEIGHT; up++) {
+                            if (!air(noise, col, x, y + up, z)) {
+                                pinched++;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            boolean domed = centreClearance >= ColonyGeneratorTunables.LANDING_INTERIOR_HEIGHT;
+            boolean headroom = pinched == 0;
+            System.out.printf(Locale.ROOT,
+                    "  landing at y=%3d: clearance at the centre %d (dome reaches %d); ramp floor blocks in the"
+                            + " landing's range %d, of which pinched below %d air: %d%n",
+                    boundary, centreClearance, ColonyGeneratorTunables.LANDING_INTERIOR_HEIGHT,
+                    floorsChecked, ColonyGeneratorTunables.RAMP_AIR_HEIGHT, pinched);
+            if (!domed) {
+                System.out.println("  FAIL: the dome did not carve to its full height at the centre.");
+            }
+            if (!headroom) {
+                System.out.println("  FAIL: the ramp lost headroom where it crosses this landing.");
+            }
+            pass &= domed && headroom;
+
+            // Walkable from the ramp, by the shared chamber BFS.
+            pass &= chamberWalk(noise, "landing", shaft.axisX(), shaft.axisZ(), shaft.axisX(), shaft.axisZ(),
+                    boundary - 1, boundary, ColonyGeneratorTunables.LANDING_RADIUS,
+                    boundary + ColonyGeneratorTunables.LANDING_INTERIOR_HEIGHT - 1, "the landing disc");
+        }
+        return pass;
     }
 
     /**

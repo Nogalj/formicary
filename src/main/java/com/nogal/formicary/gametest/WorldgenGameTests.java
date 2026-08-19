@@ -6,12 +6,15 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_SOLDI
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_WORKERS_MAX_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_WORKERS_MIN_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_SPACING;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_INTERIOR_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_ELIGIBILITY_MIN_F;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_SPACING;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_DOME_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_SHELL_THICKNESS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_SPACING;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_WALL_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SHAFT_SPACING;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SPAWN_CLUSTERS_PER_CHUNK_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.TIER_COUNT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.between;
@@ -254,14 +257,26 @@ public class WorldgenGameTests {
     }
 
     /**
-     * Every nursery / garden / larder chamber that generates is inside a colony, and the
-     * ones outside are genuinely gated out rather than merely rare.
+     * Every nursery / garden / larder chamber that generates is inside a colony <em>and</em>
+     * hangs off a ramp that got dug, and the ones outside are genuinely gated out rather
+     * than merely rare.
      *
      * <p>The gate is the load-bearing half of "dense cores, sparse wilds": the density
-     * profile is measured by {@code NoiseProbe}, but "no chamber ever generates below
-     * {@code CHAMBER_ELIGIBILITY_MIN_F}" is a geometric invariant, so a single counterexample
-     * is a bug rather than a statistic and it belongs here. The second assertion is the one
-     * that keeps the first honest: a gate that rejected everything would satisfy it alone.
+     * profile is measured by {@code NoiseProbe}, but "no chamber ever generates below its
+     * eligibility floor" is a geometric invariant, so a single counterexample is a bug rather
+     * than a statistic and it belongs here. The last assertion is the one that keeps the
+     * others honest: a gate that rejected everything would satisfy them alone.
+     *
+     * <p><b>Retargeted for play-test round 2, and strictly strengthened.</b> The gate the
+     * original asserted -- {@code inColony == field > CHAMBER_ELIGIBILITY_MIN_F} -- is no
+     * longer the whole rule, so keeping it would have pinned behaviour the round deliberately
+     * replaced. Two things changed and both are now asserted rather than dropped: a chamber
+     * also has to hang off a realized ramp (item 5; without it the room's only doorway opens
+     * onto solid soil), and the larder has its own looser floor
+     * {@link ColonyGeneratorTunables#LARDER_ELIGIBILITY_MIN_F} (item 7). The assertion is
+     * still an exact bi-implication over the real conjunction, so nothing was loosened -- it
+     * catches a chamber generating where it should not AND a chamber missing where it should
+     * be, exactly as before.
      */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "platform")
@@ -281,12 +296,15 @@ public class WorldgenGameTests {
                     eligible += (nursery.inColony() ? 1 : 0) + (garden.inColony() ? 1 : 0)
                             + (larder.inColony() ? 1 : 0);
 
-                    assertGate(helper, seed, "nursery", nursery.inColony(),
-                            noise.colonyField(nursery.centreX(), nursery.centreZ()));
-                    assertGate(helper, seed, "garden", garden.inColony(),
-                            noise.colonyField(garden.centreX(), garden.centreZ()));
-                    assertGate(helper, seed, "larder", larder.inColony(),
-                            noise.colonyField(larder.centreX(), larder.centreZ()));
+                    assertGate(helper, noise, seed, "nursery", nursery.inColony(),
+                            nursery.centreX(), nursery.centreZ(), nursery.axisX(), nursery.axisZ(),
+                            CHAMBER_ELIGIBILITY_MIN_F);
+                    assertGate(helper, noise, seed, "garden", garden.inColony(),
+                            garden.centreX(), garden.centreZ(), garden.axisX(), garden.axisZ(),
+                            CHAMBER_ELIGIBILITY_MIN_F);
+                    assertGate(helper, noise, seed, "larder", larder.inColony(),
+                            larder.centreX(), larder.centreZ(), larder.axisX(), larder.axisZ(),
+                            LARDER_ELIGIBILITY_MIN_F);
                 }
             }
         }
@@ -296,12 +314,109 @@ public class WorldgenGameTests {
         helper.succeed();
     }
 
-    /** {@code inColony} agrees with the field at the chamber's own centre, in both directions. */
-    private static void assertGate(GameTestHelper helper, long seed, String kind, boolean inColony, double field) {
-        helper.assertTrue(inColony == field > CHAMBER_ELIGIBILITY_MIN_F,
+    /**
+     * {@code inColony} agrees, in both directions, with the conjunction the generator
+     * actually applies: the field at the chamber's own centre clears its kind's floor, and
+     * the ramp it hangs off is one the colony dug.
+     */
+    private static void assertGate(GameTestHelper helper, ColonyNoise noise, long seed, String kind,
+            boolean inColony, double centreX, double centreZ, double axisX, double axisZ, double minField) {
+        double field = noise.colonyField(centreX, centreZ);
+        boolean anchored = noise.isShaftRealized(new ColonyNoise.Shaft(axisX, axisZ, 0.0));
+        helper.assertTrue(inColony == (field > minField && anchored),
                 "a " + kind + " chamber on seed " + seed + " reports inColony=" + inColony
-                        + " at colony field " + field + ", which disagrees with the "
-                        + CHAMBER_ELIGIBILITY_MIN_F + " eligibility gate");
+                        + " at colony field " + field + " (floor " + minField + ") with its ramp "
+                        + (anchored ? "realized" : "not realized")
+                        + ", which disagrees with the eligibility gate");
+    }
+
+    /**
+     * A ramp is realized only inside a colony (play-test round 2, item 5).
+     *
+     * <p>The generator-side half of the gate, asserted where a geometric invariant belongs.
+     * {@code NoiseProbe} measures how many ramps that leaves and whether every colony still
+     * has enough of them -- numbers, which need a wide sweep and a tool that can print. This
+     * is the part that is true or false: no ramp stands out in the wilds, and
+     * {@code shaftsNear} -- the single seam {@code isAir}, the probe and the dev commands all
+     * read the spine through -- never hands one back.
+     *
+     * <p>The second assertion is the non-vacuity guard, and it is not a formality here: a
+     * gate that realized nothing would satisfy the first assertion perfectly and leave the
+     * dimension with no vertical circulation anywhere.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void ramps_are_realized_only_inside_colonies(GameTestHelper helper) {
+        int realized = 0;
+        for (long seed : SEEDS) {
+            ColonyNoise noise = noise(seed);
+            ColonyNoise.Colony core = noise.nearestColony(0.0, 0.0);
+            int coreX = (int) Math.round(core.centreX());
+            int coreZ = (int) Math.round(core.centreZ());
+            for (int cellX = -8; cellX <= 8; cellX++) {
+                for (int cellZ = -8; cellZ <= 8; cellZ++) {
+                    for (ColonyNoise.Shaft shaft : noise.shaftsNear(coreX + cellX * SHAFT_SPACING,
+                            coreZ + cellZ * SHAFT_SPACING)) {
+                        realized++;
+                        double field = noise.colonyField(shaft.axisX(), shaft.axisZ());
+                        helper.assertTrue(field >= CHAMBER_ELIGIBILITY_MIN_F,
+                                "shaftsNear handed back a ramp at (" + shaft.axisX() + ", " + shaft.axisZ()
+                                        + ") on seed " + seed + " where the colony field is " + field
+                                        + ", below the " + CHAMBER_ELIGIBILITY_MIN_F + " realization gate");
+                    }
+                }
+            }
+        }
+        helper.assertTrue(realized > 0,
+                "the gate should still realize ramps inside colonies, got none across " + SEEDS.length + " seeds");
+        helper.succeed();
+    }
+
+    /**
+     * No chamber floor can land inside a landing's dome (play-test round 2, item 6).
+     *
+     * <p>{@code ColonyNoise#shaftState} outranks every chamber, so a chamber whose corridor
+     * walkway fell inside the landing's air would have its floor cut out from under it -- the
+     * bug {@code NURSERY_FLOOR_MIN_Y} was written to close, which the probe originally caught
+     * as a room with 113 standable floor blocks and 0 of them reachable. Round 2 domed the
+     * landing, raising its reach from {@code LANDING_HEIGHT} = 6 to
+     * {@code LANDING_INTERIOR_HEIGHT} = 8, and moved the three floor minimums to match.
+     *
+     * <p>Asserted as the relationship rather than as the numbers: the three constants may be
+     * retuned freely, and what may never happen is a chamber floor inside a landing. The
+     * chamber floors themselves come from the real generator arithmetic (the first ramp turn
+     * at or above the minimum) over a wide sweep, so this catches a retune of the ramp period
+     * as well as a retune of the landing.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void chamber_floors_clear_the_landing_dome(GameTestHelper helper) {
+        for (long seed : SEEDS) {
+            ColonyNoise noise = noise(seed);
+            for (int cellX = -6; cellX <= 6; cellX++) {
+                for (int cellZ = -6; cellZ <= 6; cellZ++) {
+                    assertClearsLandings(helper, seed, "nursery",
+                            centreNurseryOfCell(noise, cellX, cellZ).floorY());
+                    assertClearsLandings(helper, seed, "garden",
+                            noise.gardensNear(cellX * GARDEN_SPACING, cellZ * GARDEN_SPACING)[4].floorY());
+                    assertClearsLandings(helper, seed, "larder",
+                            noise.lardersNear(cellX * LARDER_SPACING, cellZ * LARDER_SPACING)[4].floorY());
+                }
+            }
+        }
+        helper.succeed();
+    }
+
+    /** No tier boundary's landing reaches up to {@code floorY}. */
+    private static void assertClearsLandings(GameTestHelper helper, long seed, String kind, int floorY) {
+        for (int band = 1; band < TIER_COUNT; band++) {
+            int boundary = tierMinY(band);
+            helper.assertFalse(floorY >= boundary && floorY < boundary + LANDING_INTERIOR_HEIGHT,
+                    "a " + kind + " chamber on seed " + seed + " has its floor at y=" + floorY
+                            + ", inside the landing carved at y[" + boundary + ", "
+                            + (boundary + LANDING_INTERIOR_HEIGHT) + ") -- shaftState outranks every chamber, so"
+                            + " its corridor floor would be cut out from under it");
+        }
     }
 
     // ------------------------------------------------------------------
