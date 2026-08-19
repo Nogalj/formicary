@@ -7,14 +7,11 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ArmorItem;
-import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.HoeItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemNameBlockItem;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.PickaxeItem;
-import net.minecraft.world.item.ShovelItem;
 import net.minecraft.world.item.SwordItem;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -134,10 +131,11 @@ public class ModItems {
                         props.durability(type.getDurability(ModArmorMaterials.DURABILITY_FACTOR))));
     }
 
-    // --- Ep2 H1: Chitin tool set. Per-tool base attack damage/speed are not part of the
-    // Tier interface (they're chosen per Item type, the way vanilla's Items.java does it
-    // per tool), and the task brief only specifies the shared Tier stats -- so these five
-    // borrow Iron's own base damage/attack-speed constants exactly (verified in the
+    // --- Ep2 play-test revision (WP-1 item 2): the five-tool Ep2 H1 chitin set is gone --
+    // replaced by two hybrid tools on the same ModToolTiers.CHITIN tier. Per-tool base
+    // attack damage/speed are not part of the Tier interface (they're chosen per Item
+    // type, the way vanilla's Items.java does it per tool); these two keep the original
+    // set's Iron-borrowed base damage/attack-speed constants exactly (verified in the
     // decompiled Items.java), the same precedent ModArmorMaterials sets by matching Iron's
     // defense values where the spec is silent. ---
 
@@ -145,34 +143,23 @@ public class ModItems {
     private static final float SWORD_ATTACK_SPEED = -2.4F;
     private static final float PICKAXE_BASE_DAMAGE = 1.0F;
     private static final float PICKAXE_ATTACK_SPEED = -2.8F;
-    private static final float AXE_BASE_DAMAGE = 6.0F;
-    private static final float AXE_ATTACK_SPEED = -3.1F;
-    private static final float SHOVEL_BASE_DAMAGE = 1.5F;
-    private static final float SHOVEL_ATTACK_SPEED = -3.0F;
-    private static final float HOE_BASE_DAMAGE = -2.0F;
-    private static final float HOE_ATTACK_SPEED = -1.0F;
 
-    public static final DeferredItem<SwordItem> CHITIN_SWORD = ITEMS.registerItem("chitin_sword",
-            props -> new SwordItem(ModToolTiers.CHITIN,
-                    props.attributes(SwordItem.createAttributes(ModToolTiers.CHITIN, SWORD_BASE_DAMAGE, SWORD_ATTACK_SPEED))));
-    public static final DeferredItem<PickaxeItem> CHITIN_PICKAXE = ITEMS.registerItem("chitin_pickaxe",
+    /**
+     * Digging-gate bypass (WP-1 item 3): holding this in the main hand counts as
+     * gated-open regardless of armor -- see {@link ChitinArmor#onFabricBreakSpeed} and
+     * {@code loot.WearingFullChitinCondition}.
+     */
+    public static final DeferredItem<PickaxeItem> MANDIBLE_PICKAXE = ITEMS.registerItem("mandible_pickaxe",
             props -> new PickaxeItem(ModToolTiers.CHITIN,
                     props.attributes(PickaxeItem.createAttributes(ModToolTiers.CHITIN, PICKAXE_BASE_DAMAGE, PICKAXE_ATTACK_SPEED))));
-    public static final DeferredItem<AxeItem> CHITIN_AXE = ITEMS.registerItem("chitin_axe",
-            props -> new AxeItem(ModToolTiers.CHITIN,
-                    props.attributes(AxeItem.createAttributes(ModToolTiers.CHITIN, AXE_BASE_DAMAGE, AXE_ATTACK_SPEED))));
-    public static final DeferredItem<ShovelItem> CHITIN_SHOVEL = ITEMS.registerItem("chitin_shovel",
-            props -> new ShovelItem(ModToolTiers.CHITIN,
-                    props.attributes(ShovelItem.createAttributes(ModToolTiers.CHITIN, SHOVEL_BASE_DAMAGE, SHOVEL_ATTACK_SPEED))));
-    public static final DeferredItem<HoeItem> CHITIN_HOE = ITEMS.registerItem("chitin_hoe",
-            props -> new HoeItem(ModToolTiers.CHITIN,
-                    props.attributes(HoeItem.createAttributes(ModToolTiers.CHITIN, HOE_BASE_DAMAGE, HOE_ATTACK_SPEED))));
+    public static final DeferredItem<SwordItem> PINCER_SWORD = ITEMS.registerItem("pincer_sword",
+            props -> new SwordItem(ModToolTiers.CHITIN,
+                    props.attributes(SwordItem.createAttributes(ModToolTiers.CHITIN, SWORD_BASE_DAMAGE, SWORD_ATTACK_SPEED))));
 
     public static final DeferredItem<BlockItem> PACKED_SOIL = ITEMS.registerSimpleBlockItem(ModBlocks.PACKED_SOIL);
     public static final DeferredItem<BlockItem> AMBER_EARTH = ITEMS.registerSimpleBlockItem(ModBlocks.AMBER_EARTH);
     public static final DeferredItem<BlockItem> DEEP_LOAM = ITEMS.registerSimpleBlockItem(ModBlocks.DEEP_LOAM);
     public static final DeferredItem<BlockItem> HARDENED_SOIL = ITEMS.registerSimpleBlockItem(ModBlocks.HARDENED_SOIL);
-    public static final DeferredItem<BlockItem> RESIN_WEEP = ITEMS.registerSimpleBlockItem(ModBlocks.RESIN_WEEP);
     public static final DeferredItem<BlockItem> RESIN_BLOCK = ITEMS.registerSimpleBlockItem(ModBlocks.RESIN_BLOCK);
     public static final DeferredItem<BlockItem> AMBER_GLASS = ITEMS.registerSimpleBlockItem(ModBlocks.AMBER_GLASS);
     // M8: edible -- see FUNGAL_BLOOM_FOOD above.
@@ -203,8 +190,6 @@ public class ModItems {
             ITEMS.registerSimpleBlockItem(ModBlocks.PACKED_SOIL_BRICK_STAIRS);
     public static final DeferredItem<BlockItem> PACKED_SOIL_BRICK_SLAB =
             ITEMS.registerSimpleBlockItem(ModBlocks.PACKED_SOIL_BRICK_SLAB);
-    public static final DeferredItem<BlockItem> PACKED_SOIL_BRICK_WALL =
-            ITEMS.registerSimpleBlockItem(ModBlocks.PACKED_SOIL_BRICK_WALL);
     public static final DeferredItem<BlockItem> HARDENED_SOIL_TILES =
             ITEMS.registerSimpleBlockItem(ModBlocks.HARDENED_SOIL_TILES);
     public static final DeferredItem<BlockItem> HARDENED_SOIL_TILE_STAIRS =

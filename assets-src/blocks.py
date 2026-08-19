@@ -368,76 +368,6 @@ AMBER_PALE = (250, 205, 120, 255)
 AMBER_SPARK = (255, 238, 190, 255)
 
 
-# Ep2 task I3 retexture (2026-08-18): the original background was the full
-# packed-soil palette, which is busy and mid-value across its own 5 tones --
-# fine for a soil block that has to fill a whole wall, but here it competed
-# with the amber for attention instead of setting it off. This is a quieter,
-# darker rock fill: narrow value range, weighted hard toward the two darkest
-# tones, so nothing in the background is bright enough to challenge the
-# drips for "what does the eye land on first."
-RESIN_WEEP_ROCK_PAL = [(44, 35, 28, 255), (56, 45, 36, 255), (70, 57, 45, 255),
-                       (84, 69, 55, 255), (98, 81, 65, 255)]
-
-
-def _wrap_dist(a, b):
-    """Shortest distance between two columns on the seamless 16-wide tile."""
-    d = abs(a - b) % SIZE
-    return min(d, SIZE - d)
-
-
-def resin_weep():
-    """Dark rock face weeping amber -- the 'weep'.
-
-    Ep2 task I3 retexture (2026-08-18): the original drips were a single
-    1px-wide column of AMBER_MID at 4 fixed, evenly-spaced x positions. A
-    1px-wide feature is exactly what mip-mapping erases first, and a fixed
-    spacing is exactly what reads as a stamped grid once the tile repeats
-    across a wall -- both are the opposite of "readable at distance." This
-    version widens each drip to a 2px core (one side glossy-light, one side
-    mid-tone, so it still reads as round rather than as a flat ribbon),
-    randomises count/position/length off the seeded RNG so no two drips on
-    one tile -- or across two adjacent copies of it -- line up the same
-    way, and closes each drip with a 2x2 bead plus a single SPARK pixel
-    that stays legible even after the mip chain has eaten everything else."""
-    img = value_noise_fill("resin_weep_rock", RESIN_WEEP_ROCK_PAL,
-                           weights=[5, 5, 3, 1, 1])
-    px = img.load()
-    r = rng("resin_weep:drips")
-    placed = []
-    for _ in range(r.randint(3, 4)):
-        x0 = r.randrange(SIZE)
-        for _attempt in range(8):
-            if all(_wrap_dist(x0, u) >= 3 for u in placed):
-                break
-            x0 = r.randrange(SIZE)
-        placed.append(x0)
-        x1 = wrap(x0 + 1)
-        glossy, mid = (x0, x1) if r.random() < 0.5 else (x1, x0)
-        y0 = r.randint(0, 2)
-        length = r.randint(7, 12)
-        yb = min(SIZE - 1, y0 + length)
-
-        # seep hole: two dark pixels so the source itself reads as a hole,
-        # not just the top of the drip.
-        px[x0, y0] = (54, 32, 19, 255)
-        px[x1, y0] = (66, 40, 23, 255)
-
-        for y in range(y0 + 1, yb):
-            px[mid, y] = AMBER_BASE
-            px[glossy, y] = AMBER_LIGHT if r.random() < 0.6 else AMBER_MID
-            # an occasional stray droplet breaking off the glossy edge
-            if r.random() < 0.12:
-                px[wrap(glossy + 1), y] = AMBER_BASE
-
-        # glossy bead at the bottom: 2x2 pale amber with one spark corner,
-        # sized to survive mip-mapping the way a single tip pixel would not.
-        yb1 = min(SIZE - 1, yb + 1)
-        for (bx, by) in ((x0, yb), (x1, yb), (x0, yb1), (x1, yb1)):
-            px[bx, by] = AMBER_PALE
-        px[glossy, yb] = AMBER_SPARK
-    return img
-
-
 def resin_block():
     """Honey-block-style: light outer frame, deep amber interior with a
     diagonal gloss band."""
@@ -1389,8 +1319,15 @@ def chitin_boots_item():
 
 
 # ---------------------------------------------------------------------------
-# Chitin tool set (Ep2 task H1) -- diagonal tool icons, vanilla's own layout:
-# tip at the top-right corner, stick handle running down to the bottom-left.
+# Chitin tool set -- diagonal tool icons, vanilla's own layout: tip at the
+# top-right corner, stick handle running down to the bottom-left.
+#
+# Ep2 play-test revision (WP-1 item 2): the original five-tool Ep2 H1 set
+# (sword/pickaxe/axe/shovel/hoe) is gone, replaced by two hybrid tools --
+# Mandible Pickaxe and Pincer Sword. _tool_icon gained an optional
+# `center_fn` on top of its original `head_width_fn` so a head can curve off
+# the straight diagonal (needed for the sword's claw hook); passing none
+# keeps the original straight-diagonal behaviour.
 # ---------------------------------------------------------------------------
 
 TOOL_STICK_LIGHT = (178, 140, 92, 255)
@@ -1401,15 +1338,16 @@ TOOL_STICK_DARK = (140, 104, 62, 255)
 TOOL_HEAD_T_MIN = -3
 
 
-def _tool_icon(head_width_fn):
-    """Diagonal tool icon shared by all five tools: a rotated coordinate frame
+def _tool_icon(head_width_fn, center_fn=None):
+    """Diagonal tool icon shared by both tools: a rotated coordinate frame
     where `t` runs along the antidiagonal (-15 at the bottom-left corner, +15 at
     the top-right tip) and `s` is the perpendicular offset from it. Below
     TOOL_HEAD_T_MIN the icon is a 1px stick handle; at/above it, head_width_fn(t)
-    gives the chitin head's half-width in `s` units, so each tool is just a
-    different profile function over one shared diagonal frame (the same
-    head-shape-as-a-function idea the crop age models already use for stage
-    interpolation)."""
+    gives the chitin head's half-width in `s` units around center_fn(t) (0 when
+    omitted, i.e. centred on the stick), so each tool is just a profile
+    function -- and optionally a curve -- over one shared diagonal frame (the
+    same head-shape-as-a-function idea the crop age models already use for
+    stage interpolation)."""
     img = blank()
     px = img.load()
     for y in range(SIZE):
@@ -1421,72 +1359,54 @@ def _tool_icon(head_width_fn):
                     px[x, y] = TOOL_STICK_DARK if (x // 2) % 2 else TOOL_STICK_LIGHT
                 continue
             half = head_width_fn(t)
-            if half <= 0 or abs(s) >= half:
+            if half <= 0:
                 continue
-            if s <= -half + 1:
+            rel = s - (center_fn(t) if center_fn else 0)
+            if abs(rel) >= half:
+                continue
+            if rel <= -half + 1:
                 px[x, y] = CHITIN_RIM
-            elif s >= half - 1:
+            elif rel >= half - 1:
                 px[x, y] = CHITIN_DARK
             else:
                 px[x, y] = CHITIN_MID
     return outline(img, CHITIN_OUTLINE)
 
 
-def chitin_sword_item():
-    """Thin constant-width blade tapering to a single-pixel point at the tip."""
-    def profile(t):
-        return 0 if t >= 15 else 1
-    return _tool_icon(profile)
-
-
-def chitin_pickaxe_item():
-    """A head that bulges to a peak near the tip then narrows back in --
-    reads as a pick head rather than a flat blade."""
+def mandible_pickaxe_item():
+    """A head that bulges out from the shaft then pinches sharply to near-
+    nothing right at the tip: _tool_icon always traces a RIM edge along one
+    side of the head and a DARK edge along the other, so a bulge-then-pinch
+    profile reads as two curved edges closing on the same point -- a pair of
+    mandibles -- rather than a single flat pick head."""
     def profile(t):
         if t >= 15:
             return 0
         if t <= 4:
             return 1
         if t <= 9:
-            return 1 + (t - 4) * 0.4
-        if t <= 14:
-            return 3 - (t - 9) * 0.4
-        return 1
+            return 1 + (t - 4) * 0.5
+        if t <= 13:
+            return 3.5 - (t - 9) * 0.7
+        return 0.6
     return _tool_icon(profile)
 
 
-def chitin_axe_item():
-    """A wedge that flares from the handle up to a broad, flat-cut edge."""
-    def profile(t):
+def pincer_sword_item():
+    """A single blade that tapers to a point while curving off the straight
+    diagonal -- the offset (via center_fn) is what turns a straight blade
+    into a hooked claw silhouette."""
+    def width(t):
         if t >= 15:
             return 0
-        if t <= 12:
-            return 1 + (t - TOOL_HEAD_T_MIN) * 0.2
-        return 4
-    return _tool_icon(profile)
+        return max(0.6, 1.6 - (t - TOOL_HEAD_T_MIN) * 0.07)
 
-
-def chitin_shovel_item():
-    """A narrow blade widening into a flat paddle just below the tip."""
-    def profile(t):
-        if t >= 15:
+    def curve(t):
+        if t < TOOL_HEAD_T_MIN:
             return 0
-        if t <= 10:
-            return 1
-        return 2
-    return _tool_icon(profile)
+        return -min(2.2, (t - TOOL_HEAD_T_MIN) * 0.12)
 
-
-def chitin_hoe_item():
-    """A thin shaft that stays narrow almost to the top, then opens into a
-    flat blade only in the last few pixels -- vanilla's own hoe silhouette."""
-    def profile(t):
-        if t >= 15:
-            return 0
-        if t <= 9:
-            return 1
-        return 3
-    return _tool_icon(profile)
+    return _tool_icon(width, curve)
 
 
 # ---------------------------------------------------------------------------
@@ -1788,7 +1708,6 @@ BLOCK_TEXTURES = {
     "deep_loam": deep_loam,
     "hardened_soil": hardened_soil,
     "anthill_soil": anthill_soil,
-    "resin_weep": resin_weep,
     "resin_block": resin_block,
     "amber_glass": amber_glass,
     "fungal_bloom": fungal_bloom,
@@ -1822,11 +1741,8 @@ ITEM_TEXTURES = {
     "chitin_chestplate": chitin_chestplate_item,
     "chitin_leggings": chitin_leggings_item,
     "chitin_boots": chitin_boots_item,
-    "chitin_sword": chitin_sword_item,
-    "chitin_pickaxe": chitin_pickaxe_item,
-    "chitin_axe": chitin_axe_item,
-    "chitin_shovel": chitin_shovel_item,
-    "chitin_hoe": chitin_hoe_item,
+    "mandible_pickaxe": mandible_pickaxe_item,
+    "pincer_sword": pincer_sword_item,
     "honeyed_comb": honeyed_comb_item,
     "fungal_stew": fungal_stew_item,
     "royal_jelly_treat": royal_jelly_treat_item,

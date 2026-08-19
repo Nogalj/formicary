@@ -29,7 +29,6 @@ public class ModItemModelProvider extends ItemModelProvider {
         blockItem("amber_earth");
         blockItem("deep_loam");
         blockItem("hardened_soil");
-        blockItem("resin_weep");
         blockItem("resin_block");
         blockItem("amber_glass");
         blockItem("fungal_bloom");
@@ -63,15 +62,13 @@ public class ModItemModelProvider extends ItemModelProvider {
         basicItem(ModItems.CHITIN_LEGGINGS.get());
         basicItem(ModItems.CHITIN_BOOTS.get());
 
-        // Ep2 task H1: tools use the vanilla item/handheld parent (a flat sprite held at
-        // an angle in-hand), not item/generated -- the same template every vanilla tool
-        // (sword/pickaxe/axe/shovel/hoe) uses, verified against the client-extra jar's
-        // assets/minecraft/models/item/*_sword.json shape.
-        handheldItem("chitin_sword");
-        handheldItem("chitin_pickaxe");
-        handheldItem("chitin_axe");
-        handheldItem("chitin_shovel");
-        handheldItem("chitin_hoe");
+        // Ep2 play-test revision (WP-1 item 2): Mandible Pickaxe + Pincer Sword replace the
+        // five-tool Ep2 H1 set, same vanilla item/handheld parent (a flat sprite held at an
+        // angle in-hand), not item/generated -- the same template every vanilla tool uses,
+        // verified against the client-extra jar's assets/minecraft/models/item/*_sword.json
+        // shape.
+        handheldItem("mandible_pickaxe");
+        handheldItem("pincer_sword");
 
         // Spawn eggs reuse the vanilla two-layer template; the shell/spot colours come
         // from DeferredSpawnEggItem's tint handler, not from a texture of our own.
@@ -84,15 +81,14 @@ public class ModItemModelProvider extends ItemModelProvider {
         // Ep2 task H3: decorative families. Base blocks, stairs and slabs all parent
         // the block model at their own name (blockItem() -- the stairs/slab "bottom"
         // model ModBlockStateProvider generates is written at exactly that path, the
-        // same convention vanilla's own oak_stairs.json/oak_slab.json items use). Walls
-        // are the one shape that needs its own item model: wallBlock() never writes a
-        // model at the wall's bare name (only "..._post"/"..._side"/"..._side_tall"), so
-        // the item instead parents vanilla's block/wall_inventory template -- the same
-        // one every vanilla *_wall item uses for its inventory icon.
+        // same convention vanilla's own oak_stairs.json/oak_slab.json items use).
+        //
+        // Ep2 play-test revision (WP-1 item 4): packed_soil_brick_wall (and its
+        // wallItem() helper, the only caller) removed -- the family's item set is now
+        // base + stairs + slab only.
         blockItem("packed_soil_bricks");
         blockItem("packed_soil_brick_stairs");
         blockItem("packed_soil_brick_slab");
-        wallItem("packed_soil_brick_wall", "packed_soil_bricks");
 
         blockItem("hardened_soil_tiles");
         blockItem("hardened_soil_tile_stairs");
@@ -109,9 +105,5 @@ public class ModItemModelProvider extends ItemModelProvider {
 
     private void handheldItem(String name) {
         withExistingParent(name, "item/handheld").texture("layer0", modLoc("item/" + name));
-    }
-
-    private void wallItem(String name, String textureBlockName) {
-        withExistingParent(name, "block/wall_inventory").texture("wall", modLoc("block/" + textureBlockName));
     }
 }

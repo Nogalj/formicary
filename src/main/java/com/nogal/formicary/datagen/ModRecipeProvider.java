@@ -81,7 +81,9 @@ public class ModRecipeProvider extends RecipeProvider {
         amberGlassRecipe(recipeOutput);
         decorativeRecipes(recipeOutput);
 
-        // Ep2 task H1: the chitin tool set, standard vanilla shapes (heads + stick handle).
+        // Ep2 play-test revision (WP-1 item 2): Mandible Pickaxe + Pincer Sword, the same
+        // standard vanilla shapes (heads + stick handle) the original five-tool Ep2 H1 set
+        // used.
         chitinToolRecipes(recipeOutput);
 
         // Ep2 task H3: decorative families.
@@ -119,15 +121,15 @@ public class ModRecipeProvider extends RecipeProvider {
     }
 
     /**
-     * Ep2 task H1: chitin heads + vanilla {@code Items.STICK} handles, in exactly the
-     * shapes vanilla uses for its own tool tiers (a shaped recipe's placement matching is
-     * mirror-symmetric at the engine level, so the single asymmetric axe/hoe pattern below
-     * crafts from either handedness in-game).
+     * Ep2 play-test revision (WP-1 item 2): chitin heads + vanilla {@code Items.STICK}
+     * handles, in exactly the shapes the removed Ep2 H1 chitin sword/pickaxe used (3
+     * chitin over 2 sticks for the pickaxe, 2 chitin over 1 stick for the sword) --
+     * vanilla's own standard tool shapes, unchanged by the item rename.
      */
     private void chitinToolRecipes(RecipeOutput recipeOutput) {
         String hasChitin = getHasName(ModItems.CHITIN.get());
 
-        ShapedRecipeBuilder.shaped(RecipeCategory.COMBAT, ModItems.CHITIN_SWORD.get())
+        ShapedRecipeBuilder.shaped(RecipeCategory.COMBAT, ModItems.PINCER_SWORD.get())
                 .pattern("X")
                 .pattern("X")
                 .pattern("Y")
@@ -136,37 +138,10 @@ public class ModRecipeProvider extends RecipeProvider {
                 .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
                 .save(recipeOutput);
 
-        ShapedRecipeBuilder.shaped(RecipeCategory.TOOLS, ModItems.CHITIN_PICKAXE.get())
+        ShapedRecipeBuilder.shaped(RecipeCategory.TOOLS, ModItems.MANDIBLE_PICKAXE.get())
                 .pattern("XXX")
                 .pattern(" Y ")
                 .pattern(" Y ")
-                .define('X', ModItems.CHITIN.get())
-                .define('Y', Items.STICK)
-                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
-                .save(recipeOutput);
-
-        ShapedRecipeBuilder.shaped(RecipeCategory.TOOLS, ModItems.CHITIN_AXE.get())
-                .pattern("XX")
-                .pattern("XY")
-                .pattern(" Y")
-                .define('X', ModItems.CHITIN.get())
-                .define('Y', Items.STICK)
-                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
-                .save(recipeOutput);
-
-        ShapedRecipeBuilder.shaped(RecipeCategory.TOOLS, ModItems.CHITIN_SHOVEL.get())
-                .pattern("X")
-                .pattern("Y")
-                .pattern("Y")
-                .define('X', ModItems.CHITIN.get())
-                .define('Y', Items.STICK)
-                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
-                .save(recipeOutput);
-
-        ShapedRecipeBuilder.shaped(RecipeCategory.TOOLS, ModItems.CHITIN_HOE.get())
-                .pattern("XX")
-                .pattern(" Y")
-                .pattern(" Y")
                 .define('X', ModItems.CHITIN.get())
                 .define('Y', Items.STICK)
                 .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
@@ -259,8 +234,6 @@ public class ModRecipeProvider extends RecipeProvider {
     private static final int STAIRS_PER_CRAFT = 4;
     /** Vanilla's own slab yield: 3 source blocks (single row) -> 6 slabs. */
     private static final int SLABS_PER_CRAFT = 6;
-    /** Vanilla's own wall yield: 6 source blocks (two rows of three) -> 6 walls. */
-    private static final int WALLS_PER_CRAFT = 6;
     /** Task brief H3: 4 source blocks in a 2x2 square makes 4 of the cut variant. */
     private static final int DECORATIVE_FAMILY_BASE_PER_CRAFT = 4;
 
@@ -300,14 +273,6 @@ public class ModRecipeProvider extends RecipeProvider {
 
         ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, ModBlocks.PACKED_SOIL_BRICK_SLAB.get(),
                         SLABS_PER_CRAFT)
-                .pattern("XXX")
-                .define('X', ModBlocks.PACKED_SOIL_BRICKS.get())
-                .unlockedBy(hasBricks, has(ModBlocks.PACKED_SOIL_BRICKS.get()))
-                .save(recipeOutput);
-
-        ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, ModBlocks.PACKED_SOIL_BRICK_WALL.get(),
-                        WALLS_PER_CRAFT)
-                .pattern("XXX")
                 .pattern("XXX")
                 .define('X', ModBlocks.PACKED_SOIL_BRICKS.get())
                 .unlockedBy(hasBricks, has(ModBlocks.PACKED_SOIL_BRICKS.get()))

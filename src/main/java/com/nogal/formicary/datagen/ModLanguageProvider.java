@@ -25,7 +25,6 @@ public class ModLanguageProvider extends LanguageProvider {
         addBlock(ModBlocks.AMBER_EARTH, "Amber Earth");
         addBlock(ModBlocks.DEEP_LOAM, "Deep Loam");
         addBlock(ModBlocks.HARDENED_SOIL, "Hardened Soil");
-        addBlock(ModBlocks.RESIN_WEEP, "Resin Weep");
         addBlock(ModBlocks.RESIN_BLOCK, "Resin Block");
         addBlock(ModBlocks.AMBER_GLASS, "Amber Glass");
         addBlock(ModBlocks.FUNGAL_BLOOM, "Fungal Bloom");
@@ -43,7 +42,6 @@ public class ModLanguageProvider extends LanguageProvider {
         addBlock(ModBlocks.PACKED_SOIL_BRICKS, "Packed Soil Bricks");
         addBlock(ModBlocks.PACKED_SOIL_BRICK_STAIRS, "Packed Soil Brick Stairs");
         addBlock(ModBlocks.PACKED_SOIL_BRICK_SLAB, "Packed Soil Brick Slab");
-        addBlock(ModBlocks.PACKED_SOIL_BRICK_WALL, "Packed Soil Brick Wall");
         addBlock(ModBlocks.HARDENED_SOIL_TILES, "Hardened Soil Tiles");
         addBlock(ModBlocks.HARDENED_SOIL_TILE_STAIRS, "Hardened Soil Tile Stairs");
         addBlock(ModBlocks.HARDENED_SOIL_TILE_SLAB, "Hardened Soil Tile Slab");
@@ -77,12 +75,9 @@ public class ModLanguageProvider extends LanguageProvider {
         addItem(ModItems.CHITIN_LEGGINGS, "Chitin Leggings");
         addItem(ModItems.CHITIN_BOOTS, "Chitin Boots");
 
-        // Ep2 task H1.
-        addItem(ModItems.CHITIN_SWORD, "Chitin Sword");
-        addItem(ModItems.CHITIN_PICKAXE, "Chitin Pickaxe");
-        addItem(ModItems.CHITIN_AXE, "Chitin Axe");
-        addItem(ModItems.CHITIN_SHOVEL, "Chitin Shovel");
-        addItem(ModItems.CHITIN_HOE, "Chitin Hoe");
+        // Ep2 play-test revision (WP-1 item 2): replaces the five-tool Ep2 H1 set.
+        addItem(ModItems.MANDIBLE_PICKAXE, "Mandible Pickaxe");
+        addItem(ModItems.PINCER_SWORD, "Pincer Sword");
 
         addEntityType(ModEntities.WORKER_ANT, "Worker Ant");
         addItem(ModEntities.WORKER_ANT_SPAWN_EGG, "Worker Ant Spawn Egg");
