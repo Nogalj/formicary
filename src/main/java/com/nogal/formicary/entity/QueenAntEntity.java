@@ -448,7 +448,8 @@ public class QueenAntEntity extends PathfinderMob {
         addTargetIfPlayerInRange(caught, this.getTarget(), origin, BURST_RADIUS);
         pheromoneBurst(level, origin, caught);
         summonWave(level);
-        this.playSound(SoundEvents.BEE_LOOP_AGGRESSIVE, 2.0F, 0.5F);
+        // Temporary (Ep2 play-test revision): matches getAmbientSound's borrowed spider voice.
+        this.playSound(SoundEvents.SPIDER_AMBIENT, 2.0F, 0.5F);
     }
 
     /**
@@ -1105,7 +1106,10 @@ public class QueenAntEntity extends PathfinderMob {
 
     @Override
     protected SoundEvent getAmbientSound() {
-        return SoundEvents.BEE_LOOP_AGGRESSIVE;
+        // Temporary (Ep2 play-test revision): borrowed spider ambience until Logan supplies
+        // custom queen voice sounds. Hurt/death are already spider; this and the phase-burst
+        // playSound below (~:451) are the two spots that were still the bee-loop placeholder.
+        return SoundEvents.SPIDER_AMBIENT;
     }
 
     @Override

@@ -38,8 +38,8 @@ import net.minecraft.world.phys.Vec3;
  * than the one the phase machinery is building.
  */
 public class AcidSpitProjectile extends Projectile {
-    /** Damage on a direct hit. Tunable. */
-    public static final float IMPACT_DAMAGE = 4.0F;
+    /** Damage on a direct hit. Tunable. (Ep2 play-test revision: 4.0 -> 2.0, less lethal.) */
+    public static final float IMPACT_DAMAGE = 2.0F;
 
     /** Poison duration on a direct hit, in ticks (3 seconds). Tunable. */
     public static final int POISON_TICKS = 60;
