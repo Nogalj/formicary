@@ -69,18 +69,6 @@ public class EnderAntGameTests {
     /** Long enough to survive the assertion window without expiring mid-test. */
     private static final int TEST_EFFECT_DURATION = 200;
 
-    /**
-     * How many ender ants the pearl test kills.
-     *
-     * <p>The drop is {@code UniformGenerator.between(0, 1)} rounded, i.e. a straight coin
-     * flip per kill (see {@code ModEntityLootSubProvider#enderAntTable}) -- which is the
-     * spec's "0-1 ender pearl" and is deliberately not a guaranteed drop, so a single kill
-     * cannot be asserted on. 20 kills leaves a {@code 2^-20} chance -- about one run in a
-     * million -- of a false failure, five orders of magnitude below the ~9% flake rate this
-     * repo already rejected once over wheat seeds.
-     */
-    private static final int PEARL_SAMPLE_KILLS = 20;
-
     // ------------------------------------------------------------ teleport --
 
     /**
@@ -180,7 +168,11 @@ public class EnderAntGameTests {
     // ---------------------------------------------------------------- loot --
 
     /**
-     * Spec section 5: "0-1 ender pearl (+Looting)" -- the renewable half of the exit economy.
+     * Ep2 play-test revision -- pearl economy re-route (see {@code
+     * docs/superpowers/plans/2026-08-19-ep2-playtest-revisions.md}): a guaranteed ender pearl
+     * per kill (+Looting), the renewable half of the exit economy. This used to be "0-1 ender
+     * pearl", a coin flip that needed a large kill sample to assert on at all; now that the
+     * base count is unconditional, a single kill proves the guarantee.
      *
      * <p>Killed the way {@code LootXpGameTests} kills things: one deliberately oversized hit
      * on the same tick the ant is spawned. Same tick matters twice over here -- nothing has
@@ -188,24 +180,26 @@ public class EnderAntGameTests {
      * {@code isAlive()} false so {@link EnderAntEntity#hurt}'s own guard declines to teleport
      * a corpse out of its own drops.
      *
-     * <p>No Looting variant. Enchanting the mock player's weapon would turn the assertion
-     * into "more pearls, usually" -- a statistical comparison rather than a test -- and the
-     * Looting behaviour itself is vanilla's {@code EnchantedCountIncreaseFunction}, which is
-     * not this mod's code. What is worth pinning is that the base drop exists at all, which
-     * is what this does.
+     * <p>No Looting variant, deliberately. Enchanting the mock player's weapon would only
+     * inflate the count further -- the Looting bonus itself is vanilla's own {@code
+     * EnchantedCountIncreaseFunction}, not this mod's code. What is worth pinning is the
+     * unenchanted floor: at least 1 pearl, every kill, no luck involved.
      */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "platform", timeoutTicks = 200)
     public static void ender_ant_deaths_drop_ender_pearls(GameTestHelper helper) {
         Player killer = helper.makeMockPlayer(GameType.SURVIVAL);
-        for (int i = 0; i < PEARL_SAMPLE_KILLS; i++) {
-            EnderAntEntity ant = helper.spawn(ModEntities.ENDER_ANT.get(), KILL_SPOT);
-            ant.hurt(helper.getLevel().damageSources().playerAttack(killer), 1000.0F);
-        }
+        EnderAntEntity ant = helper.spawn(ModEntities.ENDER_ANT.get(), KILL_SPOT);
+        ant.hurt(helper.getLevel().damageSources().playerAttack(killer), 1000.0F);
 
         helper.succeedWhen(() -> {
             helper.assertEntityNotPresent(ModEntities.ENDER_ANT.get());
-            helper.assertItemEntityPresent(Items.ENDER_PEARL);
+            int pearls = helper.getEntities(EntityType.ITEM).stream()
+                    .filter(item -> item.getItem().is(Items.ENDER_PEARL))
+                    .mapToInt(item -> item.getItem().getCount())
+                    .sum();
+            helper.assertTrue(pearls >= 1,
+                    "an unenchanted ender ant kill must drop at least 1 ender pearl; got " + pearls);
         });
     }
 

@@ -77,13 +77,17 @@ public class ModEntityLootSubProvider extends EntityLootSubProvider {
     }
 
     /**
-     * The ender ant's drop (Ep2, spec section 5): "0-1 ender pearl (+Looting)".
+     * The ender ant's drop (Ep2 play-test revision -- pearl economy re-route, see
+     * {@code docs/superpowers/plans/2026-08-19-ep2-playtest-revisions.md}): a guaranteed
+     * ender pearl (+Looting).
      *
-     * <p>Same shape as vanilla's enderman -- one pool, one roll, an ender pearl whose count
-     * is {@code UniformGenerator.between(0, 1)} with the standard Looting multiplier on top.
-     * {@code NumberProvider#getInt} rounds, so a uniform draw over {@code [0, 1)} is exactly
-     * a coin flip, which is the intended feel: this is the renewable half of the exit
-     * economy (section 2 pairs it with the larder's guaranteed pearls), not a faucet.
+     * <p>One pool, one roll, an ender pearl at a constant count of 1 with the standard
+     * Looting multiplier on top. This used to be a coin flip ({@code
+     * UniformGenerator.between(0, 1)}, mirroring vanilla's enderman); the design now IS the
+     * renewable exit floor -- every kill guarantees a way out, and 4-6 seeded ants per colony
+     * (up from 2-3, see {@code COLONY_ENDER_ANTS_MIN/MAX}) make that floor reachable. Larder
+     * pearls (section 2/3) drop to a rare bonus alongside it rather than being the guarantee
+     * themselves.
      *
      * <p>Deliberately no chitin and no Scent Gland. Chitin is soldier-only since play-test
      * round 1, and the Scent Gland is the colony's own pheromone signature -- an ender ant
@@ -98,7 +102,7 @@ public class ModEntityLootSubProvider extends EntityLootSubProvider {
                                 .add(
                                         LootItem.lootTableItem(Items.ENDER_PEARL)
                                                 .apply(SetItemCountFunction.setCount(
-                                                        UniformGenerator.between(0.0F, 1.0F)))
+                                                        ConstantValue.exactly(1.0F)))
                                                 .apply(EnchantedCountIncreaseFunction.lootingMultiplier(
                                                         this.registries, UniformGenerator.between(0.0F, 1.0F)))));
     }
