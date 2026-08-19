@@ -4,6 +4,9 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ACCENT_XZ_SCA
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ACCENT_Y_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CEILING_BOTTOM;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_ELIGIBILITY_MIN_F;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_FLOOR_MIN_Y_BY_TIER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SLOT_JITTER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SLOT_STEP;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_LARGE_THRESHOLD_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COMB_PATCH_THRESHOLD_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.COMB_PATCH_XZ_SCALE;
@@ -46,11 +49,11 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_CORRID
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_CORRIDOR_START;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_DOME_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_ELIGIBILITY_MIN_F;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_FLOOR_MIN_Y;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_MAX_REACH;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_SHELL_THICKNESS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_SPACING;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_TIER_COUNT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_WALL_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_THICKNESS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MEMBRANE_XZ_SCALE;
@@ -86,6 +89,7 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_DAIS_R
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_DAIS_STEP_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_DOME_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_FLOOR_MIN_Y;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_LARDER_CLEARANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_MAX_REACH;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_SHELL_THICKNESS;
@@ -519,6 +523,67 @@ public final class ColonyNoise {
     }
 
     // ------------------------------------------------------------------
+    // Chamber slots (play-test round 2, item 7) -- where the three 96-grid rooms hang
+    // ------------------------------------------------------------------
+
+    /** Slot index of each 96-grid chamber kind around its shared anchor ramp. */
+    private static final int SLOT_NURSERY = 0;
+    private static final int SLOT_GARDEN = 1;
+    private static final int SLOT_LARDER = 2;
+
+    /**
+     * The base bearing every 96-grid chamber in one cell measures its slot from.
+     *
+     * <p>The nursery, garden and larder grids share a cell size (96), a cell centre
+     * ({@code cell*96 + 48}), the anchor ramp that centre resolves to, and an approach
+     * distance (24). Everything about where their three rooms sit therefore comes down to
+     * three approach bearings -- and until round 2 those were three independent-looking draws,
+     * the first {@code nextDouble()} of {@code factory.at(cellX, 2|3|4, cellZ)}.
+     *
+     * <p><b>They were not independent.</b> Measured on the real
+     * {@code XoroshiroPositionalRandomFactory}: at cell (0, 0) the three first draws agree to
+     * nine decimal places, and over the 17x17 cells the probe samples the mean angular gap
+     * between the nursery's and the garden's bearing is <b>6.4 degrees</b> where independent
+     * draws would give 90, with 80 of 289 cell-pairs landing within one degree of each other.
+     * The cause is in the 1.21 sources, not in the seed: {@code at(x, y, z)} is
+     * {@code new XoroshiroRandomSource(Mth.getSeed(x, y, z) ^ seedLo, seedHi)}, {@code y}
+     * enters only through {@code Mth.getSeed}'s low three bits, that value is mixed by a
+     * single quadratic and shifted right 16, and near the origin the whole pre-mix quantity is
+     * small enough that the {@code y} difference survives only in the low bits of
+     * {@code seedLo}. {@code seedHi} is byte-identical across the three calls, and Xoroshiro's
+     * <em>first</em> output is one rotate-and-add -- not enough diffusion to carry a low-bit
+     * difference into the top 53 bits {@code nextDouble} reads. It decorrelates as the cell
+     * coordinates grow (mean 33 degrees at |cell| &lt;= 64, 95 at |cell| &lt;= 1024), which is
+     * exactly why it was invisible: the bug lives where the player starts.
+     *
+     * <p>So the separation is no longer asked of the seed. One draw, from one stream, gives
+     * the cell a base bearing; the three kinds take fixed slots
+     * {@link ColonyGeneratorTunables#CHAMBER_SLOT_STEP} apart from it. Each kind still jitters
+     * off its slot using its own stream -- and if those jitters come out nearly equal, as this
+     * finding says they often will, the three rooms simply rotate together and the 120-degree
+     * gaps survive untouched. Correlated jitter cannot hurt; only a correlated <em>base</em>
+     * could, and there is now only one base.
+     *
+     * <p>{@code y = 7}: an eighth stream, after shaft (0), throne (1), nursery (2), garden
+     * (3), larder (4), colony centre (5) and ender slots (6).
+     */
+    private double chamberBaseBearing(int cellX, int cellZ) {
+        return this.factory.at(cellX, 7, cellZ).nextDouble() * TWO_PI;
+    }
+
+    /**
+     * A chamber kind's approach bearing: its slot off the cell's shared base, plus its own
+     * seeded jitter of at most {@link ColonyGeneratorTunables#CHAMBER_SLOT_JITTER}.
+     *
+     * <p>{@code random} must be the kind's own per-cell stream and this must be its
+     * <b>first</b> draw, so the draws that follow (the larder's tier pick and comb angles)
+     * keep the ordering their own javadocs describe.
+     */
+    private static double chamberSlotBearing(double baseBearing, int slot, RandomSource random) {
+        return baseBearing + slot * CHAMBER_SLOT_STEP + (random.nextDouble() * 2.0 - 1.0) * CHAMBER_SLOT_JITTER;
+    }
+
+    // ------------------------------------------------------------------
     // Seeded ender ants (Ep2 E4) -- the introduction, out on the core's fringe
     // ------------------------------------------------------------------
 
@@ -846,16 +911,19 @@ public final class ColonyNoise {
      * {@link ColonyGeneratorTunables#NURSERY_FLOOR_MIN_Y}, which puts it in {@code [56, 80)}
      * -- the room and its shell therefore stay inside the Nurseries band, and can never
      * collide with a throne chamber (whose floors live in {@code [8, 33)}).
+     *
+     * <p>The approach bearing is slot {@link #SLOT_NURSERY} off this cell's shared base
+     * bearing -- see {@link #chamberBaseBearing} for why it is no longer a free draw.
      */
     private Nursery nurseryForCell(int cellX, int cellZ) {
-        // y = 2: a third independent stream, so this never draws the same numbers as
-        // shaftForCell (y = 0) or throneForCell (y = 1) for the same cell.
+        // y = 2: this cell's nursery stream. Its first draw is now the slot jitter rather
+        // than the whole bearing; see chamberBaseBearing for what that fixed.
         RandomSource random = this.factory.at(cellX, 2, cellZ);
         int centreX = cellX * NURSERY_SPACING + NURSERY_SPACING / 2;
         int centreZ = cellZ * NURSERY_SPACING + NURSERY_SPACING / 2;
         Shaft shaft = shaftForCell(Math.floorDiv(centreX, SHAFT_SPACING), Math.floorDiv(centreZ, SHAFT_SPACING));
 
-        double approach = random.nextDouble() * TWO_PI;
+        double approach = chamberSlotBearing(chamberBaseBearing(cellX, cellZ), SLOT_NURSERY, random);
         double dirX = Math.cos(approach);
         double dirZ = Math.sin(approach);
 
@@ -959,16 +1027,19 @@ public final class ColonyNoise {
      * {@code [104, 128)} -- the room and its shell therefore stay inside the Fungal
      * Gardens band, and can never collide with a throne or nursery chamber (whose floors
      * live in the disjoint bands {@code [8, 33)} and {@code [56, 80)}).
+     *
+     * <p>The approach bearing is slot {@link #SLOT_GARDEN} off this cell's shared base
+     * bearing, i.e. a third of a turn round from its nursery -- see
+     * {@link #chamberBaseBearing}.
      */
     private Garden gardenForCell(int cellX, int cellZ) {
-        // y = 3: a fourth independent stream, so this never draws the same numbers as
-        // shaftForCell (y = 0), throneForCell (y = 1) or nurseryForCell (y = 2).
+        // y = 3: this cell's garden stream; first draw is the slot jitter.
         RandomSource random = this.factory.at(cellX, 3, cellZ);
         int centreX = cellX * GARDEN_SPACING + GARDEN_SPACING / 2;
         int centreZ = cellZ * GARDEN_SPACING + GARDEN_SPACING / 2;
         Shaft shaft = shaftForCell(Math.floorDiv(centreX, SHAFT_SPACING), Math.floorDiv(centreZ, SHAFT_SPACING));
 
-        double approach = random.nextDouble() * TWO_PI;
+        double approach = chamberSlotBearing(chamberBaseBearing(cellX, cellZ), SLOT_GARDEN, random);
         double dirX = Math.cos(approach);
         double dirZ = Math.sin(approach);
 
@@ -1054,8 +1125,16 @@ public final class ColonyNoise {
      * {@link ColonyGeneratorTunables#LARDER_COMB_HEIGHT} above the floor (well inside the
      * cylindrical wall, clear of the dome's curve).
      */
+    /**
+     * @param tier     the band this larder is actually dug into
+     * @param tierDraw the band the cell <em>drew</em>, before the throne gate had its say.
+     *                 They differ only where the gate fired, which is what lets
+     *                 {@link NoiseProbe} report how often it does without a second copy of the
+     *                 draw order living somewhere it could drift out of step.
+     */
     public record Larder(double centreX, double centreZ, double axisX, double axisZ,
-            double dirX, double dirZ, int floorY, int combX1, int combZ1, int combX2, int combZ2, int combY,
+            double dirX, double dirZ, int floorY, int tier, int tierDraw,
+            int combX1, int combZ1, int combX2, int combZ2, int combY,
             boolean inColony) {
     }
 
@@ -1070,45 +1149,83 @@ public final class ColonyNoise {
      * The chamber belonging to one {@link ColonyGeneratorTunables#LARDER_SPACING} cell.
      *
      * <p>Structurally identical to {@link #gardenForCell}: the ramp whose own cell contains
-     * this cell's centre is resolved first, and the room then hangs off that ramp at a
-     * seed-chosen bearing with its floor set to the ramp's own walkway height there.
+     * this cell's centre is resolved first, and the room then hangs off that ramp with its
+     * floor set to the ramp's own walkway height at the approach bearing. Two things are the
+     * larder's alone, and both are play-test round 2, item 7.
      *
-     * <p>The floor is the first ramp turn at or above
-     * {@link ColonyGeneratorTunables#LARDER_FLOOR_MIN_Y}, which puts it in
-     * {@code [152, 176)} -- the room and its shell therefore stay inside the Upper
-     * Galleries band, and can never collide with a throne, nursery or garden chamber
-     * (whose floors live in the disjoint bands {@code [8, 33)}, {@code [56, 80)} and
-     * {@code [104, 128)}).
+     * <p><b>It can be dug into any tier.</b> The floor used to be the first ramp turn at or
+     * above one hard number, so every larder in the world was in the Upper Galleries. The cell
+     * now picks a tier uniformly from {@code [0, LARDER_TIER_COUNT)} and the floor is the
+     * first ramp turn at or above {@link ColonyGeneratorTunables#CHAMBER_FLOOR_MIN_Y_BY_TIER}
+     * for that tier -- {@code [8, 33)}, {@code [56, 80)}, {@code [104, 128)} or
+     * {@code [152, 177)}, each keeping the room and its shell wholly inside its band.
      *
-     * <p>That disjointness is <b>not</b> a comfortable margin, and anything that moves a
-     * chamber kind's band has to look here first: the nursery, garden and larder grids all
-     * have the same 96-block cell with the same {@code cell*96 + 48} centre, so all three
-     * resolve the <em>same</em> anchor ramp, hang at the same 24-block approach distance,
-     * and (measured, seed 1234567) land within about a block of each other in XZ. The only
-     * thing keeping three rooms out of one another is that they are 48 blocks apart
-     * vertically.
+     * <p><b>Which means the bands stopped separating the rooms.</b> Before this, the four
+     * chamber kinds could not interact because their floors lived in four disjoint bands --
+     * and that was doing more work than it looked, because the nursery, garden and larder
+     * grids all have the same 96-block cell with the same {@code cell*96 + 48} centre, so all
+     * three resolve the <em>same</em> anchor ramp and hang at the same 24-block approach
+     * distance. Their bearings were three separate positional-stream draws, which sounds like
+     * three independent directions and measurably was not: on seed 1234567 the three rooms of
+     * a cell landed within about 1.5 blocks of each other in XZ, kept apart by 48 blocks of
+     * height and nothing else. (The RNG finding behind that is written up on
+     * {@link #chamberBaseBearing}.) A larder that leaves its band would have walked straight
+     * into whatever else the cell had.
+     *
+     * <p>So the three kinds are now placed at explicit slots -- nursery at
+     * {@code base + 0}, garden at {@code base + 2pi/3}, larder at {@code base + 4pi/3} off one
+     * shared per-cell base bearing, each jittered by at most
+     * {@link ColonyGeneratorTunables#CHAMBER_SLOT_JITTER}. Worst case the two nearest are
+     * {@link ColonyGeneratorTunables#CHAMBER_SLOT_MIN_SEPARATION} = 30.85 blocks apart against
+     * the 22.0 they need; {@link NoiseProbe}'s chamber-pair invariant measures the real
+     * minimum rather than trusting the algebra.
+     *
+     * <p><b>The throne guard.</b> One collision the slots cannot settle: the throne is not on
+     * the 96 grid, has no slot, and lives in tier 0, so a tier-0 larder is a second room in
+     * the Royal Depths with nothing arranging the two. The gate is a distance, not a
+     * relationship between cells -- a tier-0 pick is bumped to tier 1 whenever the room would
+     * land within {@link ColonyGeneratorTunables#THRONE_LARDER_CLEARANCE} = 62.5 blocks of its
+     * colony's throne centre, which is the two chambers' carve envelopes plus 2 blocks of
+     * margin and therefore cannot be beaten by any seed. Bumping rather than re-drawing keeps
+     * the tier a pure function of the cell.
+     *
+     * <p>A guard on the anchor ramp's <em>cell</em> was tried first and measurably was not
+     * enough: it removed every same-shaft case and left 3 larders on seed 1234567 and 10 on
+     * seed 987654321 overlapping a throne from <em>one cell away</em>, worst pair 3.8 blocks
+     * centre to centre. Thrones hang off the ramp cell containing the colony centre, which is
+     * even as often as odd, while larders only ever anchor to odd/odd cells -- so the throne
+     * is frequently on a ramp no larder can share, one cell from several that do. The distance
+     * bound covers the same-shaft case too (those centres are 10 to 58 apart), so there is no
+     * separate shaft test.
      */
     private Larder larderForCell(int cellX, int cellZ) {
-        // y = 4: a fifth independent stream, so this never draws the same numbers as
-        // shaftForCell (y = 0), throneForCell (y = 1), nurseryForCell (y = 2) or
-        // gardenForCell (y = 3).
+        // y = 4: this cell's larder stream. Draw order is load-bearing and is asserted
+        // nowhere but here: slot jitter, then the tier, then the two comb angles.
         RandomSource random = this.factory.at(cellX, 4, cellZ);
         int centreX = cellX * LARDER_SPACING + LARDER_SPACING / 2;
         int centreZ = cellZ * LARDER_SPACING + LARDER_SPACING / 2;
         Shaft shaft = shaftForCell(Math.floorDiv(centreX, SHAFT_SPACING), Math.floorDiv(centreZ, SHAFT_SPACING));
 
-        double approach = random.nextDouble() * TWO_PI;
+        double approach = chamberSlotBearing(chamberBaseBearing(cellX, cellZ), SLOT_LARDER, random);
         double dirX = Math.cos(approach);
         double dirZ = Math.sin(approach);
+
+        // Resolved before the tier, because the tier gate is a question about where the room
+        // lands. Neither depends on floorY, so nothing here is circular.
+        double centreXd = shaft.axisX() + LARDER_APPROACH_DISTANCE * dirX;
+        double centreZd = shaft.axisZ() + LARDER_APPROACH_DISTANCE * dirZ;
+
+        int tierDraw = random.nextInt(LARDER_TIER_COUNT);
+        int tier = tierDraw;
+        if (tier == 0 && crowdsAThrone(centreXd, centreZd)) {
+            tier = 1;
+        }
 
         double bearing = approach - shaft.phase();
         bearing -= Math.floor(bearing / TWO_PI) * TWO_PI;
         double base = MIN_Y + bearing / RAMP_RADIANS_PER_BLOCK;
-        int turn = (int) Math.ceil((LARDER_FLOOR_MIN_Y - base) / RAMP_PERIOD);
+        int turn = (int) Math.ceil((CHAMBER_FLOOR_MIN_Y_BY_TIER[tier] - base) / RAMP_PERIOD);
         int floorY = (int) Math.floor(base + turn * RAMP_PERIOD);
-
-        double centreXd = shaft.axisX() + LARDER_APPROACH_DISTANCE * dirX;
-        double centreZd = shaft.axisZ() + LARDER_APPROACH_DISTANCE * dirZ;
 
         // The two guaranteed comb slots -- same stream, drawn right after the bearing.
         // NOT a free choice of angle: the corridor punches through the shell at the
@@ -1130,9 +1247,50 @@ public final class ColonyNoise {
         int combX2 = (int) Math.round(centreXd + LARDER_COMB_RADIUS * Math.cos(combAngle2));
         int combZ2 = (int) Math.round(centreZd + LARDER_COMB_RADIUS * Math.sin(combAngle2));
 
-        return new Larder(centreXd, centreZd, shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY,
+        return new Larder(centreXd, centreZd, shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY, tier, tierDraw,
                 combX1, combZ1, combX2, combZ2, floorY + LARDER_COMB_HEIGHT,
                 isChamberAnchored(shaft, centreXd, centreZd, LARDER_ELIGIBILITY_MIN_F));
+    }
+
+    /**
+     * Whether a chamber centred at (x, z) would sit inside a throne's exclusion ball -- i.e.
+     * within {@link ColonyGeneratorTunables#THRONE_LARDER_CLEARANCE} of a throne centre.
+     *
+     * <p><b>Only the nearest colony's throne is checked, and that is exact rather than an
+     * approximation.</b> A throne centre lands within 76 blocks of its own colony centre
+     * ({@link #throneForCell} derives that bound), so a throne inside the 62.5-block clearance
+     * of this point belongs to a colony centre at most 138.5 blocks away -- and colony centres
+     * are at least {@code COLONY_SPACING - COLONY_JITTER} = 288 apart, so no second colony can
+     * be that close. One candidate is all there is.
+     *
+     * <p>The 3x3 scan mirrors {@link #nearestColony}'s own derivation rather than calling it,
+     * because what {@link #throneForCell} needs is the winning <em>cell</em> and that method
+     * returns only the centre. Cost is nine one-draw colony centres plus one throne, and only
+     * on a tier-0 pick.
+     */
+    private boolean crowdsAThrone(double x, double z) {
+        int cellX = Math.floorDiv(Mth.floor(x), COLONY_SPACING);
+        int cellZ = Math.floorDiv(Mth.floor(z), COLONY_SPACING);
+        int bestX = cellX;
+        int bestZ = cellZ;
+        double bestSq = Double.MAX_VALUE;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                Colony colony = colonyCenterForCell(cellX + dx, cellZ + dz);
+                double ddx = x - colony.centreX();
+                double ddz = z - colony.centreZ();
+                double distanceSq = ddx * ddx + ddz * ddz;
+                if (distanceSq < bestSq) {
+                    bestSq = distanceSq;
+                    bestX = cellX + dx;
+                    bestZ = cellZ + dz;
+                }
+            }
+        }
+        Throne throne = throneForCell(bestX, bestZ);
+        double gapX = x - throne.centreX();
+        double gapZ = z - throne.centreZ();
+        return gapX * gapX + gapZ * gapZ < THRONE_LARDER_CLEARANCE * THRONE_LARDER_CLEARANCE;
     }
 
     /**
@@ -1606,13 +1764,17 @@ public final class ColonyNoise {
      * chambers sit <em>below</em> the spine in that order, deliberately: they may carve
      * through the noise and force their own shells solid, but never override a ramp floor
      * or a ramp walkway. That keeps M4a's walkability guarantee exactly as it was -- the
-     * rooms hang off the spine, they do not cut into it. The four chamber kinds cannot
-     * interact: their floors live in disjoint Y bands ({@code [8, 33)}, {@code [56, 80)},
-     * {@code [104, 128)}, {@code [152, 176)}), so their order relative to each other is
-     * arbitrary. (The middle two used to be listed here as {@code [52, 76)} and
-     * {@code [102, 126)}; the first of those was simply wrong -- {@code NURSERY_FLOOR_MIN_Y}
-     * has been 54 since it was written -- and both moved up 2 when round 2 domed the
-     * landings. See {@link #larderForCell} for why the disjointness is load-bearing.)
+     * rooms hang off the spine, they do not cut into it.
+     *
+     * <p>Their order <em>relative to each other</em> used to be arbitrary, because the four
+     * kinds' floors lived in four disjoint Y bands and so could not interact at all. Play-test
+     * round 2 ended that: a larder now picks its tier per cell and can share a band with any
+     * of the other three. What replaced the bands is geometric, not an ordering rule -- the
+     * three 96-grid kinds take slots 120 degrees apart around their shared ramp (at least
+     * {@link ColonyGeneratorTunables#CHAMBER_SLOT_MIN_SEPARATION} = 30.85 blocks between any
+     * two centres), and a tier-0 larder is bumped off the throne's own ramp. See
+     * {@link #larderForCell}. The order below is therefore still arbitrary among the four, and
+     * {@link NoiseProbe} asserts the separation rather than leaving it to be reasoned about.
      */
     public boolean isAir(double field, Shaft[] columnShafts, Throne[] columnThrones, Nursery[] columnNurseries,
             Garden[] columnGardens, Larder[] columnLarders, int x, int y, int z) {

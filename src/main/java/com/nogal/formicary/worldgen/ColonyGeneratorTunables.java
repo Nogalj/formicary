@@ -186,6 +186,69 @@ public final class ColonyGeneratorTunables {
                     + 1.0;
 
     // ------------------------------------------------------------------
+    // Chamber placement, shared by every room that hangs off a ramp
+    //
+    // Two things every chamber kind needs and none of them owns: how low its floor may sit
+    // inside a given tier, and where around its anchor ramp it is allowed to hang.
+    // ------------------------------------------------------------------
+
+    /**
+     * The lowest floor a chamber may take in each tier, indexed by {@link #tierIndex(int)}.
+     *
+     * <p>One formula for all four bands: the tier's own floor plus
+     * {@link #LANDING_INTERIOR_HEIGHT}. The landing-clearance term is the load-bearing half
+     * and it is derived rather than padded -- a landing chamber is carved around every ramp
+     * axis at each tier boundary, {@link ColonyNoise#shaftState} outranks every chamber, and a
+     * corridor whose forced-solid walkway fell inside that landing has its floor cut out from
+     * under it for the blocks where the landing disc overhangs the ramp's annulus. The probe
+     * originally caught exactly that as a room with 113 standable floor blocks and 0 of them
+     * reachable: the room was fine, the doorway opened onto a five-block drop.
+     *
+     * <p>Tier 0 is in the array for completeness and comes out at the value
+     * {@link #THRONE_FLOOR_MIN_Y} has always had by hand. There is no landing at
+     * {@code y = MIN_Y} (the bands loop in {@code shaftState} starts at 1), so what the term
+     * buys down there is clearance above {@link #FLOOR_TOP} instead: a floor at 8 puts the
+     * shell's underside at 6, one block above the uncarvable floor cap. Play-test round 2
+     * gave the tier its second tenant -- a larder may now pick any tier -- so the number stops
+     * being the throne's private constant and becomes the band's.
+     *
+     * <p>Declared here, above every consumer, because Java initialises static fields in
+     * textual order: {@link #THRONE_FLOOR_MIN_Y} and friends read out of this array and would
+     * see zeroes if it sat further down the file.
+     */
+    public static final int[] CHAMBER_FLOOR_MIN_Y_BY_TIER = {
+        MIN_Y + 0 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT,
+        MIN_Y + 1 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT,
+        MIN_Y + 2 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT,
+        MIN_Y + 3 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT,
+    };
+
+    /**
+     * Angle between two neighbouring chamber slots around a shared anchor ramp.
+     *
+     * <p>The nursery, garden and larder grids all have the same 96-block cell with the same
+     * {@code cell*96 + 48} centre, so for one cell all three resolve the <em>same</em> anchor
+     * ramp and hang at the same 24-block approach distance. Until play-test round 2 their
+     * approach bearings were three independent draws off three positional streams, and the
+     * three rooms were kept apart only by their disjoint Y bands -- see
+     * {@link ColonyNoise#larderForCell} for what that turned out to be worth once a larder was
+     * allowed to leave its band. They are now placed at explicit slots
+     * {@code 0 / 2pi/3 / 4pi/3} off one shared per-cell base bearing, so the separation is a
+     * property of the layout rather than of the seed.
+     */
+    public static final double CHAMBER_SLOT_STEP = 2.0 * Math.PI / 3.0;
+
+    /**
+     * How far a chamber may wander off its slot, each way.
+     *
+     * <p>Purely so a colony does not read as three rooms bolted to a compass rose; nothing
+     * depends on it being non-zero. 20 degrees is what the worst-case separation below can
+     * afford twice over -- two rooms can rotate toward each other, so the guaranteed angular
+     * gap is {@code CHAMBER_SLOT_STEP - 2 * this} = 80 degrees, not 100.
+     */
+    public static final double CHAMBER_SLOT_JITTER = Math.toRadians(20.0);
+
+    // ------------------------------------------------------------------
     // Solid palette
     // ------------------------------------------------------------------
 
@@ -615,8 +678,13 @@ public final class ColonyGeneratorTunables {
      * above this, and the ramp descends {@code 2*PI / RAMP_RADIANS_PER_BLOCK} = 24 blocks
      * per turn, so the floor always lands in {@code [8, 33)} and the interior
      * ({@code floor + 13}) plus its shell stays inside the Royal Depths band (y &lt; 48).
+     *
+     * <p>Round 2 stopped writing the 8 by hand: it is
+     * {@link #CHAMBER_FLOOR_MIN_Y_BY_TIER}{@code [0]}, the same tier-floor-plus-landing-
+     * clearance formula the other three bands use, and it has to stay that way now that a
+     * larder can pick tier 0 too. The value is unchanged.
      */
-    public static final int THRONE_FLOOR_MIN_Y = 8;
+    public static final int THRONE_FLOOR_MIN_Y = CHAMBER_FLOOR_MIN_Y_BY_TIER[0];
 
     /**
      * Widest a chamber's carve can reach from its centre; used to prune the per-column
@@ -715,9 +783,10 @@ public final class ColonyGeneratorTunables {
      * <p>Round 2 domed the landing, which is why this reads {@link #LANDING_INTERIOR_HEIGHT}
      * rather than {@link #LANDING_HEIGHT}: the rim is still 6 tall but the centre is 8, and
      * the corridor runs from 3 blocks out -- straight through where the dome is tallest. The
-     * two blocks the floors moved up are exactly the two the ceiling gained.
+     * two blocks the floors moved up are exactly the two the ceiling gained. The arithmetic
+     * itself now lives in {@link #CHAMBER_FLOOR_MIN_Y_BY_TIER}, one copy for all four bands.
      */
-    public static final int NURSERY_FLOOR_MIN_Y = MIN_Y + TIER_HEIGHT + LANDING_INTERIOR_HEIGHT;
+    public static final int NURSERY_FLOOR_MIN_Y = CHAMBER_FLOOR_MIN_Y_BY_TIER[1];
 
     /**
      * Widest a chamber's carve can reach from its centre; used to prune the per-column
@@ -840,7 +909,7 @@ public final class ColonyGeneratorTunables {
      * ({@code floor + 7}) plus its shell stays inside the Fungal Gardens band
      * ({@code y < 144}) with 8 blocks to spare even at the top of that range.
      */
-    public static final int GARDEN_FLOOR_MIN_Y = MIN_Y + 2 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT;
+    public static final int GARDEN_FLOOR_MIN_Y = CHAMBER_FLOOR_MIN_Y_BY_TIER[2];
 
     /**
      * Widest a chamber's carve can reach from its centre; used to prune the per-column
@@ -926,17 +995,21 @@ public final class ColonyGeneratorTunables {
     public static final double LARDER_CORRIDOR_END = LARDER_APPROACH_DISTANCE - LARDER_RADIUS + 2.0;
 
     /**
-     * Lowest floor the chamber will sit at -- tier 3 (Upper Galleries) rather than the
-     * nursery's tier 1, same landing-clearance reasoning as {@link #NURSERY_FLOOR_MIN_Y}
-     * (see its javadoc). The ramp turn chosen is the first one at or above this, and the
-     * ramp descends 24 blocks per turn, so the floor lands in {@code [152, 176)} -- the
-     * interior ({@code floor + 7}) plus its shell tops out at {@code y = 184}, under both
-     * the tier's own ceiling ({@code y < 192}) and the actual carvable roof
-     * ({@link #CEILING_BOTTOM} = 186), the tighter of the two. Two blocks of margin against
-     * the roof rather than the four it had before round 2 domed the landings; the interior
-     * itself tops out at 182.
+     * How many tiers a larder can be dug into -- all of them, since play-test round 2.
+     *
+     * <p>There is deliberately no {@code LARDER_FLOOR_MIN_Y} any more. A larder used to be
+     * anchored to one hard number (tier 3's 152), which is why every larder in the world was
+     * in the roof: food storage read as a property of the Upper Galleries rather than as a
+     * thing colonies do. The floor minimum is now
+     * {@link #CHAMBER_FLOOR_MIN_Y_BY_TIER}{@code [tier]} for a tier picked per cell, and the
+     * per-tier band containment is what {@link NoiseProbe}'s larder section asserts instead of
+     * a single band.
+     *
+     * <p>Uniform over {@code [0, TIER_COUNT)}, so about a quarter of larders land in each
+     * band. The one pick that is not free is tier 0 on the ramp the colony's throne hangs off
+     * -- see {@link ColonyNoise#larderForCell}.
      */
-    public static final int LARDER_FLOOR_MIN_Y = MIN_Y + 3 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT;
+    public static final int LARDER_TIER_COUNT = TIER_COUNT;
 
     /**
      * Widest a chamber's carve can reach from its centre; used to prune the per-column
@@ -945,6 +1018,101 @@ public final class ColonyGeneratorTunables {
     public static final double LARDER_MAX_REACH = Math.max(
             LARDER_RADIUS + LARDER_SHELL_THICKNESS,
             LARDER_APPROACH_DISTANCE - LARDER_CORRIDOR_START + LARDER_CORRIDOR_HALF_WIDTH) + 1.0;
+
+    // --- what the slot layout is worth, in blocks (shared by all three 96-grid kinds; it
+    // lives at the bottom of the larder section only because Java initialises static fields
+    // in textual order and this reads all three approach distances) ---
+
+    /**
+     * The closest two chambers sharing one cell -- and therefore one anchor ramp -- can
+     * possibly come, centre to centre in XZ.
+     *
+     * <p>All three hang at the same approach distance {@code A} from the same axis, at slots
+     * {@link #CHAMBER_SLOT_STEP} apart, each jittered by at most {@link #CHAMBER_SLOT_JITTER}.
+     * Two of them can rotate <em>toward</em> each other, so the guaranteed angular gap is
+     * {@code STEP - 2*JITTER} = 80 degrees (not 100 -- the jitter is spent twice), and the
+     * chord across it is {@code 2*A*sin(40 deg)} = <b>30.85</b> blocks.
+     *
+     * <p>What that has to clear is {@link #CHAMBER_SLOT_REQUIRED_SEPARATION} = 22.0, so the
+     * margin is <b>8.85 blocks</b>. {@link NoiseProbe}'s chamber-pair invariant measures the
+     * real minimum over a wide sweep rather than trusting this algebra -- the same
+     * "measure, do not guess" standard the nursery section's rejected 48-block cell set.
+     */
+    public static final double CHAMBER_SLOT_MIN_SEPARATION = 2.0
+            * Math.min(NURSERY_APPROACH_DISTANCE, Math.min(GARDEN_APPROACH_DISTANCE, LARDER_APPROACH_DISTANCE))
+            * Math.sin(0.5 * (CHAMBER_SLOT_STEP - 2.0 * CHAMBER_SLOT_JITTER));
+
+    /**
+     * What two same-cell chambers need between their centres: the largest of the three kinds
+     * (the garden, radius 8) counted twice, shell and corridor half-width included.
+     *
+     * <p>Deliberately the conservative reading. Two rooms only need
+     * {@code (R1+S1) + (R2+S2)} -- 19 for the worst real pair, garden and larder -- and the
+     * corridors radiate from the shared axis at the same 80-degree gap, so they diverge rather
+     * than converge as they leave it. Taking the biggest kind twice and adding both corridor
+     * half-widths costs nothing here and means the bound cannot be invalidated by retuning
+     * which kind is largest.
+     */
+    public static final double CHAMBER_SLOT_REQUIRED_SEPARATION =
+            2.0 * (GARDEN_RADIUS + GARDEN_SHELL_THICKNESS + GARDEN_CORRIDOR_HALF_WIDTH);
+
+    // --- keeping a tier-0 larder away from the queen (play-test round 2, item 7) ---
+    //
+    // The slots arrange the three rooms that share ONE ramp. The throne shares no grid with
+    // them, has no slot, and until this round no other room could reach its tier -- so once a
+    // larder could pick tier 0, nothing arranged the two at all. Measured, before this gate
+    // existed: 3 larders on seed 1234567 and 10 on seed 987654321 (of ~600 tier-0 larders per
+    // seed) overlapped a throne's carve, the worst pair 3.8 blocks centre to centre, up to
+    // 832 blocks where one wanted air and the other solid. Since the throne outranks the
+    // larder in ColonyNoise#isAir, every one of those is a larder that loses its room or its
+    // doorway. Seed 42 was clean, which is the whole reason this is a derived bound and not a
+    // three-seed spot check.
+
+    /**
+     * A ball around a throne's centre containing its entire carve.
+     *
+     * <p>Every part of the chamber -- dome, shell, and the approach corridor running back to
+     * its ramp axis -- lies inside this radius of the centre. The dome and shell need
+     * {@code THRONE_RADIUS + THRONE_SHELL_THICKNESS} = 16; the corridor is the larger term,
+     * and it is bounded by {@code THRONE_APPROACH_DISTANCE + THRONE_CORRIDOR_HALF_WIDTH} =
+     * 35.5, i.e. the whole ray from the centre to the axis plus the corridor's half-width.
+     *
+     * <p>Deliberately looser than {@link #THRONE_MAX_REACH}, which subtracts
+     * {@code THRONE_CORRIDOR_START} because the corridor stops short of the axis. Dropping
+     * that term costs three blocks and buys a bound that stays true for any corridor start,
+     * including 0.
+     */
+    public static final double THRONE_CARVE_ENVELOPE = Math.max(
+            THRONE_RADIUS + THRONE_SHELL_THICKNESS,
+            THRONE_APPROACH_DISTANCE + THRONE_CORRIDOR_HALF_WIDTH);
+
+    /** The same envelope for a larder: {@code max(7 + 2, 24 + 1)} = 25. */
+    public static final double LARDER_CARVE_ENVELOPE = Math.max(
+            LARDER_RADIUS + LARDER_SHELL_THICKNESS,
+            LARDER_APPROACH_DISTANCE + LARDER_CORRIDOR_HALF_WIDTH);
+
+    /** Blocks of solid fabric demanded between the two envelopes, so they never merely graze. */
+    public static final double THRONE_LARDER_MARGIN = 2.0;
+
+    /**
+     * How far a tier-0 larder's centre must be from its colony's throne centre. Closer than
+     * this and the cell's tier pick is bumped to 1 (see {@link ColonyNoise#larderForCell}).
+     *
+     * <p>Two envelopes plus a margin: {@code 35.5 + 25.0 + 2.0} = <b>62.5</b>. Because each
+     * envelope contains its chamber's whole carve, two centres this far apart cannot share a
+     * single block, whatever the seed did with the bearings, the shaft jitter or the colony
+     * jitter. That is the property a neighbourhood guard on shaft cells could not have: cells
+     * are a proxy for distance, and the measured near-misses at two cells' separation show the
+     * proxy is not tight. This bound also survives a retune of any approach distance, room
+     * radius, shell or corridor width, because it is computed from them.
+     *
+     * <p><b>It subsumes the same-shaft case</b> rather than sitting beside it. A larder
+     * sharing the throne's ramp hangs 24 from that axis while the throne hangs 34 from it, so
+     * the two centres are between 10 and 58 blocks apart -- always under 62.5. A separate
+     * same-shaft test would be dead code, and is gone.
+     */
+    public static final double THRONE_LARDER_CLEARANCE =
+            THRONE_CARVE_ENVELOPE + LARDER_CARVE_ENVELOPE + THRONE_LARDER_MARGIN;
 
     // --- wall decoration inside the chamber (ColonyChunkGenerator#decorateLarderSurface) ---
     //

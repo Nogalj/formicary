@@ -11,7 +11,10 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierMaxY;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierMinY;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
+import java.util.List;
 import java.util.Locale;
 
 import net.minecraft.util.RandomSource;
@@ -66,6 +69,7 @@ public final class NoiseProbe {
             thrones(noise);
             nurseries(noise);
             gardens(noise);
+            chamberSlots(noise);
             larders(noise);
             combPatches(noise);
             spawnDensity(noise);
@@ -87,6 +91,9 @@ public final class NoiseProbe {
         }
         if (what.equals("larder")) {
             larders(noise);
+        }
+        if (what.equals("slots")) {
+            chamberSlots(noise);
         }
         if (what.equals("comb")) {
             combPatches(noise);
@@ -1526,6 +1533,156 @@ public final class NoiseProbe {
         System.out.println(reached == eligible
                 ? "  PASS: every chamber that generates joins its ramp on foot."
                 : "  FAIL: " + (eligible - reached) + " generated chamber(s) do not join their ramp.");
+
+        larderWalksByTier(noise);
+    }
+
+    /**
+     * The walkability check again, but deliberately spread across all four tiers.
+     *
+     * <p>The anchor-colony sweep above is a handful of rooms and their tiers are whatever the
+     * seed picked, so on its own it can leave a whole band unexercised -- and the bands are
+     * exactly what changed this round. This one hunts for in-colony larders of each tier
+     * across a wide sweep and walks the first {@link #WALKS_PER_TIER} of each, so a tier whose
+     * floor minimum or landing clearance is wrong cannot hide behind three tiers that are
+     * right. The per-tier population found is printed whether or not it gets walked: a tier
+     * with no in-colony larders anywhere in the sweep would be a finding in itself.
+     */
+    private static void larderWalksByTier(ColonyNoise noise) {
+        int wide = 16;
+        List<List<ColonyNoise.Larder>> byTier = new ArrayList<>();
+        for (int tier = 0; tier < TIER_COUNT; tier++) {
+            byTier.add(new ArrayList<>());
+        }
+        for (int cx = -wide; cx <= wide; cx++) {
+            for (int cz = -wide; cz <= wide; cz++) {
+                ColonyNoise.Larder larder = noise.lardersNear(cx * ColonyGeneratorTunables.LARDER_SPACING,
+                        cz * ColonyGeneratorTunables.LARDER_SPACING)[4];
+                if (larder.inColony()) {
+                    byTier.get(larder.tier()).add(larder);
+                }
+            }
+        }
+
+        System.out.printf(Locale.ROOT,
+                "%n  walkability across the tiers (%dx%d cells, walking up to %d in-colony larders per tier):%n",
+                2 * wide + 1, 2 * wide + 1, WALKS_PER_TIER);
+        int walked = 0;
+        int walkable = 0;
+        int emptyTiers = 0;
+        for (int tier = 0; tier < TIER_COUNT; tier++) {
+            List<ColonyNoise.Larder> found = byTier.get(tier);
+            System.out.printf(Locale.ROOT, "  tier %d (%s): %d in-colony larders found, walking %d%n",
+                    tier, tierName(tier), found.size(), Math.min(WALKS_PER_TIER, found.size()));
+            if (found.isEmpty()) {
+                emptyTiers++;
+                continue;
+            }
+            for (int i = 0; i < Math.min(WALKS_PER_TIER, found.size()); i++) {
+                ColonyNoise.Larder larder = found.get(i);
+                walked++;
+                if (chamberWalk(noise, "larder", larder.centreX(), larder.centreZ(), larder.axisX(),
+                        larder.axisZ(), larder.floorY(), larder.floorY() + 1,
+                        ColonyGeneratorTunables.LARDER_RADIUS,
+                        larder.floorY() + ColonyGeneratorTunables.LARDER_WALL_HEIGHT
+                                + ColonyGeneratorTunables.LARDER_DOME_HEIGHT,
+                        "the larder floor")) {
+                    walkable++;
+                }
+            }
+        }
+        System.out.printf(Locale.ROOT, "  %d of %d walked larders join their ramp on foot%n", walkable, walked);
+        System.out.println(walkable == walked && emptyTiers == 0
+                ? "  PASS: a larder joins its ramp on foot in every one of the four tiers."
+                : emptyTiers > 0
+                        ? "  FAIL: " + emptyTiers + " tier(s) produced no in-colony larder to walk."
+                        : "  FAIL: " + (walked - walkable) + " larder(s) do not join their ramp.");
+    }
+
+    /** In-colony larders walked per tier by {@link #larderWalksByTier}. */
+    private static final int WALKS_PER_TIER = 2;
+
+    /**
+     * The same-cell slot layout (play-test round 2, item 7).
+     *
+     * <p>The nursery, garden and larder of one 96-block cell share a cell centre, therefore an
+     * anchor ramp, therefore a 24-block approach circle. Until this round their three approach
+     * bearings were three separate positional-stream draws and the three rooms landed within
+     * about 1.5 blocks of each other in XZ -- see {@code ColonyNoise#chamberBaseBearing} for
+     * why "three streams" was not "three directions". They are now placed at fixed slots 120
+     * degrees apart, and this is the measurement that the layout, not the seed, is what keeps
+     * them apart.
+     *
+     * <p>Run over every cell in the sweep whether or not the colony gate lets its rooms
+     * generate: the slot geometry is a property of the cell, and a bound measured only inside
+     * colonies would silently move the day {@code CHAMBER_ELIGIBILITY_MIN_F} is retuned.
+     */
+    private static void chamberSlots(ColonyNoise noise) {
+        System.out.printf(Locale.ROOT,
+                "%nsame-cell chamber slots (nursery / garden / larder, %.0f degrees apart, +-%.0f of jitter):%n",
+                Math.toDegrees(ColonyGeneratorTunables.CHAMBER_SLOT_STEP),
+                Math.toDegrees(ColonyGeneratorTunables.CHAMBER_SLOT_JITTER));
+
+        int cells = 8;
+        double minSeparation = Double.MAX_VALUE;
+        double minAngle = Double.MAX_VALUE;
+        int pairs = 0;
+        int violations = 0;
+        int belowRequired = 0;
+        for (int cx = -cells; cx <= cells; cx++) {
+            for (int cz = -cells; cz <= cells; cz++) {
+                ColonyNoise.Nursery nursery =
+                        noise.nurseriesNear(cx * ColonyGeneratorTunables.NURSERY_SPACING,
+                                cz * ColonyGeneratorTunables.NURSERY_SPACING)[4];
+                ColonyNoise.Garden garden = noise.gardensNear(cx * ColonyGeneratorTunables.GARDEN_SPACING,
+                        cz * ColonyGeneratorTunables.GARDEN_SPACING)[4];
+                ColonyNoise.Larder larder = noise.lardersNear(cx * ColonyGeneratorTunables.LARDER_SPACING,
+                        cz * ColonyGeneratorTunables.LARDER_SPACING)[4];
+                double[][] centres = {
+                    {nursery.centreX(), nursery.centreZ()},
+                    {garden.centreX(), garden.centreZ()},
+                    {larder.centreX(), larder.centreZ()},
+                };
+                double[][] dirs = {
+                    {nursery.dirX(), nursery.dirZ()},
+                    {garden.dirX(), garden.dirZ()},
+                    {larder.dirX(), larder.dirZ()},
+                };
+                for (int a = 0; a < 3; a++) {
+                    for (int b = a + 1; b < 3; b++) {
+                        double distance = Math.hypot(centres[a][0] - centres[b][0], centres[a][1] - centres[b][1]);
+                        double dot = dirs[a][0] * dirs[b][0] + dirs[a][1] * dirs[b][1];
+                        minAngle = Math.min(minAngle, Math.acos(Math.max(-1.0, Math.min(1.0, dot))));
+                        minSeparation = Math.min(minSeparation, distance);
+                        pairs++;
+                        if (distance < ColonyGeneratorTunables.CHAMBER_SLOT_MIN_SEPARATION - 1.0e-9) {
+                            violations++;
+                        }
+                        if (distance < ColonyGeneratorTunables.CHAMBER_SLOT_REQUIRED_SEPARATION) {
+                            belowRequired++;
+                        }
+                    }
+                }
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "  %d same-cell pairs over %dx%d cells: closest %.2f blocks apart (derived worst case %.2f),"
+                        + " narrowest bearing gap %.1f degrees (worst case %.1f)%n",
+                pairs, 2 * cells + 1, 2 * cells + 1, minSeparation,
+                ColonyGeneratorTunables.CHAMBER_SLOT_MIN_SEPARATION, Math.toDegrees(minAngle),
+                Math.toDegrees(ColonyGeneratorTunables.CHAMBER_SLOT_STEP
+                        - 2.0 * ColonyGeneratorTunables.CHAMBER_SLOT_JITTER));
+        System.out.println(violations == 0
+                ? "  PASS: every same-cell chamber pair clears the derived worst-case bound."
+                : "  FAIL: " + violations + " same-cell pair(s) came in under the derived worst-case bound.");
+        System.out.printf(Locale.ROOT,
+                "  required for two rooms of the largest kind (radius + shell + corridor, doubled): %.1f blocks;"
+                        + " margin at the measured minimum %.2f%n",
+                ColonyGeneratorTunables.CHAMBER_SLOT_REQUIRED_SEPARATION,
+                minSeparation - ColonyGeneratorTunables.CHAMBER_SLOT_REQUIRED_SEPARATION);
+        System.out.println(belowRequired == 0
+                ? "  PASS: no same-cell pair of chambers can touch."
+                : "  FAIL: " + belowRequired + " same-cell pair(s) are close enough for their shells to meet.");
     }
 
     /**
@@ -1561,26 +1718,33 @@ public final class NoiseProbe {
                         + " (before the colony gate; the comb line below reports how many generate)%n",
                 1.0e6 / Math.pow(ColonyGeneratorTunables.LARDER_SPACING, 2.0), perNursery);
 
-        // Band containment.
+        // Band containment -- against the tier each larder PICKED, not one fixed band.
         int cells = 8;
         int inBand = 0;
         int total = 0;
-        int minFloor = Integer.MAX_VALUE;
-        int maxTop = Integer.MIN_VALUE;
         int shell = (int) Math.ceil(ColonyGeneratorTunables.LARDER_SHELL_THICKNESS);
         int combChecked = 0;
         int combSolid = 0;
+        int[] perTier = new int[TIER_COUNT];
+        int[] perTierInColony = new int[TIER_COUNT];
+        int[] perTierMinFloor = new int[TIER_COUNT];
+        int[] perTierMaxTop = new int[TIER_COUNT];
+        Arrays.fill(perTierMinFloor, Integer.MAX_VALUE);
+        Arrays.fill(perTierMaxTop, Integer.MIN_VALUE);
         for (int cx = -cells; cx <= cells; cx++) {
             for (int cz = -cells; cz <= cells; cz++) {
                 ColonyNoise.Larder[] near = noise.lardersNear(cx * ColonyGeneratorTunables.LARDER_SPACING,
                         cz * ColonyGeneratorTunables.LARDER_SPACING);
                 ColonyNoise.Larder larder = near[4];
+                int tier = larder.tier();
                 int top = larder.floorY() + ColonyGeneratorTunables.LARDER_WALL_HEIGHT
                         + ColonyGeneratorTunables.LARDER_DOME_HEIGHT + shell;
                 total++;
-                minFloor = Math.min(minFloor, larder.floorY());
-                maxTop = Math.max(maxTop, top);
-                if (larder.floorY() - shell >= tierMinY(3) && top < tierMaxY(3)) {
+                perTier[tier]++;
+                perTierMinFloor[tier] = Math.min(perTierMinFloor[tier], larder.floorY());
+                perTierMaxTop[tier] = Math.max(perTierMaxTop[tier], top);
+                if (larder.floorY() >= ColonyGeneratorTunables.CHAMBER_FLOOR_MIN_Y_BY_TIER[tier]
+                        && larder.floorY() - shell >= tierMinY(tier) && top < tierMaxY(tier)) {
                     inBand++;
                 }
 
@@ -1590,6 +1754,7 @@ public final class NoiseProbe {
                 if (!larder.inColony()) {
                     continue;
                 }
+                perTierInColony[tier]++;
                 ColonyNoise.Larder[] justThis = {larder};
                 combChecked += 2;
                 combSolid += noise.larderState(justThis, larder.combX1(), larder.combY(), larder.combZ1())
@@ -1598,15 +1763,23 @@ public final class NoiseProbe {
                         == ColonyNoise.LARDER_SOLID ? 1 : 0;
             }
         }
+        System.out.printf(Locale.ROOT, "  %d chambers sampled, tier pick spread over %d tiers:%n",
+                total, TIER_COUNT);
+        for (int tier = 0; tier < TIER_COUNT; tier++) {
+            System.out.printf(Locale.ROOT,
+                    "    tier %d (%s, y[%d,%d), floor min %d): %3d picked (%4.1f%%), %3d in colony,"
+                            + " floors from %d, highest shell top %d%n",
+                    tier, tierName(tier), tierMinY(tier), tierMaxY(tier),
+                    ColonyGeneratorTunables.CHAMBER_FLOOR_MIN_Y_BY_TIER[tier], perTier[tier],
+                    100.0 * perTier[tier] / total, perTierInColony[tier],
+                    perTier[tier] == 0 ? -1 : perTierMinFloor[tier],
+                    perTier[tier] == 0 ? -1 : perTierMaxTop[tier]);
+        }
         System.out.printf(Locale.ROOT,
-                "  %d chambers sampled: floor y in [%d, %d], highest shell top y=%d; %d of %d wholly inside "
-                        + "the Upper Galleries band y[%d,%d)%n",
-                total, minFloor, maxTop - ColonyGeneratorTunables.LARDER_WALL_HEIGHT
-                        - ColonyGeneratorTunables.LARDER_DOME_HEIGHT - shell,
-                maxTop, inBand, total, tierMinY(3), tierMaxY(3));
+                "  %d of %d sit wholly inside the band they picked%n", inBand, total);
         System.out.println(inBand == total
-                ? "  PASS: every sampled chamber sits wholly inside the Upper Galleries tier."
-                : "  FAIL: a chamber crosses a tier boundary.");
+                ? "  PASS: every sampled chamber sits wholly inside its own picked tier."
+                : "  FAIL: a chamber crosses the boundary of the tier it picked.");
 
         System.out.printf(Locale.ROOT,
                 "  guaranteed Provision Comb: %d of %d positions (%d in-colony chambers of %d sampled, x %d each)"
@@ -1653,6 +1826,8 @@ public final class NoiseProbe {
                 ? "  PASS: no two sampled larder chambers overlap."
                 : "  FAIL: " + violations + " pair(s) overlap.");
 
+        throneClearance(noise);
+
         ColonyNoise.Colony anchor = anchor(noise);
         int anchorX = (int) Math.round(anchor.centreX());
         int anchorZ = (int) Math.round(anchor.centreZ());
@@ -1690,6 +1865,205 @@ public final class NoiseProbe {
         System.out.println(reached == eligible
                 ? "  PASS: every chamber that generates joins its ramp on foot."
                 : "  FAIL: " + (eligible - reached) + " generated chamber(s) do not join their ramp.");
+    }
+
+    /**
+     * The one collision the 120-degree slots cannot arrange: a tier-0 larder against the
+     * queen's throne (play-test round 2, item 7).
+     *
+     * <p>The throne is not on the 96-block grid, has no slot, and lives in the Royal Depths,
+     * which until this round no other room could reach. Two things are checked, and they are
+     * not the same question. The first is the guard the generator implements: every tier-0
+     * larder stands at least {@link ColonyGeneratorTunables#THRONE_LARDER_CLEARANCE} from its
+     * colony's throne centre. The second is what the guard is <em>for</em>: that no tier-0
+     * larder's carve reaches into a throne's room or its approach corridor at all -- asked of
+     * {@code larderState} and {@code throneState} themselves, block by block, because the
+     * throne outranks the larder in {@link ColonyNoise#isAir} and a position they claim
+     * differently is a position where the larder loses (a sealed room or a corridor with its
+     * doorway walled off, exactly the failure the 48-block nursery cell produced).
+     *
+     * <p>Keeping both matters. The first would still pass if the envelopes were derived wrong;
+     * the second is the only one that reads the real shapes, and it is what caught the earlier
+     * ramp-cell guard letting thrones one cell away through. The re-tier count is printed
+     * because a gate that fires on everything would satisfy both checks and quietly delete
+     * tier-0 larders from the world.
+     *
+     * <p>Swept much wider than the band checks above: the pairing needs a throne and a tier-0
+     * larder in the same neighbourhood, and thrones are one per 384 blocks.
+     */
+    private static void throneClearance(ColonyNoise noise) {
+        int wide = 24;
+        int shell = (int) Math.ceil(ColonyGeneratorTunables.LARDER_SHELL_THICKNESS);
+        double roomsRequired = ColonyGeneratorTunables.THRONE_RADIUS
+                + ColonyGeneratorTunables.THRONE_SHELL_THICKNESS
+                + ColonyGeneratorTunables.LARDER_RADIUS + ColonyGeneratorTunables.LARDER_SHELL_THICKNESS;
+        double carveReach = ColonyGeneratorTunables.THRONE_MAX_REACH + ColonyGeneratorTunables.LARDER_MAX_REACH;
+
+        int tierZero = 0;
+        int drewTierZero = 0;
+        int reTiered = 0;
+        int tooCloseToThrone = 0;
+        int roomsTooClose = 0;
+        int scanned = 0;
+        int clashing = 0;
+        int clashBlocks = 0;
+        double minClearance = Double.MAX_VALUE;
+        double minRoomGap = Double.MAX_VALUE;
+        for (int cx = -wide; cx <= wide; cx++) {
+            for (int cz = -wide; cz <= wide; cz++) {
+                ColonyNoise.Larder larder = noise.lardersNear(cx * ColonyGeneratorTunables.LARDER_SPACING,
+                        cz * ColonyGeneratorTunables.LARDER_SPACING)[4];
+                if (larder.tierDraw() == 0) {
+                    drewTierZero++;
+                    if (larder.tier() != 0) {
+                        reTiered++;
+                    }
+                }
+                if (larder.tier() != 0) {
+                    continue;
+                }
+                tierZero++;
+                int centreX = (int) Math.round(larder.centreX());
+                int centreZ = (int) Math.round(larder.centreZ());
+                ColonyNoise.Throne[] thrones = noise.thronesNear(centreX, centreZ);
+                boolean clashesHere = false;
+                for (ColonyNoise.Throne throne : thrones) {
+                    double gap = Math.hypot(throne.centreX() - larder.centreX(),
+                            throne.centreZ() - larder.centreZ());
+                    minClearance = Math.min(minClearance, gap);
+                    if (gap < ColonyGeneratorTunables.THRONE_LARDER_CLEARANCE) {
+                        tooCloseToThrone++;
+                    }
+                    // Only pairs whose Y ranges actually meet can collide at all.
+                    int larderBottom = larder.floorY() - shell;
+                    int larderTop = larder.floorY() + ColonyGeneratorTunables.LARDER_WALL_HEIGHT
+                            + ColonyGeneratorTunables.LARDER_DOME_HEIGHT + shell;
+                    int throneBottom = throne.floorY() - 2;
+                    int throneTop = throne.floorY() + ColonyGeneratorTunables.THRONE_WALL_HEIGHT
+                            + ColonyGeneratorTunables.THRONE_DOME_HEIGHT + 2;
+                    if (larderTop < throneBottom || throneTop < larderBottom) {
+                        continue;
+                    }
+                    minRoomGap = Math.min(minRoomGap, gap);
+                    if (gap < roomsRequired) {
+                        roomsTooClose++;
+                    }
+                    if (gap <= carveReach) {
+                        scanned++;
+                        int blocks = carveConflict(noise, larder, throne);
+                        clashBlocks += blocks;
+                        clashesHere |= blocks > 0;
+                        if (blocks > 0) {
+                            // Named, not just counted: a clash is a geometry bug, and the
+                            // shaft-cell offset between the two anchors is the whole diagnosis.
+                            System.out.printf(Locale.ROOT,
+                                    "    CLASH: larder cell (%d, %d) floor %d on ramp cell (%d, %d)"
+                                            + " vs throne floor %d on ramp cell (%d, %d)"
+                                            + " -- ramp offset (%d, %d), centres %.1f apart,"
+                                            + " %d block(s) they disagree about%n",
+                                    cx, cz, larder.floorY(), shaftCellOf(larder.axisX()),
+                                    shaftCellOf(larder.axisZ()), throne.floorY(), shaftCellOf(throne.axisX()),
+                                    shaftCellOf(throne.axisZ()),
+                                    shaftCellOf(throne.axisX()) - shaftCellOf(larder.axisX()),
+                                    shaftCellOf(throne.axisZ()) - shaftCellOf(larder.axisZ()), gap, blocks);
+                        }
+                    }
+                }
+                if (clashesHere) {
+                    clashing++;
+                }
+            }
+        }
+
+        System.out.printf(Locale.ROOT,
+                "  throne clearance over %dx%d cells: %d cells drew tier 0, %d of them re-tiered by the gate"
+                        + " (%.1f%%), leaving %d tier-0 larders%n",
+                2 * wide + 1, 2 * wide + 1, drewTierZero, reTiered,
+                drewTierZero == 0 ? 0.0 : 100.0 * reTiered / drewTierZero, tierZero);
+        System.out.println(reTiered > 0 && tierZero > 0
+                ? "  PASS: the gate fires, and leaves tier-0 larders in the world."
+                : "  FAIL: the gate " + (reTiered == 0 ? "never fires" : "re-tiered every tier-0 larder")
+                        + " -- one of the two is broken.");
+        System.out.printf(Locale.ROOT,
+                "  closest surviving tier-0 larder to any throne centre: %.1f blocks"
+                        + " (envelopes %.1f + %.1f + %.1f margin = %.1f required); %d under it%n",
+                minClearance == Double.MAX_VALUE ? -1.0 : minClearance,
+                ColonyGeneratorTunables.THRONE_CARVE_ENVELOPE, ColonyGeneratorTunables.LARDER_CARVE_ENVELOPE,
+                ColonyGeneratorTunables.THRONE_LARDER_MARGIN, ColonyGeneratorTunables.THRONE_LARDER_CLEARANCE,
+                tooCloseToThrone);
+        System.out.println(tooCloseToThrone == 0
+                ? "  PASS: every tier-0 larder clears its colony's throne by the full envelope bound."
+                : "  FAIL: " + tooCloseToThrone + " tier-0 larder(s) stand inside a throne's exclusion ball.");
+        System.out.printf(Locale.ROOT,
+                "  closest tier-0 larder to a throne whose Y range it shares: %.1f blocks centre to centre"
+                        + " (two rooms need %.1f); %d pair(s) under that%n",
+                minRoomGap == Double.MAX_VALUE ? -1.0 : minRoomGap, roomsRequired, roomsTooClose);
+        System.out.printf(Locale.ROOT,
+                "  %d larder/throne pair(s) close enough for their carves to meet were scanned block by block:"
+                        + " %d block(s) where one wants air and the other solid, across %d larder(s)%n",
+                scanned, clashBlocks, clashing);
+        System.out.println(clashBlocks == 0
+                ? "  PASS: no tier-0 larder reaches into a throne room or its corridor."
+                : "  FAIL: a tier-0 larder overlaps a throne's carve -- the throne outranks it, so that larder"
+                        + " loses room or doorway.");
+    }
+
+    /**
+     * The shaft cell a ramp axis belongs to. An axis lands within {@code SHAFT_JITTER/2} = 8
+     * of its cell's centre at {@code cell*48 + 24}, so it never leaves its own cell and the
+     * cell is recoverable from the coordinate alone.
+     */
+    private static int shaftCellOf(double axis) {
+        return Math.floorDiv((int) Math.floor(axis), ColonyGeneratorTunables.SHAFT_SPACING);
+    }
+
+    /**
+     * How many blocks one larder and one throne <b>disagree</b> about.
+     *
+     * <p>Scanned rather than reasoned about: the corridors are thin, they radiate from two
+     * different ramp axes, and "do these two shapes touch" is not something the centre-to-centre
+     * distance answers. The box is the larder's own -- {@code LARDER_MAX_REACH} covers its dome,
+     * its shell and its whole corridor back to within a block of its axis -- because the
+     * question is which of the larder's blocks the throne takes away.
+     *
+     * <p>Only real conflicts count. The throne outranks the larder in
+     * {@link ColonyNoise#isAir}, so a position both claim matters exactly when they claim it
+     * for <em>different</em> things: the larder's air answered solid by a throne shell (a
+     * room or doorway sealed) or the larder's shell answered air by a throne interior (a wall
+     * punched open into the queen's room). Two shells meeting is two solid blocks agreeing and
+     * is not a defect -- counting it would report a failure the world does not have.
+     */
+    private static int carveConflict(ColonyNoise noise, ColonyNoise.Larder larder, ColonyNoise.Throne throne) {
+        ColonyNoise.Larder[] justLarder = {larder};
+        ColonyNoise.Throne[] justThrone = {throne};
+        int reach = (int) Math.ceil(ColonyGeneratorTunables.LARDER_MAX_REACH) + 1;
+        int centreX = (int) Math.round(larder.centreX());
+        int centreZ = (int) Math.round(larder.centreZ());
+        int shell = (int) Math.ceil(ColonyGeneratorTunables.LARDER_SHELL_THICKNESS);
+        int bottom = larder.floorY() - shell;
+        int top = larder.floorY() + ColonyGeneratorTunables.LARDER_WALL_HEIGHT
+                + ColonyGeneratorTunables.LARDER_DOME_HEIGHT + shell;
+        int conflicts = 0;
+        for (int x = centreX - reach; x <= centreX + reach; x++) {
+            for (int z = centreZ - reach; z <= centreZ + reach; z++) {
+                for (int y = bottom; y <= top; y++) {
+                    int larderSays = noise.larderState(justLarder, x, y, z);
+                    if (larderSays == ColonyNoise.LARDER_NONE) {
+                        continue;
+                    }
+                    int throneSays = noise.throneState(justThrone, x, y, z);
+                    if (throneSays == ColonyNoise.THRONE_NONE) {
+                        continue;
+                    }
+                    boolean larderAir = larderSays == ColonyNoise.LARDER_AIR;
+                    boolean throneAir = throneSays == ColonyNoise.THRONE_AIR;
+                    if (larderAir != throneAir) {
+                        conflicts++;
+                    }
+                }
+            }
+        }
+        return conflicts;
     }
 
     /**
