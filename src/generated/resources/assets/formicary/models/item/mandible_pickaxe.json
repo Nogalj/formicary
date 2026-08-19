@@ -1,6 +1,6 @@
 {
   "parent": "minecraft:item/handheld",
   "textures": {
-    "layer0": "formicary:item/chitin_shovel"
+    "layer0": "formicary:item/mandible_pickaxe"
   }
 }

@@ -10,12 +10,12 @@
     }
   },
   "pattern": [
-    "XX",
-    " Y",
-    " Y"
+    "XXX",
+    " Y ",
+    " Y "
   ],
   "result": {
     "count": 1,
-    "id": "formicary:chitin_hoe"
+    "id": "formicary:mandible_pickaxe"
   }
 }

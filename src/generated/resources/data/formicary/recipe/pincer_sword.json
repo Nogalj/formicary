@@ -11,11 +11,11 @@
   },
   "pattern": [
     "X",
-    "Y",
+    "X",
     "Y"
   ],
   "result": {
     "count": 1,
-    "id": "formicary:chitin_shovel"
+    "id": "formicary:pincer_sword"
   }
 }

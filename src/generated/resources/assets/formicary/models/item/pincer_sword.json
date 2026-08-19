@@ -1,6 +1,6 @@
 {
   "parent": "minecraft:item/handheld",
   "textures": {
-    "layer0": "formicary:item/chitin_pickaxe"
+    "layer0": "formicary:item/pincer_sword"
   }
 }
