@@ -522,14 +522,15 @@ public final class ColonyGeneratorTunables {
      * How many ender ants {@code ColonyChunkGenerator} seeds into each colony's fringe when
      * its chunks generate, inclusive range.
      *
-     * <p>Two or three, not a dozen: these are the ones that are guaranteed to still be there
-     * when a player first walks the ring (they are the only persistence-required ender ants
-     * -- see {@code EnderAntEntity}'s despawn-policy javadoc), and their job is to make the
-     * caste's existence discoverable. The population you actually fight comes from runtime
-     * spawning out in the dark wilds.
+     * <p>Four to six, not a dozen (Ep2 play-test round: bumped up from 2-3 to make the caste
+     * more common): these are the ones that are guaranteed to still be there when a player
+     * first walks the ring (they are the only persistence-required ender ants -- see
+     * {@code EnderAntEntity}'s despawn-policy javadoc), and their job is to make the caste's
+     * existence discoverable. The population you actually fight comes from runtime spawning
+     * out in the dark wilds.
      */
-    public static final int COLONY_ENDER_ANTS_MIN = 2;
-    public static final int COLONY_ENDER_ANTS_MAX = 3;
+    public static final int COLONY_ENDER_ANTS_MIN = 4;
+    public static final int COLONY_ENDER_ANTS_MAX = 6;
 
     /**
      * The colony-field band the seeded ants are placed in -- the core's fringe.
