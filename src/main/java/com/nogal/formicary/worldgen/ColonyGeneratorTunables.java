@@ -952,7 +952,15 @@ public final class ColonyGeneratorTunables {
     // Provision Comb is what makes this room worth finding: the affordability floor's own
     // pearls live inside it (see ModBlockLootSubProvider#provisionCombTable).
 
-    public static final double LARDER_PROVISION_COMB_CHANCE = 0.18;
+    /**
+     * Provision Comb density on a larder's walls. Play-test round 2 drops it hard, 0.18 to
+     * 0.035, and the reason is the loot table rather than the look: a larder was carrying
+     * roughly thirty of these, and every one of them was an unconditional 1-2 ender pearls.
+     * With the rework (see {@code ModBlockLootSubProvider#provisionCombTable}) each comb is
+     * worth breaking, so the right number of them is small: about 4 rolled plus the 2
+     * guaranteed, six per room.
+     */
+    public static final double LARDER_PROVISION_COMB_CHANCE = 0.035;
     public static final double LARDER_BROOD_COMB_CHANCE = 0.50;
 
     // --- the guaranteed minimum (spec: "a deterministic minimum of 2 per larder from the

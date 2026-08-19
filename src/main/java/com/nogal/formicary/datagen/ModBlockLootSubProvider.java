@@ -12,11 +12,14 @@ import net.minecraft.advancements.critereon.StatePropertiesPredicate;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.loot.BlockLootSubProvider;
 import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraft.world.level.storage.loot.LootTable;
+import net.minecraft.world.level.storage.loot.entries.EmptyLootItem;
 import net.minecraft.world.level.storage.loot.entries.LootItem;
+import net.minecraft.world.level.storage.loot.entries.LootPoolSingletonContainer;
 import net.minecraft.world.level.storage.loot.functions.SetItemCountFunction;
 import net.minecraft.world.level.storage.loot.predicates.LootItemBlockStatePropertyCondition;
 import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
@@ -55,6 +58,12 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 public class ModBlockLootSubProvider extends BlockLootSubProvider {
     /** Royal Jelly per Royal Comb broken without Silk Touch. Tunable per spec ("1"). */
     private static final float ROYAL_COMB_JELLY = 1.0F;
+
+    /**
+     * Chance a Provision Comb carries an ender pearl (play-test round 2). A bonus, not the
+     * exit economy's floor -- that moved to the ender ant. See {@link #provisionCombTable}.
+     */
+    private static final float PROVISION_PEARL_CHANCE = 0.05F;
 
     public ModBlockLootSubProvider(HolderLookup.Provider registries) {
         super(Set.of(), FeatureFlags.REGISTRY.allFlags(), registries);
@@ -128,30 +137,68 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
     }
 
     /**
-     * Provision Comb's loot (spec section 2/3, Ep2 D1): the affordability floor for the
-     * exit economy. Every break -- no Silk Touch special case, per the task brief --
-     * guarantees 1-2 ender pearls (so a player can always find a way out, even having
-     * arrived on their last one) plus 1-2 of the three new colony foods, picked at random
-     * from an equal-weight pool of the three entries: one roll draws one entry, so a
-     * {@code UniformGenerator(1, 2)} roll count over three equally-weighted
-     * {@code LootItem} entries is "1-2 of the three foods" exactly, the same
-     * rolls-over-weighted-entries shape {@code fungalSporeCropTable}'s mature pool uses
-     * for a single item's count. Deliberately not wrapped in {@code applyExplosionDecay}/
-     * {@code applyExplosionCondition} -- {@code fungalSporeCropTable} (multi-item, like
-     * this one) sets that precedent in this same file; {@code resinWeepTable} (single
-     * item) is the one that wraps.
+     * Provision Comb's loot: the colony's larder, reworked in play-test round 2.
+     *
+     * <p><b>The pearls moved out.</b> Ep2 made this block the exit economy's affordability
+     * floor -- an unconditional 1-2 ender pearls per break, so a player who arrived on their
+     * last one could always leave. Round 2 re-routes that floor to the ender ant (a
+     * guaranteed pearl per kill, and 4-6 seeded per colony), which puts the way home behind
+     * an encounter rather than behind a wall you already found. What is left here is a 5%
+     * bonus: still a reason to break every comb in the room, no longer the reason.
+     *
+     * <p>Three pools, each a different shape on purpose:
+     * <ul>
+     *   <li><b>Pearls</b> -- one roll of exactly 1, behind {@code random_chance 0.05}. A
+     *       chance condition rather than an {@code empty} entry with a weight, because at
+     *       one entry the two are equivalent and the condition says what it means.</li>
+     *   <li><b>Food</b> -- 1-2 rolls over three weighted entries (Honeyed Comb 6, Fungal
+     *       Stew 4, Royal Jelly Treat 1). The weights are the change: an equal-weight pool
+     *       made Royal Jelly Treat, the expensive one, as common as bread. 6/4/1 keeps every
+     *       break useful and the treat a find.</li>
+     *   <li><b>Ore</b> -- one roll over a weighted table with a heavy {@code empty} entry
+     *       (25 of 85, so ~71% of breaks yield something). New in round 2: a larder is where
+     *       a colony puts what it dragged home, and a dimension whose only material reward
+     *       was its own blocks gave a player nothing to carry back out. The ladder is
+     *       vanilla's own scarcity order -- coal 20 down to emerald 1 -- with the counts
+     *       tapering the same way, so the tail is a moment rather than a payout.</li>
+     * </ul>
+     *
+     * <p>Deliberately not wrapped in {@code applyExplosionDecay}/{@code applyExplosionCondition}
+     * -- {@code fungalSporeCropTable} (multi-item, like this one) sets that precedent in this
+     * same file.
      */
     private LootTable.Builder provisionCombTable() {
         return LootTable.lootTable()
                 .withPool(LootPool.lootPool()
                         .setRolls(ConstantValue.exactly(1.0F))
-                        .add(LootItem.lootTableItem(Items.ENDER_PEARL)
-                                .apply(SetItemCountFunction.setCount(UniformGenerator.between(1.0F, 2.0F)))))
+                        .when(LootItemRandomChanceCondition.randomChance(PROVISION_PEARL_CHANCE))
+                        .add(LootItem.lootTableItem(Items.ENDER_PEARL)))
                 .withPool(LootPool.lootPool()
                         .setRolls(UniformGenerator.between(1.0F, 2.0F))
-                        .add(LootItem.lootTableItem(ModItems.HONEYED_COMB.get()))
-                        .add(LootItem.lootTableItem(ModItems.FUNGAL_STEW.get()))
-                        .add(LootItem.lootTableItem(ModItems.ROYAL_JELLY_TREAT.get())));
+                        .add(LootItem.lootTableItem(ModItems.HONEYED_COMB.get()).setWeight(6))
+                        .add(LootItem.lootTableItem(ModItems.FUNGAL_STEW.get()).setWeight(4))
+                        .add(LootItem.lootTableItem(ModItems.ROYAL_JELLY_TREAT.get()).setWeight(1)))
+                .withPool(LootPool.lootPool()
+                        .setRolls(ConstantValue.exactly(1.0F))
+                        .add(oreEntry(Items.COAL, 20, 1.0F, 3.0F))
+                        .add(oreEntry(Items.RAW_COPPER, 14, 1.0F, 3.0F))
+                        .add(oreEntry(Items.RAW_IRON, 12, 1.0F, 3.0F))
+                        .add(oreEntry(Items.RAW_GOLD, 6, 1.0F, 2.0F))
+                        .add(oreEntry(Items.LAPIS_LAZULI, 5, 1.0F, 2.0F))
+                        .add(oreEntry(Items.DIAMOND, 2, 1.0F, 1.0F))
+                        .add(oreEntry(Items.EMERALD, 1, 1.0F, 1.0F))
+                        .add(EmptyLootItem.emptyItem().setWeight(25)));
+    }
+
+    /**
+     * One weighted entry of {@link #provisionCombTable}'s ore pool. {@code min == max} still
+     * goes through {@code SetItemCountFunction} rather than being left implicit, so every row
+     * of that pool reads as the same kind of thing.
+     */
+    private static LootPoolSingletonContainer.Builder<?> oreEntry(Item item, int weight, float min, float max) {
+        return LootItem.lootTableItem(item)
+                .setWeight(weight)
+                .apply(SetItemCountFunction.setCount(UniformGenerator.between(min, max)));
     }
 
     /**
