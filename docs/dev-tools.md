@@ -112,6 +112,10 @@ $env:JAVA_HOME = "C:\Users\Family\.jdks\jdk-21.0.11+10"
 .\gradlew runClient
 ```
 
+(For a human launch, `play.cmd` at the repo root is the same thing double-clickable --
+it sets `JAVA_HOME` itself, builds current code, and opens the client. Keep its console
+window open while playing; closing it closes Minecraft.)
+
 ...and open a world. The autopilot arms the moment a player exists in a level, whichever
 world that is.
 
