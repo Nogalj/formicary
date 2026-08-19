@@ -9,7 +9,12 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CLUSTER_WORKE
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.FLOOR_TOP;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_FUNGAL_BLOOM_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_FUNGAL_CARPET_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_SOLDIERS_MAX;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_SOLDIERS_MIN;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_SPORE_CROP_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_WORKERS_MAX;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_WORKERS_MIN;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_BROOD_COMB_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_PROVISION_COMB_CHANCE;
@@ -20,6 +25,10 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_LARVA
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_LARVAE_MIN;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_ROYAL_COMB_CHANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_SOLDIERS_MAX;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_SOLDIERS_MIN;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_WORKERS_MAX;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_WORKERS_MIN;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.RESIN_BLOCK_CHANCE_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ROOMY_CLEARANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ROYAL_COMB_CHANCE_BY_TIER;
@@ -685,6 +694,8 @@ public class ColonyChunkGenerator extends ChunkGenerator {
 
         spawnQueenIfThisChunkHoldsAThrone(level, chunkPos);
         spawnLarvaeInNurseryChambers(level, chunkPos, random);
+        staffNurseryChambers(level, chunkPos, random);
+        staffGardenChambers(level, chunkPos, random);
         seedEnderAntsOnTheColonyFringe(level, chunkPos, random);
 
         // One field sample per chunk, at its centre: cluster density is a property of "which
@@ -719,11 +730,11 @@ public class ColonyChunkGenerator extends ChunkGenerator {
     private void spawnQueenIfThisChunkHoldsAThrone(WorldGenRegion level, ChunkPos chunkPos) {
         ColonyNoise noise = noise(level.getLevel().getChunkSource().randomState());
         for (ColonyNoise.Throne throne : noise.thronesNear(chunkPos.getMinBlockX(), chunkPos.getMinBlockZ())) {
-            int x = (int) Math.round(throne.centreX());
-            int z = (int) Math.round(throne.centreZ());
-            if (SectionPos.blockToSectionCoord(x) != chunkPos.x || SectionPos.blockToSectionCoord(z) != chunkPos.z) {
+            if (!holdsCentreColumn(chunkPos, throne.centreX(), throne.centreZ())) {
                 continue;
             }
+            int x = (int) Math.round(throne.centreX());
+            int z = (int) Math.round(throne.centreZ());
             BlockPos seat = new BlockPos(x, throne.floorY() + THRONE_DAIS_HEIGHT + 1, z);
             QueenAntEntity queen = ModEntities.QUEEN_ANT.get().create(level.getLevel());
             if (queen == null) {
@@ -824,12 +835,11 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             if (!nursery.inColony()) {
                 continue;
             }
-            int centreX = (int) Math.round(nursery.centreX());
-            int centreZ = (int) Math.round(nursery.centreZ());
-            if (SectionPos.blockToSectionCoord(centreX) != chunkPos.x
-                    || SectionPos.blockToSectionCoord(centreZ) != chunkPos.z) {
+            if (!holdsCentreColumn(chunkPos, nursery.centreX(), nursery.centreZ())) {
                 continue;
             }
+            int centreX = (int) Math.round(nursery.centreX());
+            int centreZ = (int) Math.round(nursery.centreZ());
             int count = between(NURSERY_LARVAE_MIN, NURSERY_LARVAE_MAX, random);
             for (int i = 0; i < count; i++) {
                 // Spread around the floor on a ring well inside the wall, so a larva never
@@ -855,6 +865,113 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             Formicary.LOGGER.info("Formicary: seeded {} larvae in the nursery chamber at ({}, {}, {})",
                     count, centreX, nursery.floorY() + 1, centreZ);
         }
+    }
+
+    /**
+     * Staffs each nursery chamber with the workers and soldiers that tend its brood
+     * (play-test round 2, item 4), exactly once per chamber.
+     *
+     * <p>Same mechanism as {@link #spawnLarvaeInNurseryChambers} directly above, and
+     * deliberately a separate pass rather than extra members of that method: the two answer
+     * different questions ("what is being raised here" against "who is raising it") and the
+     * counts are tuned independently.
+     *
+     * <p>Why chamber-anchored seeding rather than a bump to
+     * {@code SPAWN_CLUSTERS_PER_CHUNK_BY_TIER}: the per-chunk clusters are a density, so
+     * raising them puts more ants in the tier and still leaves any individual room empty
+     * about as often as before. "Every nursery has somebody in it" is a statement about a
+     * nursery, and only a per-chamber placement can make it true.
+     */
+    private void staffNurseryChambers(WorldGenRegion level, ChunkPos chunkPos, RandomSource random) {
+        ColonyNoise noise = noise(level.getLevel().getChunkSource().randomState());
+        for (ColonyNoise.Nursery nursery : noise.nurseriesNear(chunkPos.getMinBlockX(), chunkPos.getMinBlockZ())) {
+            if (!nursery.inColony() || !holdsCentreColumn(chunkPos, nursery.centreX(), nursery.centreZ())) {
+                continue;
+            }
+            staffChamber(level, random, "nursery", nursery.centreX(), nursery.centreZ(), nursery.floorY(),
+                    NURSERY_RADIUS, between(NURSERY_WORKERS_MIN, NURSERY_WORKERS_MAX, random),
+                    between(NURSERY_SOLDIERS_MIN, NURSERY_SOLDIERS_MAX, random));
+        }
+    }
+
+    /**
+     * Staffs each garden chamber with the workers who farm it and their escort (play-test
+     * round 2, item 3). Identical construction to {@link #staffNurseryChambers}.
+     */
+    private void staffGardenChambers(WorldGenRegion level, ChunkPos chunkPos, RandomSource random) {
+        ColonyNoise noise = noise(level.getLevel().getChunkSource().randomState());
+        for (ColonyNoise.Garden garden : noise.gardensNear(chunkPos.getMinBlockX(), chunkPos.getMinBlockZ())) {
+            if (!garden.inColony() || !holdsCentreColumn(chunkPos, garden.centreX(), garden.centreZ())) {
+                continue;
+            }
+            staffChamber(level, random, "garden", garden.centreX(), garden.centreZ(), garden.floorY(),
+                    GARDEN_RADIUS, between(GARDEN_WORKERS_MIN, GARDEN_WORKERS_MAX, random),
+                    between(GARDEN_SOLDIERS_MIN, GARDEN_SOLDIERS_MAX, random));
+        }
+    }
+
+    /**
+     * Whether {@code chunkPos} is the chunk containing a chamber's centre column -- the
+     * once-ever hook every chamber-anchored placement in this class hangs off. Factored out
+     * of the three call sites that repeat it; {@code ChunkStatus.SPAWN} runs once in a
+     * chunk's life, so "the chunk holding the centre does it" needs no marker or saved flag.
+     */
+    private static boolean holdsCentreColumn(ChunkPos chunkPos, double centreX, double centreZ) {
+        return SectionPos.blockToSectionCoord((int) Math.round(centreX)) == chunkPos.x
+                && SectionPos.blockToSectionCoord((int) Math.round(centreZ)) == chunkPos.z;
+    }
+
+    /**
+     * Places one chamber's ants on its floor: soldiers first, then workers, spread on a ring
+     * well inside the wall exactly the way {@link #spawnLarvaeInNurseryChambers} spreads its
+     * brood.
+     *
+     * <p>{@code floorY + 1} is taken rather than searched for, on the same guarantee the
+     * larva placement rests on: the chamber's floor slab is forced solid by the same pure
+     * function that carved the room ({@code ColonyNoise#nurseryState} and its siblings return
+     * SOLID at {@code height == 0}), and {@code WorldgenGameTests
+     * #a_nursery_chamber_has_a_solid_floor_and_clear_air_above_it} asserts it. So this is a
+     * ground snap by construction, not by luck -- no {@code findFloor} scan, which could not
+     * be trusted to stay inside the room anyway.
+     *
+     * <p>{@code setPersistenceRequired} is deliberately NOT called. Both castes override
+     * {@code removeWhenFarAway} to {@code false} at class level, so they are already
+     * unconditionally persistent; see the tunables' own note.
+     */
+    private void staffChamber(WorldGenRegion level, RandomSource random, String kind,
+            double centreX, double centreZ, int floorY, double radius, int workers, int soldiers) {
+        int total = workers + soldiers;
+        if (total == 0) {
+            return;
+        }
+        SpawnGroupData[] soldierGroup = new SpawnGroupData[1];
+        SpawnGroupData[] workerGroup = new SpawnGroupData[1];
+        int placed = 0;
+        for (int member = 0; member < total; member++) {
+            boolean soldier = member < soldiers;
+            EntityType<? extends Mob> type = soldier ? ModEntities.SOLDIER_ANT.get() : ModEntities.WORKER_ANT.get();
+            SpawnGroupData[] groupData = soldier ? soldierGroup : workerGroup;
+
+            double angle = (member + random.nextDouble()) * Math.PI * 2.0 / total;
+            double spread = (radius - 2.0) * Math.sqrt(random.nextDouble());
+            double x = centreX + Math.cos(angle) * spread;
+            double z = centreZ + Math.sin(angle) * spread;
+            int y = floorY + 1;
+
+            Entity entity = type.create(level.getLevel());
+            if (!(entity instanceof Mob ant)) {
+                Formicary.LOGGER.warn("Formicary: could not create a {} ant for the {} chamber at ({}, {})",
+                        soldier ? "soldier" : "worker", kind, (int) Math.round(centreX), (int) Math.round(centreZ));
+                continue;
+            }
+            ant.moveTo(x, y, z, random.nextFloat() * 360.0F, 0.0F);
+            groupData[0] = ant.finalizeSpawn(level, level.getCurrentDifficultyAt(BlockPos.containing(x, y, z)),
+                    MobSpawnType.CHUNK_GENERATION, groupData[0]);
+            level.addFreshEntityWithPassengers(ant);
+            placed++;
+        }
+        Formicary.LOGGER.info("Formicary: staffed the {} chamber at ({}, {}, {}) with {} ants ({} soldiers)",
+                kind, (int) Math.round(centreX), floorY + 1, (int) Math.round(centreZ), placed, soldiers);
     }
 
     /**

@@ -684,9 +684,38 @@ public final class ColonyGeneratorTunables {
     public static final double NURSERY_ROYAL_COMB_CHANCE = 0.012;
     public static final double NURSERY_EGG_CLUSTER_CHANCE = 0.140;
 
-    /** Larvae seeded on a nursery chamber's floor when its chunk generates. */
-    public static final int NURSERY_LARVAE_MIN = 2;
+    /**
+     * Larvae seeded on a nursery chamber's floor when its chunk generates.
+     *
+     * <p>Round 2 raises the floor from 2 to 3. The range is what a player finds in the one
+     * room type that produces the taming loop's input at all, so its LOWER end is the number
+     * that matters -- a 2-larva room is one failed taming attempt away from being a room with
+     * nothing in it.
+     */
+    public static final int NURSERY_LARVAE_MIN = 3;
     public static final int NURSERY_LARVAE_MAX = 4;
+
+    // --- the chamber's own staff (round 2) -------------------------------------
+    //
+    // Play-test round 2: the chambers were furnished but unstaffed -- a brood room with
+    // nobody tending it, a farm with nobody working it. These are seeded the same way the
+    // brood is (a pure function of the chamber, placed once by the chunk that holds its
+    // centre column), NOT by raising SPAWN_CLUSTERS_PER_CHUNK_BY_TIER: cluster density is a
+    // property of a chunk, and "every nursery has ants in it" is a property of a nursery.
+    //
+    // No per-instance persistence flag is needed or wanted, unlike the larvae and the seeded
+    // ender ants above: WorkerAntEntity and SoldierAntEntity both override
+    // removeWhenFarAway to false at class level, so every ant of those two castes in the
+    // world is already unconditionally persistent. Calling setPersistenceRequired on top
+    // would be a second, weaker statement of a guarantee the class already makes.
+
+    /** Workers seeded on a nursery chamber's floor, inclusive range. */
+    public static final int NURSERY_WORKERS_MIN = 2;
+    public static final int NURSERY_WORKERS_MAX = 3;
+
+    /** Soldiers guarding a nursery chamber, inclusive range. Brood is what gets guarded. */
+    public static final int NURSERY_SOLDIERS_MIN = 1;
+    public static final int NURSERY_SOLDIERS_MAX = 2;
 
     // ------------------------------------------------------------------
     // Fungus Garden chambers (Ep2 D2) -- the colony's farm rooms, cloned end to end from
@@ -785,6 +814,20 @@ public final class ColonyGeneratorTunables {
     public static final double GARDEN_SPORE_CROP_CHANCE = 0.16;
     public static final double GARDEN_FUNGAL_BLOOM_CHANCE = 0.24;
     public static final double GARDEN_FUNGAL_CARPET_CHANCE = 0.52;
+
+    // --- the farm's own staff (round 2) -- see the nursery's own block above for why
+    // this is chamber-anchored seeding rather than a bump to the per-chunk cluster
+    // density, and for why no per-instance persistence flag is set. One soldier rather
+    // than the nursery's one-or-two: a farm is worth guarding, brood is worth guarding
+    // more.
+
+    /** Workers seeded on a garden chamber's floor, inclusive range. */
+    public static final int GARDEN_WORKERS_MIN = 2;
+    public static final int GARDEN_WORKERS_MAX = 3;
+
+    /** Soldiers escorting a garden chamber's workers, inclusive range. */
+    public static final int GARDEN_SOLDIERS_MIN = 1;
+    public static final int GARDEN_SOLDIERS_MAX = 1;
 
     // ------------------------------------------------------------------
     // Larder chambers (Ep2 D3) -- the colony's food storage rooms, cloned end to end from
