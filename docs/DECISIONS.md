@@ -1475,3 +1475,72 @@ jittered 384-block grid, sparse wilds between them.
   property the spine actually needs: every ramp floor block inside the landing's Y range
   still carries `RAMP_AIR_HEIGHT` of air above it. 0 of ~537 per landing per tier boundary,
   on all three seeds.
+- **The three 96-grid chambers take explicit angular slots, because three seeded streams were
+  not three directions.** The nursery, garden and larder grids share a cell size (96), a cell
+  centre (`cell*96 + 48`), the anchor ramp that centre resolves to, and an approach distance
+  (24), so all that separated their rooms in XZ was three approach bearings drawn off three
+  positional streams -- and measured on seed 1234567 the three rooms of a cell landed within
+  about 1.5 blocks of each other. They were kept apart entirely by their disjoint Y bands,
+  which is fine right up until a chamber kind is allowed to change band. They are now placed
+  at fixed slots (nursery `base + 0`, garden `base + 2pi/3`, larder `base + 4pi/3`) off ONE
+  shared per-cell base bearing, each jittered by at most 20 degrees off its slot.
+  Worst case two rooms rotate toward each other, so the guaranteed gap is `120 - 2*20` = 80
+  degrees, not 100, and the chord is `2*24*sin(40 deg)` = **30.85** blocks against the 22.0
+  two rooms of the largest kind need. Measured minimum over 867 same-cell pairs: 31.06 / 31.46
+  / 30.94 on the three seeds. Correlated jitter cannot hurt this -- if all three jitters come
+  out equal the rooms simply rotate together -- only a correlated base could, and there is now
+  one base.
+- **The RNG finding behind it, because it will bite something else.** `factory.at(x, y, z)` on
+  the real `XoroshiroPositionalRandomFactory` is
+  `new XoroshiroRandomSource(Mth.getSeed(x, y, z) ^ seedLo, seedHi)`. `y` enters only through
+  `Mth.getSeed`'s low three bits; that value is mixed by a single quadratic
+  (`i*i*42317861 + i*11`) and shifted right 16, so near the origin the whole pre-mix quantity
+  is small enough that the `y` difference survives only in the low bits of `seedLo`. `seedHi`
+  is byte-identical across the calls, and Xoroshiro's FIRST output is one rotate-and-add --
+  not enough diffusion to carry a low-bit difference into the top 53 bits `nextDouble` reads.
+  Measured: at cell (0, 0) the y = 2 / 3 / 4 / 7 first draws agree to nine decimal places; over
+  the 17x17 cells the probe samples, the mean angular gap between the nursery's and the
+  garden's bearing is **6.4 degrees** where independent draws give 90, with 80 of 289 pairs
+  inside one degree. It decorrelates as the coordinates grow (33 degrees at |cell| <= 64,
+  95 at |cell| <= 1024), which is exactly why it stayed invisible: **the defect lives where
+  the player starts.** Rule of thumb banked: two positional streams that differ only in `y`
+  are not independent in their first draw. Later draws are fine; the sequence diffuses.
+- **A larder is dug into any tier, picked per cell.** `LARDER_FLOOR_MIN_Y` is gone -- one hard
+  anchor at 152 meant every larder in the world was in the roof, so food storage read as a
+  property of the Upper Galleries rather than as a thing colonies do. The floor is now the
+  first ramp turn at or above `CHAMBER_FLOOR_MIN_Y_BY_TIER[tier]`, one array covering all four
+  bands with the same `tier floor + LANDING_INTERIOR_HEIGHT` formula the other three kinds
+  already used; `THRONE/NURSERY/GARDEN_FLOOR_MIN_Y` now read out of it at unchanged values
+  (tier 0 was already exactly 8). Tier 0 is the one band with no landing below it, so what the
+  clearance term buys down there is a block of margin above `FLOOR_TOP` instead.
+- **A tier-0 larder is kept off the queen by a DISTANCE, not by a relationship between cells.**
+  The first attempt gated on the anchor ramp's cell -- never let a tier-0 larder hang off the
+  ramp the colony's throne hangs off -- and it measurably was not enough. It removed every
+  same-shaft case (0 of ~1855 tier-0 larders across three seeds) and still left 3 larders on
+  seed 1234567 and 10 on seed 987654321 overlapping a throne's carve from ONE CELL AWAY, worst
+  pair 3.8 blocks centre to centre with 832 blocks where one wanted air and the other solid.
+  A colony centre lands in `[cell*384 + 168, cell*384 + 216]`, so its throne's ramp cell is
+  `8k+3` or `8k+4` -- even as often as odd -- while larders only ever anchor to odd/odd cells;
+  the throne is frequently on a ramp no larder can share, one cell from several that do. Seed
+  42 happened to be clean throughout, which is the whole argument against signing this off on
+  a spot check. The gate is now `THRONE_LARDER_CLEARANCE` = 62.5 blocks between centres:
+  each chamber's entire carve (dome, shell, and the corridor back to its ramp axis) lies inside
+  a ball of `max(radius + shell, approach distance + corridor half-width)` around its centre --
+  35.5 for the throne, 25.0 for the larder -- plus 2 blocks of margin. Two centres that far
+  apart cannot share a block whatever the bearings, the shaft jitter or the colony jitter did,
+  and the bound recomputes itself if any of those constants are retuned, which a radius in
+  cells cannot. It subsumes the same-shaft case (those centres are 10 to 58 apart), so no
+  separate shaft test survives. Only the nearest colony's throne is checked and that is exact:
+  a throne sits within 76 blocks of its colony centre and centres are >= 288 apart, so no
+  second colony can reach. Measured after: 0 conflicting blocks on all three seeds, closest
+  surviving tier-0 larder 62.9-63.8 blocks from a throne, gate re-tiering 5.4-9.3% of tier-0
+  draws.
+- **Rejected: a larder grid of its own.** It would have decoupled the larder from the
+  nursery/garden collision entirely, and it was the wrong trade -- a fourth 96-block grid whose
+  phase relationship to the other three is a coincidence of periods is exactly what Ep2 removed
+  when the throne stopped having its own 224-grid. The slots keep one grid and make the
+  separation a property of the layout.
+- **Rejected: restricting the larder to tiers 1-3** to dodge the throne entirely. It solves the
+  collision by deleting the most interesting case: a food store in the Royal Depths is the one
+  that puts something worth walking to in the tier a player only otherwise enters to fight the
+  queen. The gate costs 5-9% of tier-0 draws; the restriction would have cost all of them.
