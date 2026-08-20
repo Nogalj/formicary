@@ -25,6 +25,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.Pig;
@@ -350,8 +351,9 @@ public class QueenGameTests {
      * <p>Ten ticks is deliberately short. Her spit starts ready and the goal selector
      * evaluates {@code canUse} every other tick, so an implementation missing the minimum
      * would have fired inside the first two -- and by tick 10 exactly one bite has landed
-     * (10 damage, one {@code MeleeAttackGoal} interval), so the guard below can still prove
-     * the absence means something rather than that the target quietly died.
+     * ({@link QueenAntEntity#ATTACK_DAMAGE} damage, one {@code MeleeAttackGoal} interval),
+     * so the guard below can still prove the absence means something rather than that the
+     * target quietly died.
      */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "arena_platform", timeoutTicks = 100)
@@ -372,6 +374,102 @@ public class QueenGameTests {
                     "acid spits at a target already inside her bite");
             helper.succeed();
         });
+    }
+
+    /**
+     * Play-test round 3 (WP-S3 item 2): "the acid spit should be blockable with a shield."
+     * Investigated as two separate claims, both checked against {@code reference/}, not
+     * memory. First, whether the impact damage is even a shield-blockable type: it is --
+     * {@code AcidSpitProjectile.onHitEntity} sources it with {@code mobProjectile(this,
+     * shooter)}, i.e. {@code DamageTypes.MOB_PROJECTILE}, and
+     * {@code DamageTypeTagsProvider#addTags} builds {@code BYPASSES_SHIELD} from
+     * {@code BYPASSES_ARMOR} plus only the two falling-block types -- {@code MOB_PROJECTILE}
+     * is in neither list, so {@code LivingEntity#isDamageSourceBlocked} is reachable for it.
+     * Second, the plan's prime suspect -- "the poison rider applies even when {@code hurt()}
+     * returns false" -- turned out to be false too: {@code onHitEntity}'s
+     * {@code victim.hurt(source, IMPACT_DAMAGE) && victim instanceof LivingEntity living} has
+     * gated the rider on a successful hit since the method was first written ({@code git log
+     * -p} shows no other shape ever existed), and {@code LivingEntity#hurt} already returns
+     * false for a fully-blocked shield hit (traced through {@code isDamageSourceBlocked} ->
+     * the block branch -> {@code flag = amount <= 0} -> the final {@code flag2} return). There
+     * was no code change to make here; what was missing was a test locking the seam in place.
+     *
+     * <p>A real blocking mock player is not that test. {@code isBlocking()} requires
+     * {@code isUsingItem()} AND at least 5 ticks of elapsed use
+     * ({@code item.getUseDuration(...) - useItemRemaining >= 5}), and that counter only moves
+     * on the entity's own {@code tick()} -- which the game loop only calls for entities
+     * actually in the level. {@code GameTestHelper.makeMockPlayer} deliberately returns a
+     * bare {@code Player} that is never added to it (the mock-player-limits entry in
+     * {@code docs/gotchas/gametest.md}), so nothing ever advances that counter. Rather than
+     * fight that limitation, this pins the general seam {@code hurt()} returning false must
+     * satisfy for ANY reason -- shield block included -- using the cheapest honest stand-in:
+     * {@code Entity#isInvulnerableTo} is {@code hurt}'s very first check, so an invulnerable
+     * target reaches "hurt() returns false" the same way a blocked hit does, without needing
+     * a shield at all.
+     *
+     * <p>The spit is thrown by {@link #directAcidSpitAt}, not {@link QueenAntEntity#spitAcidAt},
+     * because the real launch carries {@code LAUNCH_INACCURACY} (4.0) and the arc's vertical
+     * lead is an explicitly documented approximation, not exact physics -- against a Pig's
+     * short 0.9-block hitbox at 10 blocks that combination missed on a bare rerun of this very
+     * test (caught live: the first draft used {@code spitAcidAt} and flaked on its second run).
+     * A zero-inaccuracy shot from two blocks away removes both error sources so the test is
+     * evidence about the poison gate, not about the ranged attack's intended miss chance.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform", timeoutTicks = 60)
+    public static void an_acid_spit_hit_on_an_invulnerable_target_lands_no_poison(GameTestHelper helper) {
+        QueenAntEntity queen = helper.spawn(ModEntities.QUEEN_ANT.get(), ARENA_CENTRE);
+        Pig target = parkedPig(helper, ARENA_SPIT_RANGE);
+        target.setInvulnerable(true);
+
+        directAcidSpitAt(helper, queen, target);
+
+        helper.succeedWhen(() -> {
+            helper.assertTrue(spitsFrom(helper, queen).isEmpty(),
+                    "the spit should have hit the target and discarded -- not passed through it");
+            helper.assertFalse(target.hasEffect(MobEffects.POISON),
+                    "a hit that hurt() refused must not land the poison rider");
+        });
+    }
+
+    /**
+     * The control for the test above. Against an ordinary, vulnerable target the same throw
+     * DOES land poison, which is what makes "no poison" above evidence of the gate rather
+     * than evidence that the spit never reaches its target, or that the rider is broken
+     * outright regardless of blocking.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform", timeoutTicks = 60)
+    public static void an_acid_spit_hit_on_a_vulnerable_target_lands_poison(GameTestHelper helper) {
+        QueenAntEntity queen = helper.spawn(ModEntities.QUEEN_ANT.get(), ARENA_CENTRE);
+        Pig target = parkedPig(helper, ARENA_SPIT_RANGE);
+
+        directAcidSpitAt(helper, queen, target);
+
+        helper.succeedWhen(() -> {
+            helper.assertTrue(spitsFrom(helper, queen).isEmpty(),
+                    "the spit should have hit the target and discarded");
+            helper.assertTrue(target.hasEffect(MobEffects.POISON),
+                    "a landed hit on a vulnerable target should land the poison rider");
+        });
+    }
+
+    /**
+     * Throws an {@link AcidSpitProjectile} credited to {@code queen} straight at {@code target}
+     * from two blocks out, with zero launch inaccuracy -- deterministic flight for tests that
+     * need to pin what happens ON a hit, as opposed to {@link QueenAntEntity#spitAcidAt}'s real
+     * combat throw, which is deliberately dodgeable. Still exercises the real {@code tick()} /
+     * {@code onHitEntity} path; nothing about the hit itself is faked, only the aim.
+     */
+    private static void directAcidSpitAt(GameTestHelper helper, QueenAntEntity queen, LivingEntity target) {
+        AcidSpitProjectile spit = new AcidSpitProjectile(helper.getLevel(), queen);
+        Vec3 aimPoint = target.position().add(0.0, target.getBbHeight() * 0.5, 0.0);
+        spit.setPos(aimPoint.x - 2.0, aimPoint.y, aimPoint.z);
+        double dx = aimPoint.x - spit.getX();
+        double dy = aimPoint.y - spit.getY();
+        double dz = aimPoint.z - spit.getZ();
+        spit.shoot(dx, dy, dz, AcidSpitProjectile.LAUNCH_VELOCITY, 0.0F);
+        helper.getLevel().addFreshEntity(spit);
     }
 
     // ----------------------------------------------------------- burrow slam --
