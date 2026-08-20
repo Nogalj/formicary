@@ -1683,3 +1683,8 @@ jittered 384-block grid, sparse wilds between them.
   `a_bound_worker_never_carries_two_crops_at_once` keeps the default barrier roof and lights
   its crops with a glowstone sunk into the floor, because `CropBlock.hasSufficientLight` is
   `getRawBrightness(pos, 0) >= 8` and that reads block light just as happily as sky light.
+- **The soldier's guard-post state reads "Staying".** Label only -- the translation key
+  (`entity.formicary.tamed_soldier_ant.state.guard_post`), the `stationed` flag and every
+  behaviour behind them are unchanged, so nothing that reads the state had to move. "Guard
+  Post" named the mechanism; "Staying" names what the player just told the ant to do, and it
+  reads as the opposite of the worker's "Following".

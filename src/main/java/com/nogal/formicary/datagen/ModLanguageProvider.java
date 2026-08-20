@@ -97,7 +97,11 @@ public class ModLanguageProvider extends LanguageProvider {
         // needs a line of its own -- otherwise the click is indistinguishable from a no-op.
         add("entity.formicary.tamed_worker_ant.state.no_chest", "No storage nearby");
         add("entity.formicary.tamed_soldier_ant.state.escort", "Escort");
-        add("entity.formicary.tamed_soldier_ant.state.guard_post", "Guard Post");
+        // Play-test round 2, spec item 3: the label only. "Guard Post" named the mechanism;
+        // "Staying" names what the player just told the ant to do, and it reads as the
+        // opposite of the worker's "Following". The key, the flag and the behaviour behind
+        // it are all unchanged.
+        add("entity.formicary.tamed_soldier_ant.state.guard_post", "Staying");
 
         // This name is also what the boss bar reads (ServerBossEvent takes getDisplayName()).
         addEntityType(ModEntities.QUEEN_ANT, "The Queen");

@@ -46,7 +46,7 @@
   "entity.formicary.soldier_ant": "Soldier Ant",
   "entity.formicary.tamed_soldier_ant": "Tamed Soldier Ant",
   "entity.formicary.tamed_soldier_ant.state.escort": "Escort",
-  "entity.formicary.tamed_soldier_ant.state.guard_post": "Guard Post",
+  "entity.formicary.tamed_soldier_ant.state.guard_post": "Staying",
   "entity.formicary.tamed_worker_ant": "Tamed Worker Ant",
   "entity.formicary.tamed_worker_ant.state.following": "Following",
   "entity.formicary.tamed_worker_ant.state.harvesting": "Harvesting",
