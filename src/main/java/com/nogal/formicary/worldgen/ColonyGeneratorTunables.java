@@ -1260,29 +1260,24 @@ public final class ColonyGeneratorTunables {
 
     // --- wall decoration inside the chamber (ColonyChunkGenerator#decorateLarderSurface) ---
     //
-    // Same two-entry, rarer-first shape decorateNurserySurface/decorateThroneSurface use.
-    // Provision Comb is what makes this room worth finding: the affordability floor's own
-    // pearls live inside it (see ModBlockLootSubProvider#provisionCombTable).
+    // Brood comb keeps the same flat per-block chance decorateNurserySurface/
+    // decorateThroneSurface use. Provision Comb does NOT any more (play-test round 2,
+    // item 6): round 1's 2 guaranteed + 0.035/wall-block still measured >10 per larder in
+    // play (walls have more eligible cells than the estimate assumed), so the per-block
+    // roll is gone outright and every Provision Comb in a larder is now one of the
+    // guaranteed, slotted placements below.
 
-    /**
-     * Provision Comb density on a larder's walls. Play-test round 2 drops it hard, 0.18 to
-     * 0.035, and the reason is the loot table rather than the look: a larder was carrying
-     * roughly thirty of these, and every one of them was an unconditional 1-2 ender pearls.
-     * With the rework (see {@code ModBlockLootSubProvider#provisionCombTable}) each comb is
-     * worth breaking, so the right number of them is small: about 4 rolled plus the 2
-     * guaranteed, six per room.
-     */
-    public static final double LARDER_PROVISION_COMB_CHANCE = 0.035;
     public static final double LARDER_BROOD_COMB_CHANCE = 0.50;
 
-    // --- the guaranteed minimum (spec: "a deterministic minimum of 2 per larder from the
-    // chamber's own seeded random") -- see ColonyNoise.Larder's own javadoc for why this
-    // has to be a dedicated seeded placement rather than a probabilistic top-up: the
-    // per-column wall decorator that rolls LARDER_PROVISION_COMB_CHANCE above never sees
-    // the whole room, so it has no way to count what it already placed. ---
+    // --- the guaranteed count (play-test round 2: "deterministic ~6" became "5-7 slots",
+    // extended from the original 2 rather than replaced) -- see ColonyNoise.Larder's own
+    // javadoc for why this has to be a dedicated seeded placement rather than a
+    // probabilistic top-up: a per-column wall decorator never sees the whole room, so it
+    // has no way to count what it already placed. ---
 
-    /** How many Provision Comb blocks every larder is guaranteed, independent of the roll. */
-    public static final int LARDER_GUARANTEED_PROVISION_COMB = 2;
+    /** How many Provision Comb blocks a larder gets, drawn from the chamber's own stream. */
+    public static final int LARDER_PROVISION_COMB_MIN = 5;
+    public static final int LARDER_PROVISION_COMB_MAX = 7;
 
     /**
      * Distance from the chamber centre for a guaranteed comb slot: one block outside
@@ -1299,6 +1294,52 @@ public final class ColonyGeneratorTunables {
      * dome's curve or in the floor slab.
      */
     public static final int LARDER_COMB_HEIGHT = 2;
+
+    /**
+     * Half-width of the angular zone kept clear of a larder's doorway when placing
+     * provision-comb slots (round 1's fixed two-slot scheme -- 90 degrees off the doorway
+     * bearing, +-30 degrees of jitter -- does not generalize to up to seven slots: the
+     * anchor-and-jitter shape assumed room to spare that a 5-7-way split does not have).
+     *
+     * <p>Generalized instead as a hard exclusion: every comb slot's bearing is drawn from
+     * the arc that starts this far past the doorway bearing and runs all the way around to
+     * the same margin on the other side ({@code 2*PI - 2*this} of usable arc), so no slot
+     * can land inside the excluded zone regardless of how many are drawn or how the RNG
+     * jitters them. 30 degrees reuses round 1's own jitter budget as the new margin, and it
+     * clears the doorway's real angular half-width at {@link #LARDER_COMB_RADIUS} --
+     * {@code atan(LARDER_CORRIDOR_HALF_WIDTH / LARDER_COMB_RADIUS)} = 7.1 degrees -- by more
+     * than 4x. {@link NoiseProbe}'s larder section measures the real minimum clearance
+     * across sampled larders rather than trusting the arithmetic alone, the same standard
+     * {@link #CHAMBER_SLOT_MIN_SEPARATION} holds itself to.
+     */
+    public static final double LARDER_COMB_DOORWAY_EXCLUSION = Math.toRadians(30.0);
+
+    // ------------------------------------------------------------------
+    // Soil pockets (play-test round 2, item 8) -- vanilla dirt/gravel/sand blobs scattered
+    // through ordinary fabric, in the colony and the wilds alike. Deliberately NOT
+    // colony_fabric: free digging and normal drops is the whole point (pairs with the
+    // mandible pickaxe and the flint loot added elsewhere this round). See
+    // ColonyNoise#soilPocketsForChunk for the placement algorithm and
+    // ColonyNoise#isPlainFabric for the exclusion that keeps a pocket out of a chamber's
+    // own shell, a ramp or landing floor, and the un-carved floor/ceiling caps.
+    // ------------------------------------------------------------------
+
+    /** Pockets rolled per chunk, inclusive range. */
+    public static final int SOIL_POCKETS_MIN_PER_CHUNK = 2;
+    public static final int SOIL_POCKETS_MAX_PER_CHUNK = 4;
+
+    /**
+     * Blocks a pocket's random walk targets, inclusive range. A pocket may end smaller than
+     * this if the walk runs out of eligible fabric before reaching it -- the same way a
+     * vanilla ore vein terminates early against a cave wall, rather than a guarantee.
+     */
+    public static final int SOIL_POCKET_MIN_SIZE = 5;
+    public static final int SOIL_POCKET_MAX_SIZE = 20;
+
+    /** Relative weights for a pocket's material: dirt commonest, gravel next, sand least. */
+    public static final int SOIL_POCKET_DIRT_WEIGHT = 5;
+    public static final int SOIL_POCKET_GRAVEL_WEIGHT = 3;
+    public static final int SOIL_POCKET_SAND_WEIGHT = 2;
 
     // ------------------------------------------------------------------
     // Mob spawning at chunk generation (see ColonyChunkGenerator#spawnOriginalMobs)

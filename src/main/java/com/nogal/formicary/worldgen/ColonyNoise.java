@@ -41,6 +41,7 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_INTER
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LANDING_WALL_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_APPROACH_DISTANCE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_COMB_DOORWAY_EXCLUSION;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_COMB_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_COMB_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_CORRIDOR_END;
@@ -50,6 +51,8 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_CORRID
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_DOME_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_ELIGIBILITY_MIN_F;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_MAX_REACH;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_PROVISION_COMB_MAX;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_PROVISION_COMB_MIN;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_SHELL_THICKNESS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_SPACING;
@@ -79,6 +82,13 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ROYAL_RESIN_T
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SHAFT_JITTER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SHAFT_MAX_REACH;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SHAFT_SPACING;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKETS_MAX_PER_CHUNK;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKETS_MIN_PER_CHUNK;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKET_DIRT_WEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKET_GRAVEL_WEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKET_MAX_SIZE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKET_MIN_SIZE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKET_SAND_WEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_APPROACH_DISTANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_CORRIDOR_END;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_CORRIDOR_HALF_WIDTH;
@@ -1112,19 +1122,21 @@ public final class ColonyNoise {
      * ({@code axisX}, {@code axisZ}) by a straight corridor along the unit vector
      * ({@code dirX}, {@code dirZ}).
      *
-     * <p>{@code comb1}/{@code comb2} are the two guaranteed Provision Comb positions (spec:
-     * "a deterministic minimum of 2 per larder from the chamber's own seeded random"),
-     * drawn from the SAME random stream as the chamber's own geometry, immediately after
-     * the approach bearing -- so a larder's shape and its guaranteed loot are one seeded
-     * draw, not two that could silently disagree on a re-derivation. They cannot be a
+     * <p>{@code combX}/{@code combZ} are the {@link ColonyGeneratorTunables#LARDER_PROVISION_COMB_MIN}-
+     * {@link ColonyGeneratorTunables#LARDER_PROVISION_COMB_MAX} guaranteed Provision Comb
+     * positions (play-test round 2: the per-wall-block chance measured over 10 per larder
+     * in play and is gone outright -- every comb in a larder is now one of these), drawn
+     * from the SAME random stream as the chamber's own geometry, immediately after the
+     * approach bearing -- so a larder's shape and its guaranteed loot are one seeded draw,
+     * not two that could silently disagree on a re-derivation. They cannot be a
      * probabilistic top-up: {@code ColonyChunkGenerator#decorateLarderSurface} sees one
      * wall block at a time as the per-chunk decoration pass visits it and has no way to
      * count what it has already placed across a room that can span several chunks, so the
      * only way to GUARANTEE a count is to pick the positions up front and force-write them
-     * regardless of what the probabilistic roll does elsewhere in the room. Each position
-     * sits {@link ColonyGeneratorTunables#LARDER_COMB_RADIUS} out (one block past the
-     * interior radius, safely inside the forced-solid shell even after independent
-     * per-axis rounding from a non-integer centre) at a fixed
+     * regardless of what the rest of the room's decoration does. Each position sits
+     * {@link ColonyGeneratorTunables#LARDER_COMB_RADIUS} out (one block past the interior
+     * radius, safely inside the forced-solid shell even after independent per-axis
+     * rounding from a non-integer centre) at a fixed
      * {@link ColonyGeneratorTunables#LARDER_COMB_HEIGHT} above the floor (well inside the
      * cylindrical wall, clear of the dome's curve).
      */
@@ -1137,7 +1149,7 @@ public final class ColonyNoise {
      */
     public record Larder(double centreX, double centreZ, double axisX, double axisZ,
             double dirX, double dirZ, int floorY, int tier, int tierDraw,
-            int combX1, int combZ1, int combX2, int combZ2, int combY,
+            int[] combX, int[] combZ, int combY,
             boolean inColony) {
     }
 
@@ -1230,28 +1242,36 @@ public final class ColonyNoise {
         int turn = (int) Math.ceil((CHAMBER_FLOOR_MIN_Y_BY_TIER[tier] - base) / RAMP_PERIOD);
         int floorY = (int) Math.floor(base + turn * RAMP_PERIOD);
 
-        // The two guaranteed comb slots -- same stream, drawn right after the bearing.
-        // NOT a free choice of angle: the corridor punches through the shell at the
-        // bearing facing back toward the ramp axis (`approach + PI`, seen from the
-        // centre), and an early version of this method drew both angles uniformly over
-        // the full circle -- NoiseProbe's larder section caught 22 of 578 sampled slots
-        // (3.8%) landing inside that doorway, where they would have blocked the room's
-        // only entrance instead of decorating its shell. Anchoring both slots 90 degrees
-        // off the doorway bearing, with only +-30 degrees of jitter for variety, keeps
-        // them at least 60 degrees from a doorway whose own angular width at this radius
-        // is under 10 degrees (`atan(LARDER_CORRIDOR_HALF_WIDTH / LARDER_COMB_RADIUS)`) --
-        // comfortable margin, not a coincidence of the two particular seeds tested.
+        // The guaranteed comb slots -- same stream, drawn right after the bearing. NOT a
+        // free choice of angle: the corridor punches through the shell at the bearing
+        // facing back toward the ramp axis (`approach + PI`, seen from the centre), and an
+        // early version of this method drew angles uniformly over the full circle --
+        // NoiseProbe's larder section caught 22 of 578 sampled slots (3.8%) landing inside
+        // that doorway, where they would have blocked the room's only entrance instead of
+        // decorating its shell. Round 2 raised the count from a fixed 2 to 5-7 (drawn
+        // below), which does not fit the old anchor-and-jitter shape -- there is no room
+        // left to anchor seven slots 90 degrees off one bearing -- so the derivation
+        // generalizes instead: every slot's bearing is drawn from the arc that keeps
+        // LARDER_COMB_DOORWAY_EXCLUSION clear on both sides of the doorway, split into
+        // `count` equal sectors with the slot placed anywhere inside its own sector (the
+        // same full-sector-jitter scheme `enderSlotsForCell` already uses for its own
+        // variable count). No slot can land in the excluded zone regardless of `count` or
+        // the RNG, by construction rather than by margin -- see
+        // LARDER_COMB_DOORWAY_EXCLUSION's own javadoc for the clearance arithmetic.
+        int combCount = between(LARDER_PROVISION_COMB_MIN, LARDER_PROVISION_COMB_MAX, random);
         double doorwayBearing = approach + Math.PI;
-        double combJitter = Math.PI / 6.0;
-        double combAngle1 = doorwayBearing + Math.PI / 2.0 + (random.nextDouble() * 2.0 - 1.0) * combJitter;
-        double combAngle2 = doorwayBearing - Math.PI / 2.0 + (random.nextDouble() * 2.0 - 1.0) * combJitter;
-        int combX1 = (int) Math.round(centreXd + LARDER_COMB_RADIUS * Math.cos(combAngle1));
-        int combZ1 = (int) Math.round(centreZd + LARDER_COMB_RADIUS * Math.sin(combAngle1));
-        int combX2 = (int) Math.round(centreXd + LARDER_COMB_RADIUS * Math.cos(combAngle2));
-        int combZ2 = (int) Math.round(centreZd + LARDER_COMB_RADIUS * Math.sin(combAngle2));
+        double arcStart = doorwayBearing + LARDER_COMB_DOORWAY_EXCLUSION;
+        double usableArc = TWO_PI - 2.0 * LARDER_COMB_DOORWAY_EXCLUSION;
+        int[] combX = new int[combCount];
+        int[] combZ = new int[combCount];
+        for (int i = 0; i < combCount; i++) {
+            double angle = arcStart + (i + random.nextDouble()) * usableArc / combCount;
+            combX[i] = (int) Math.round(centreXd + LARDER_COMB_RADIUS * Math.cos(angle));
+            combZ[i] = (int) Math.round(centreZd + LARDER_COMB_RADIUS * Math.sin(angle));
+        }
 
         return new Larder(centreXd, centreZd, shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY, tier, tierDraw,
-                combX1, combZ1, combX2, combZ2, floorY + LARDER_COMB_HEIGHT,
+                combX, combZ, floorY + LARDER_COMB_HEIGHT,
                 isChamberAnchored(shaft, centreXd, centreZd, LARDER_ELIGIBILITY_MIN_F));
     }
 
@@ -1677,8 +1697,14 @@ public final class ColonyNoise {
         return distance <= radius * Math.sqrt(Math.max(0.0, 1.0 - t * t));
     }
 
-    /** Whether (x, z) is inside the corridor's footprint, measured along the axis ray. */
-    private static boolean isInLarderCorridor(Larder larder, int x, int z) {
+    /**
+     * Whether (x, z) is inside the corridor's footprint, measured along the axis ray.
+     *
+     * <p>Public so {@link NoiseProbe} can ask the exact same question of a provision-comb
+     * slot that {@link #larderState} asks of a wall block -- "is this in the doorway" needs
+     * one definition, not a second geometric re-derivation that could silently disagree.
+     */
+    public static boolean isInLarderCorridor(Larder larder, int x, int z) {
         double px = x - larder.axisX();
         double pz = z - larder.axisZ();
         double along = px * larder.dirX() + pz * larder.dirZ();
@@ -1974,5 +2000,176 @@ public final class ColonyNoise {
             // Royal Depths: Deep Loam shot through with Hardened Soil (above) and resin.
             default -> a < ROYAL_RESIN_THRESHOLD ? FABRIC_RESIN_BLOCK : FABRIC_DEEP_LOAM;
         };
+    }
+
+    // ------------------------------------------------------------------
+    // Soil pockets (play-test round 2, item 8) -- vanilla dirt/gravel/sand blobs through
+    // ordinary fabric. A pure function of chunk position, like everything else in this
+    // class: the block WRITES only happen in ColonyChunkGenerator (only it can touch a
+    // ChunkAccess), but which positions a pocket claims and what material fills it are
+    // decided here, which is what lets NoiseProbe measure them without a running
+    // dimension. Consumed by ColonyChunkGenerator#fill, after its main pass has already
+    // decided the ordinary block palette -- see #isPlainFabric.
+    // ------------------------------------------------------------------
+
+    /** {@link SoilPocket#material()} values. */
+    public static final int SOIL_MATERIAL_DIRT = 0;
+    public static final int SOIL_MATERIAL_GRAVEL = 1;
+    public static final int SOIL_MATERIAL_SAND = 2;
+
+    private static final int[][] POCKET_NEIGHBOR_OFFSETS =
+            {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+
+    /** One block a soil pocket claims. */
+    public record PocketBlock(int x, int y, int z) {
+    }
+
+    /** One realized soil pocket: the blocks it claims and which material fills all of them. */
+    public record SoilPocket(PocketBlock[] blocks, int material) {
+    }
+
+    /**
+     * Whether the solid position at (x, y, z) is plain fabric -- not a chamber's own shell
+     * or dais, not the ramp/landing's forced-solid floor, and not the floor or ceiling cap.
+     *
+     * <p>{@link #isAir} decides solidity by checking, in order, the shaft and then each of
+     * the four chamber kinds, falling through to the ambient tunnel/blob carve only once
+     * all four say "not mine". This mirrors exactly that set of checks without the ambient
+     * fallback, so combined with a separate {@code !isAir(...)} at the same position it
+     * answers a narrower question {@link #isAir} itself cannot: not just "is this solid"
+     * but "is this solid for no load-bearing reason at all" -- ordinary wilds or colony
+     * fabric that a cosmetic decoration pass is free to touch, as opposed to a ramp floor
+     * that keeps the spine walkable or a shell that keeps a room's neighbour from breaching
+     * into it. {@link #soilPocketsForChunk} is the one caller; every other kind of solid
+     * reaches {@code isAir} = false by a rule this method exists to keep a pocket away from.
+     *
+     * <p>Callers are expected to already know the position is solid for the SAME column
+     * arrays -- this only distinguishes which kind of solid it is, the same relationship
+     * {@link #fabricKind} has to the finished palette.
+     */
+    public boolean isPlainFabric(Shaft[] columnShafts, Throne[] columnThrones, Nursery[] columnNurseries,
+            Garden[] columnGardens, Larder[] columnLarders, int x, int y, int z) {
+        if (y < FLOOR_TOP || y >= CEILING_BOTTOM) {
+            return false;
+        }
+        if (columnShafts.length > 0 && shaftState(columnShafts, x, y, z) != SHAFT_NONE) {
+            return false;
+        }
+        if (columnThrones.length > 0 && throneState(columnThrones, x, y, z) != THRONE_NONE) {
+            return false;
+        }
+        if (columnNurseries.length > 0 && nurseryState(columnNurseries, x, y, z) != NURSERY_NONE) {
+            return false;
+        }
+        if (columnGardens.length > 0 && gardenState(columnGardens, x, y, z) != GARDEN_NONE) {
+            return false;
+        }
+        return columnLarders.length == 0 || larderState(columnLarders, x, y, z) == LARDER_NONE;
+    }
+
+    /**
+     * The {@link ColonyGeneratorTunables#SOIL_POCKETS_MIN_PER_CHUNK}-{@link
+     * ColonyGeneratorTunables#SOIL_POCKETS_MAX_PER_CHUNK} soil pockets rolled for the chunk
+     * at ({@code minX}, {@code minZ}).
+     *
+     * <p>Each pocket is a bounded random walk: a seed position is drawn inside the chunk's
+     * own XZ and the carvable Y band, and if it lands on {@link #isPlainFabric} fabric the
+     * walk repeatedly picks a random already-claimed block and a random axis-neighbour of
+     * it, keeping the neighbour only if it too is plain fabric and not already claimed. The
+     * walk stops once it reaches {@link ColonyGeneratorTunables#SOIL_POCKET_MAX_SIZE}, or
+     * once it exhausts a generous attempt budget without finding a new eligible neighbour --
+     * whichever comes first, so a pocket walled in by a chamber shell on most sides
+     * terminates early instead of looping forever hunting for room that is not there, the
+     * same way a vanilla ore vein terminates against a cave. Positions never leave the
+     * chunk: a pocket that wandered into a neighbour's XZ would be trying to write blocks
+     * the generator has no business touching from here.
+     *
+     * <p>Not gated by the colony field at all, unlike every chamber/comb chance elsewhere
+     * in this class -- these are flavor blocks the colony field has no opinion about, in
+     * the wilds exactly as much as in a colony core.
+     */
+    public SoilPocket[] soilPocketsForChunk(Shaft[] chunkShafts, Throne[] chunkThrones,
+            Nursery[] chunkNurseries, Garden[] chunkGardens, Larder[] chunkLarders, int minX, int minZ) {
+        // y = 8: a ninth independent stream, after shaft (0), throne (1), nursery (2),
+        // garden (3), larder (4), colony centre (5), ender slots (6) and the chamber base
+        // bearing (7) -- keyed by the chunk's own block coordinates rather than a cell,
+        // since a pocket is a per-chunk feature with no larger grid of its own.
+        RandomSource random = this.factory.at(minX, 8, minZ);
+        int count = between(SOIL_POCKETS_MIN_PER_CHUNK, SOIL_POCKETS_MAX_PER_CHUNK, random);
+        List<SoilPocket> pockets = new ArrayList<>(count);
+
+        for (int i = 0; i < count; i++) {
+            int material = pickPocketMaterial(random);
+            int targetSize = between(SOIL_POCKET_MIN_SIZE, SOIL_POCKET_MAX_SIZE, random);
+            int seedX = minX + random.nextInt(16);
+            int seedZ = minZ + random.nextInt(16);
+            int seedY = FLOOR_TOP + random.nextInt(CEILING_BOTTOM - FLOOR_TOP);
+            if (!isPocketEligible(chunkShafts, chunkThrones, chunkNurseries, chunkGardens, chunkLarders,
+                    minX, minZ, seedX, seedY, seedZ)) {
+                continue;
+            }
+
+            List<int[]> claimed = new ArrayList<>(targetSize);
+            claimed.add(new int[] {seedX, seedY, seedZ});
+            int attempts = 0;
+            int maxAttempts = targetSize * 8;
+            while (claimed.size() < targetSize && attempts < maxAttempts) {
+                attempts++;
+                int[] from = claimed.get(random.nextInt(claimed.size()));
+                int[] offset = POCKET_NEIGHBOR_OFFSETS[random.nextInt(POCKET_NEIGHBOR_OFFSETS.length)];
+                int nx = from[0] + offset[0];
+                int ny = from[1] + offset[1];
+                int nz = from[2] + offset[2];
+                if (containsPosition(claimed, nx, ny, nz)
+                        || !isPocketEligible(chunkShafts, chunkThrones, chunkNurseries, chunkGardens, chunkLarders,
+                                minX, minZ, nx, ny, nz)) {
+                    continue;
+                }
+                claimed.add(new int[] {nx, ny, nz});
+            }
+
+            PocketBlock[] blocks = new PocketBlock[claimed.size()];
+            for (int b = 0; b < claimed.size(); b++) {
+                int[] pos = claimed.get(b);
+                blocks[b] = new PocketBlock(pos[0], pos[1], pos[2]);
+            }
+            pockets.add(new SoilPocket(blocks, material));
+        }
+        return pockets.toArray(new SoilPocket[0]);
+    }
+
+    private boolean isPocketEligible(Shaft[] chunkShafts, Throne[] chunkThrones, Nursery[] chunkNurseries,
+            Garden[] chunkGardens, Larder[] chunkLarders, int minX, int minZ, int x, int y, int z) {
+        if (x < minX || x >= minX + 16 || z < minZ || z >= minZ + 16) {
+            return false;
+        }
+        Shaft[] columnShafts = shaftsForColumn(chunkShafts, x, z);
+        Throne[] columnThrones = thronesForColumn(chunkThrones, x, z);
+        Nursery[] columnNurseries = nurseriesForColumn(chunkNurseries, x, z);
+        Garden[] columnGardens = gardensForColumn(chunkGardens, x, z);
+        Larder[] columnLarders = lardersForColumn(chunkLarders, x, z);
+        if (!isPlainFabric(columnShafts, columnThrones, columnNurseries, columnGardens, columnLarders, x, y, z)) {
+            return false;
+        }
+        double field = colonyField(x, z);
+        return !isAir(field, columnShafts, columnThrones, columnNurseries, columnGardens, columnLarders, x, y, z);
+    }
+
+    private static boolean containsPosition(List<int[]> positions, int x, int y, int z) {
+        for (int[] pos : positions) {
+            if (pos[0] == x && pos[1] == y && pos[2] == z) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int pickPocketMaterial(RandomSource random) {
+        int total = SOIL_POCKET_DIRT_WEIGHT + SOIL_POCKET_GRAVEL_WEIGHT + SOIL_POCKET_SAND_WEIGHT;
+        int roll = random.nextInt(total);
+        if (roll < SOIL_POCKET_DIRT_WEIGHT) {
+            return SOIL_MATERIAL_DIRT;
+        }
+        return roll < SOIL_POCKET_DIRT_WEIGHT + SOIL_POCKET_GRAVEL_WEIGHT ? SOIL_MATERIAL_GRAVEL : SOIL_MATERIAL_SAND;
     }
 }

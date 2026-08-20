@@ -17,7 +17,6 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_WORKER
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.GARDEN_WORKERS_MIN;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_BROOD_COMB_CHANCE;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.LARDER_PROVISION_COMB_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.MIN_Y;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_BROOD_COMB_CHANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.NURSERY_EGG_CLUSTER_CHANCE;
@@ -261,7 +260,34 @@ public class ColonyChunkGenerator extends ChunkGenerator {
                 section.release();
             }
         }
+
+        // Item 8: dirt/gravel/sand pockets. A separate pass rather than a branch inside the
+        // loop above, on purpose -- ColonyNoise#soilPocketsForChunk's own eligibility check
+        // (ColonyNoise#isPlainFabric) is a pure function of the SAME noise state the loop
+        // above already resolved (isAir plus each of the five forced-solid claims), not of
+        // anything the loop wrote, so there is no ordering dependency between the two; this
+        // just keeps the main carve loop free of a fourth concern. Runs through the safe
+        // ChunkAccess#setBlockState API (like buildSurface's own force-write passes),
+        // deliberately not the raw section writes above -- those are only valid while their
+        // sections are held, which the `finally` above has just released.
+        for (ColonyNoise.SoilPocket pocket : noise.soilPocketsForChunk(chunkShafts, chunkThrones, chunkNurseries,
+                chunkGardens, chunkLarders, minX, minZ)) {
+            BlockState material = soilPocketState(pocket.material());
+            BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+            for (ColonyNoise.PocketBlock block : pocket.blocks()) {
+                chunk.setBlockState(cursor.set(block.x(), block.y(), block.z()), material, false);
+            }
+        }
         return chunk;
+    }
+
+    /** Maps a {@link ColonyNoise.SoilPocket#material()} index to its vanilla block state. */
+    private static BlockState soilPocketState(int material) {
+        return switch (material) {
+            case ColonyNoise.SOIL_MATERIAL_GRAVEL -> Blocks.GRAVEL.defaultBlockState();
+            case ColonyNoise.SOIL_MATERIAL_SAND -> Blocks.SAND.defaultBlockState();
+            default -> Blocks.DIRT.defaultBlockState();
+        };
     }
 
     // ------------------------------------------------------------------
@@ -330,22 +356,25 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             }
         }
 
-        // D3: force the two guaranteed Provision Comb blocks per larder, independent of
-        // decorateLarderSurface's probabilistic roll above -- see ColonyNoise.Larder's own
+        // D3: force every larder's guaranteed Provision Comb slots (5-7, play-test round 2 --
+        // decorateLarderSurface no longer places any of its own; see ColonyNoise.Larder's own
         // javadoc for why a per-column decorator cannot guarantee a room-wide count on its
-        // own. Runs after the main pass so it always wins; the target position is always
+        // own). Runs after the main pass so it always wins; every target position is always
         // inside the chamber's forced-solid shell (see LARDER_COMB_RADIUS's javadoc), so it
         // never punches a hole in the room's own air.
         for (ColonyNoise.Larder larder : chunkLarders) {
             // The colony-field gate has to be repeated here: this loop reads lardersNear,
             // which deliberately keeps its fixed 3x3 cell order, rather than the pruned
-            // per-column arrays. Without it a gated-out larder would still stamp two
-            // Provision Comb blocks into the middle of a wild tunnel.
+            // per-column arrays. Without it a gated-out larder would still stamp Provision
+            // Comb blocks into the middle of a wild tunnel.
             if (!larder.inColony()) {
                 continue;
             }
-            forceProvisionComb(chunk, cursor, minX, minZ, larder.combX1(), larder.combY(), larder.combZ1());
-            forceProvisionComb(chunk, cursor, minX, minZ, larder.combX2(), larder.combY(), larder.combZ2());
+            int[] combX = larder.combX();
+            int[] combZ = larder.combZ();
+            for (int i = 0; i < combX.length; i++) {
+                forceProvisionComb(chunk, cursor, minX, minZ, combX[i], larder.combY(), combZ[i]);
+            }
         }
     }
 
@@ -624,23 +653,19 @@ public class ColonyChunkGenerator extends ChunkGenerator {
     }
 
     /**
-     * A larder chamber's own dressing (D3): the probabilistic half of "comb-lined walls,
-     * stocked with Provision Comb" -- rarer checked first, the same convention every other
-     * chamber-surface decorator in this class uses. The GUARANTEED half (spec: "a
-     * deterministic minimum of 2 per larder") is not here at all -- see
-     * {@link #buildSurface}'s force-write pass after the main decoration loop, and
+     * A larder chamber's own dressing (D3): comb-lined walls. Play-test round 2 removed
+     * Provision Comb from here entirely -- the per-wall-block chance measured over 10 per
+     * larder in play, against the "deterministic ~6" the spec actually asked for, because a
+     * room's walls carry more eligible cells than the chance was tuned against. Every
+     * Provision Comb in a larder is now one of the guaranteed, slotted placements written by
+     * {@link #buildSurface}'s force-write pass after the main decoration loop -- see
      * {@link ColonyNoise.Larder}'s own javadoc for why a per-column decorator cannot
-     * guarantee a room-wide count on its own.
+     * guarantee a room-wide count on its own. Brood comb is unaffected, and keeps the flat
+     * per-block chance every other chamber-surface decorator in this class uses.
      */
     private void decorateLarderSurface(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
             int x, int y, int z, double roll) {
-        double cumulative = LARDER_PROVISION_COMB_CHANCE;
-        if (roll < cumulative) {
-            chunk.setBlockState(cursor.set(x, y, z), ModBlocks.PROVISION_COMB.get().defaultBlockState(), false);
-            return;
-        }
-        cumulative += LARDER_BROOD_COMB_CHANCE;
-        if (roll < cumulative) {
+        if (roll < LARDER_BROOD_COMB_CHANCE) {
             chunk.setBlockState(cursor.set(x, y, z), ModBlocks.BROOD_COMB.get().defaultBlockState(), false);
         }
     }

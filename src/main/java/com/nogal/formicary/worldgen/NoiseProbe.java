@@ -72,6 +72,7 @@ public final class NoiseProbe {
             chamberSlots(noise);
             larders(noise);
             combPatches(noise);
+            soilPockets(noise);
             spawnDensity(noise);
         }
         if (what.equals("colony")) {
@@ -97,6 +98,9 @@ public final class NoiseProbe {
         }
         if (what.equals("comb")) {
             combPatches(noise);
+        }
+        if (what.equals("pockets")) {
+            soilPockets(noise);
         }
         if (what.equals("spawns")) {
             spawnDensity(noise);
@@ -1864,13 +1868,14 @@ public final class NoiseProbe {
      * the same standard {@code WorldgenGameTests#nursery_chambers_never_overlap} already
      * holds nursery chambers to.
      *
-     * <p>The comb-count check reads {@link ColonyNoise.Larder#combX1()}/{@code combZ1()}
-     * and the second pair back out of the SAME chamber object the generator would build,
-     * and asks {@link ColonyNoise#larderState} whether each one is solid -- i.e. that the
-     * guaranteed position {@code ColonyChunkGenerator#buildSurface}'s force-write pass
-     * targets actually lands inside this larder's own forced-solid shell, never in open
-     * air (its own room, its own corridor) or outside the shell entirely. That is the
-     * geometric half of "at least 2 per larder"; the write itself is unconditional (see
+     * <p>The comb check reads {@link ColonyNoise.Larder#combX()}/{@code combZ()} back out of
+     * the SAME chamber object the generator would build, and asks
+     * {@link ColonyNoise#larderState} whether each slot is solid and
+     * {@link ColonyNoise#isInLarderCorridor} whether it fell in the doorway -- i.e. that
+     * every position {@code ColonyChunkGenerator#buildSurface}'s force-write pass targets
+     * actually lands inside this larder's own forced-solid shell, never in open air (its
+     * own room, its own corridor) or outside the shell entirely. That is the geometric half
+     * of "5-7 slots, none in the doorway"; the write itself is unconditional (see
      * {@code ColonyChunkGenerator}), so a PASS here is the guarantee.
      */
     private static void larders(ColonyNoise noise) {
@@ -1893,6 +1898,10 @@ public final class NoiseProbe {
         int shell = (int) Math.ceil(ColonyGeneratorTunables.LARDER_SHELL_THICKNESS);
         int combChecked = 0;
         int combSolid = 0;
+        int combInColony = 0;
+        int combCountViolations = 0;
+        int combDoorwayViolations = 0;
+        double combDoorwayMinClearanceDeg = Double.MAX_VALUE;
         int[] perTier = new int[TIER_COUNT];
         int[] perTierInColony = new int[TIER_COUNT];
         int[] perTierMinFloor = new int[TIER_COUNT];
@@ -1923,12 +1932,31 @@ public final class NoiseProbe {
                     continue;
                 }
                 perTierInColony[tier]++;
+                combInColony++;
                 ColonyNoise.Larder[] justThis = {larder};
-                combChecked += 2;
-                combSolid += noise.larderState(justThis, larder.combX1(), larder.combY(), larder.combZ1())
-                        == ColonyNoise.LARDER_SOLID ? 1 : 0;
-                combSolid += noise.larderState(justThis, larder.combX2(), larder.combY(), larder.combZ2())
-                        == ColonyNoise.LARDER_SOLID ? 1 : 0;
+                int[] combX = larder.combX();
+                int[] combZ = larder.combZ();
+                if (combX.length < ColonyGeneratorTunables.LARDER_PROVISION_COMB_MIN
+                        || combX.length > ColonyGeneratorTunables.LARDER_PROVISION_COMB_MAX) {
+                    combCountViolations++;
+                }
+                // The bearing the corridor punches through the shell on, seen from the
+                // centre -- the same "approach + PI" ColonyNoise#larderForCell derives it
+                // from, recovered here from the stored direction vector rather than a
+                // second copy of the angle itself.
+                double doorwayBearing = Math.atan2(larder.dirZ(), larder.dirX()) + Math.PI;
+                for (int i = 0; i < combX.length; i++) {
+                    combChecked++;
+                    combSolid += noise.larderState(justThis, combX[i], larder.combY(), combZ[i])
+                            == ColonyNoise.LARDER_SOLID ? 1 : 0;
+                    if (ColonyNoise.isInLarderCorridor(larder, combX[i], combZ[i])) {
+                        combDoorwayViolations++;
+                    }
+                    double slotBearing =
+                            Math.atan2(combZ[i] - larder.centreZ(), combX[i] - larder.centreX());
+                    double delta = Math.abs(Math.IEEEremainder(slotBearing - doorwayBearing, 2.0 * Math.PI));
+                    combDoorwayMinClearanceDeg = Math.min(combDoorwayMinClearanceDeg, Math.toDegrees(delta));
+                }
             }
         }
         System.out.printf(Locale.ROOT, "  %d chambers sampled, tier pick spread over %d tiers:%n",
@@ -1950,13 +1978,24 @@ public final class NoiseProbe {
                 : "  FAIL: a chamber crosses the boundary of the tier it picked.");
 
         System.out.printf(Locale.ROOT,
-                "  guaranteed Provision Comb: %d of %d positions (%d in-colony chambers of %d sampled, x %d each)"
-                        + " land solid%n",
-                combSolid, combChecked, combChecked / 2, total,
-                ColonyGeneratorTunables.LARDER_GUARANTEED_PROVISION_COMB);
+                "  Provision Comb: [%d, %d] slots per larder, %d in-colony chambers of %d sampled, %d slots total,"
+                        + " %d land solid, closest slot to a doorway %.1f degrees%n",
+                ColonyGeneratorTunables.LARDER_PROVISION_COMB_MIN, ColonyGeneratorTunables.LARDER_PROVISION_COMB_MAX,
+                combInColony, total, combChecked, combSolid,
+                combInColony == 0 ? -1.0 : combDoorwayMinClearanceDeg);
         System.out.println(combSolid == combChecked
-                ? "  PASS: every sampled larder's guaranteed comb positions are inside its own solid shell."
-                : "  FAIL: a guaranteed comb position missed the shell -- it would land in open air.");
+                ? "  PASS: every sampled larder's Provision Comb slots are inside its own solid shell."
+                : "  FAIL: a Provision Comb slot missed the shell -- it would land in open air.");
+        System.out.println(combCountViolations == 0
+                ? "  PASS: every sampled larder's Provision Comb count is in ["
+                        + ColonyGeneratorTunables.LARDER_PROVISION_COMB_MIN + ", "
+                        + ColonyGeneratorTunables.LARDER_PROVISION_COMB_MAX + "]."
+                : "  FAIL: " + combCountViolations + " larder(s) drew a Provision Comb count outside ["
+                        + ColonyGeneratorTunables.LARDER_PROVISION_COMB_MIN + ", "
+                        + ColonyGeneratorTunables.LARDER_PROVISION_COMB_MAX + "].");
+        System.out.println(combDoorwayViolations == 0
+                ? "  PASS: no sampled Provision Comb slot lands in its larder's own doorway."
+                : "  FAIL: " + combDoorwayViolations + " Provision Comb slot(s) landed inside the doorway.");
 
         // Overlap: the literal "shells don't touch" bound.
         double requiredSeparation = 2.0 * (ColonyGeneratorTunables.LARDER_RADIUS
@@ -2352,6 +2391,85 @@ public final class NoiseProbe {
                     sizeSum == 0 ? 0.0 : (double) sizeSquareSum / sizeSum, maxSize,
                     1000.0 * OLD_FLAT_COMB_CHANCE_BY_TIER[tier]);
         }
+    }
+
+    /**
+     * Soil pockets (play-test round 2, item 8): do they exist at all, and does every claimed
+     * block stay out of a chamber's own interior?
+     *
+     * <p>Sampled over a plain grid of chunks around the origin rather than anchored on a
+     * colony the way {@link #nurseries}/{@link #gardens}/{@link #larders}/{@link
+     * #combPatches} are (see the class javadoc for why those anchor there) -- pockets are
+     * deliberately not colony-field-gated, so the origin is exactly as fair a sample as
+     * anywhere else, and a 25x25-chunk grid around it still crosses real shafts and chamber
+     * shells often enough to exercise the exclusion this section checks.
+     */
+    private static void soilPockets(ColonyNoise noise) {
+        System.out.printf(Locale.ROOT,
+                "%nsoil pockets (%d-%d per chunk, %d-%d blocks each, dirt/gravel/sand weights %d/%d/%d):%n",
+                ColonyGeneratorTunables.SOIL_POCKETS_MIN_PER_CHUNK, ColonyGeneratorTunables.SOIL_POCKETS_MAX_PER_CHUNK,
+                ColonyGeneratorTunables.SOIL_POCKET_MIN_SIZE, ColonyGeneratorTunables.SOIL_POCKET_MAX_SIZE,
+                ColonyGeneratorTunables.SOIL_POCKET_DIRT_WEIGHT, ColonyGeneratorTunables.SOIL_POCKET_GRAVEL_WEIGHT,
+                ColonyGeneratorTunables.SOIL_POCKET_SAND_WEIGHT);
+
+        int chunkRadius = 12;
+        int chunksSampled = 0;
+        int emptyChunks = 0;
+        int pocketsFound = 0;
+        long blocksFound = 0;
+        int interiorViolations = 0;
+        int[] materialCounts = new int[3];
+
+        for (int cx = -chunkRadius; cx <= chunkRadius; cx++) {
+            for (int cz = -chunkRadius; cz <= chunkRadius; cz++) {
+                int minX = cx * 16;
+                int minZ = cz * 16;
+                ColonyNoise.Shaft[] shafts = noise.shaftsNear(minX, minZ);
+                ColonyNoise.Throne[] thrones = noise.thronesNear(minX, minZ);
+                ColonyNoise.Nursery[] nurseries = noise.nurseriesNear(minX, minZ);
+                ColonyNoise.Garden[] gardens = noise.gardensNear(minX, minZ);
+                ColonyNoise.Larder[] larders = noise.lardersNear(minX, minZ);
+                ColonyNoise.SoilPocket[] pockets =
+                        noise.soilPocketsForChunk(shafts, thrones, nurseries, gardens, larders, minX, minZ);
+                chunksSampled++;
+                if (pockets.length == 0) {
+                    emptyChunks++;
+                    continue;
+                }
+                for (ColonyNoise.SoilPocket pocket : pockets) {
+                    pocketsFound++;
+                    materialCounts[pocket.material()]++;
+                    for (ColonyNoise.PocketBlock block : pocket.blocks()) {
+                        blocksFound++;
+                        ColonyNoise.Throne[] columnThrones = noise.thronesForColumn(thrones, block.x(), block.z());
+                        ColonyNoise.Nursery[] columnNurseries =
+                                noise.nurseriesForColumn(nurseries, block.x(), block.z());
+                        ColonyNoise.Garden[] columnGardens = noise.gardensForColumn(gardens, block.x(), block.z());
+                        ColonyNoise.Larder[] columnLarders = noise.lardersForColumn(larders, block.x(), block.z());
+                        if (noise.isInThroneRoom(columnThrones, block.x(), block.y(), block.z())
+                                || noise.isInNurseryRoom(columnNurseries, block.x(), block.y(), block.z())
+                                || noise.isInGardenRoom(columnGardens, block.x(), block.y(), block.z())
+                                || noise.isInLarderRoom(columnLarders, block.x(), block.y(), block.z())) {
+                            interiorViolations++;
+                        }
+                    }
+                }
+            }
+        }
+
+        System.out.printf(Locale.ROOT,
+                "  %d chunks sampled (%d rolled zero eligible pockets), %d pockets, %d blocks total"
+                        + " (dirt %d, gravel %d, sand %d)%n",
+                chunksSampled, emptyChunks, pocketsFound, blocksFound, materialCounts[ColonyNoise.SOIL_MATERIAL_DIRT],
+                materialCounts[ColonyNoise.SOIL_MATERIAL_GRAVEL], materialCounts[ColonyNoise.SOIL_MATERIAL_SAND]);
+        System.out.println(pocketsFound > 0
+                ? "  PASS: pockets exist over the sampled chunks."
+                : "  FAIL: no pocket generated anywhere in the sample.");
+        System.out.printf(Locale.ROOT, "  %d of %d pocket blocks landed inside a chamber's own interior%n",
+                interiorViolations, blocksFound);
+        System.out.println(interiorViolations == 0
+                ? "  PASS: no pocket block ever lands inside a chamber interior."
+                : "  FAIL: " + interiorViolations + " pocket block(s) intruded on a chamber's interior.");
     }
 
     /** The pre-round-1 flat per-block comb chances, kept only as the comparison baseline. */
