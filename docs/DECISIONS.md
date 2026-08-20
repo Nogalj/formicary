@@ -1825,3 +1825,96 @@ jittered 384-block grid, sparse wilds between them.
 - **Three new probe invariants**, all green on all three seeds: every tier grows patches, no
   patch block lands outside its patch's own tier, and no patch uses the wrong aggregate for
   its tier (0 sand below the top tier, 0 gravel in it).
+
+## Play-test round 3 -- colonies tighter still (2026-08-19)
+
+- **Logan chose compactness over the census, told they conflict.** Round 2 shipped core 80 /
+  outer 128 / spacing 320 and spent its whole chamber-density argument pushing the outer
+  radius UP toward a 4-6 rooms-per-kind target. After playing it he asked for tighter
+  colonies again. The two cannot both be had: a colony's room budget is
+  `pi * COLONY_OUTER_RADIUS^2 / NURSERY_SPACING^2` times a ~0.8 realization factor and
+  nothing else, so pulling the outer radius to 100 caps it at about 2.7 of each kind. He was
+  told that before the change and took the compactness. **Shipped: outer 128 -> 100, spacing
+  320 -> 288, core 80 -> 76.** The probe's census acceptance floor moved 3 -> 2 to match the
+  decision rather than to make a red bar green -- the floor is kept, not deleted, because it
+  still catches the failure it was written for (a colony with one room of a kind, or none).
+  Measured census per kind per colony, 169 colonies per seed: **2.43-2.67**, min 1, median
+  2-3, max 4.
+- **Spacing is what partially pays for it, and it pays in encounter rate, not in rooms.**
+  288 cannot add a room to a colony; it makes colonies more often met and quicker to cross.
+  The findability bound recomputes with it -- `144*sqrt(2) + 48` = 252, bound 265, measured
+  worst 226.9 / 191.8 / 187.7 -- and note which way that moved: tighter spacing makes a
+  colony *easier* to find, which is the half of the trade that costs nothing.
+- **The compaction is also more discrete, not less.** True wilds between neighbouring centres
+  is `COLONY_SPACING - 2*COLONY_OUTER_RADIUS` = `288 - 200` = **88 blocks**, against 64 at
+  round 2's 320/128 and the 44 that got outer radius 138 rejected in round 2 for exactly this
+  reason. The one thing the whole colony field exists to create got better while the field
+  got smaller.
+- **Every radius-coupled bound was re-derived rather than left to rot.** Boss-bar separation
+  floor 224 -> **192** (measured minimum 203.2-204.0, still 3.4x the 56 it needs);
+  `coloniesNear` 3x3 sufficiency 274/432 -> **252/384** against an outer radius of 100;
+  `NEAREST_ELIGIBLE_CELL_RADIUS` 402 -> **352** against six rings of 96 = 576; the ender-slot
+  ring 100 -> **91** blocks with the nearest foreign centre at 192; the chamber-eligibility
+  cut 103 -> **93** blocks and the larder's 104 -> **93.6**; the census scan ring's own margin
+  8 -> **36** blocks (a chamber cell centre now sits within `100 + 56` = 156 of its colony
+  centre against 2 rings of 96 = 192), which retires round 2's warning that a third ring
+  became necessary past outer radius 136.
+- **`NEAREST_QUERY_CELL_RADIUS` = 2 stopped being generous and became necessary.** At 320 the
+  3x3's worst case was 350 against 356 for a throne two cells out -- nearly a tie. At 288 it
+  is **328 against 308**: a throne two cells out can now be *closer* than the 3x3's own worst
+  case, so the second ring is load-bearing. A third stays pointless (three cells out is at
+  least 596).
+
+### The core radius: 76, and why not 64 or 74
+
+- **Round 3 opened at 64 and the probe failed it on all three seeds.** 3 / 1 / 4 thrones
+  outside their own core, worst centre offset 65.5 / 64.4 / 68.5 over 169 colonies each.
+- **The round-2 note that the measured worst offset was 62.4 was an artifact of the sample
+  size**, and that is the finding worth keeping. Widening the sweep from 169 to 3721 colonies
+  per seed shows the same distribution has always had a long tail:
+
+  ```
+  seed 1234567   n=3721  p50 37.7  p90 55.6  p99 66.2  p999 70.5  max 72.3
+  seed 42        n=3721  p50 38.1  p90 56.3  p99 65.2  p999 69.8  max 73.2
+  seed 987654321 n=3721  p50 39.2  p90 56.9  p99 65.5  p999 70.2  max 72.8
+
+  core 64 -> 56-67 of 3721 outside (1.5%-1.8%)    core 70 -> 3-9  (0.08%-0.24%)
+  core 66 -> 31-39 (0.8%-1.0%)                    core 72 -> 1-2  (0.03%-0.05%)
+  core 68 -> 12-21 (0.3%-0.6%)                    core 74 -> 0    core 76 -> 0
+  ```
+
+  Core 80 was never safe *because* 62.4 was measured; it was safe because the algebraic bound
+  76 proves it. A measurement over 169 samples of a distribution whose true maximum is 76 is
+  not evidence about the maximum, and this is the second time a round-2 number of that shape
+  has been believed.
+- **74 was measured clean on all three seeds and was rejected anyway.** Player worlds run
+  arbitrary seeds, so clean-on-three-seeds carries the residue an 11,163-colony sweep only
+  bounded -- 74 sits between p999 and the true max, which is exactly where a rare report comes
+  from and exactly where it cannot be reproduced. 76 is
+  `24*sqrt(2) + SHAFT_JITTER/2 + THRONE_APPROACH_DISTANCE` exactly, so it is provable for
+  every seed forever. Same provable-over-measured principle that settled
+  `THRONE_LARDER_CLEARANCE` in round 2, where a cell-neighbourhood proxy measured fine and a
+  distance bound was taken instead.
+- **The two blocks cost nothing Logan can see.** The core is the flat plateau of a smoothstep
+  falloff, which has no visible seam at either end -- the boundary a player reads as "the
+  colony" is the outer radius, and that stays exactly where he set it, as does the spacing.
+  It even pays: a wider core pushes the `f >= 0.15` eligibility cut further out, and the
+  census came in at 2.43-2.67 per kind against 2.18-2.47 at core 64.
+
+### The bug the re-derivation found
+
+- **`crowdsAThrone` was checking only the nearest colony's throne, and the compaction broke
+  the argument that made that exact.** Round 2's reasoning: a throne within the 62.5-block
+  clearance of a point belongs to a colony centre at most `62.5 + 76` = 138.5 away, two such
+  centres are at most 277 apart, and centres are at least `COLONY_SPACING - COLONY_JITTER` =
+  224 apart, so there can only be one candidate. Round 3 takes that minimum to **192**, and
+  **192 < 277** -- so a tier-0 larder sitting between two colonies could clear its own
+  colony's throne and land inside a neighbour's. That is precisely the failure round 2 spent
+  a whole item eliminating (a cell-neighbourhood guard let 3 larders through on seed 1234567
+  and 10 on seed 987654321, worst pair 3.8 blocks centre to centre).
+- **Fixed by checking all nine thrones in the 3x3 cell neighbourhood**, which restores
+  exactness rather than restoring the margin: a colony centre two cells out is at least
+  `2*288 - 144 - 48` = 384 blocks from any point in this cell, far beyond the 138.5 a
+  crowding throne would need, so nine candidates are all there are. Cost is eight extra
+  one-draw thrones, and only on a tier-0 pick. Fixed rather than left for the probe to catch
+  because the probe samples larders while the generator places all of them.

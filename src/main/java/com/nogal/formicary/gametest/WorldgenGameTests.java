@@ -547,11 +547,11 @@ public class WorldgenGameTests {
      * across it and both bounds below are asserted against exactly the same numbers they
      * were before the field existed. Nothing was loosened.
      *
-     * <p>Re-checked against play-test round 2's compaction, which cut
-     * {@code COLONY_CORE_RADIUS} from 100 to 80: the 57-block corner still sits inside it,
-     * with 23 blocks to spare, so the window is still wholly at {@code f = 1.0} and this test
-     * needed no retarget. Worth re-deriving rather than assuming -- the margin went from 43
-     * blocks to 23, and a core of 56 or less would silently start sampling the ring.
+     * <p>Re-checked against both compactions, which cut {@code COLONY_CORE_RADIUS} from 100
+     * to 80 and then to 76: the 57-block corner still sits inside it, so the window is still
+     * wholly at {@code f = 1.0} and this test needed no retarget either time. Worth
+     * re-deriving rather than assuming -- the margin has gone 43 blocks, 23, and now <b>19</b>,
+     * and a core of 56 or less would silently start sampling the ring instead of the core.
      */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "platform")
@@ -561,9 +561,9 @@ public class WorldgenGameTests {
             ColonyNoise.Colony core = noise.nearestColony(0.0, 0.0);
             int coreX = (int) Math.round(core.centreX());
             int coreZ = (int) Math.round(core.centreZ());
-            // The whole window lies inside one 320-block colony cell (48 of colony jitter
+            // The whole window lies inside one 288-block colony cell (48 of colony jitter
             // plus the box's own 57-block corner = 105 from the cell centre at worst, against
-            // a 160-block half-cell), so one neighbourhood resolves the field for all of it.
+            // a 144-block half-cell), so one neighbourhood resolves the field for all of it.
             ColonyNoise.Colony[] colonies = noise.coloniesNear(coreX, coreZ);
             long inside = 0;
             long samples = 0;

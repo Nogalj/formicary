@@ -567,16 +567,25 @@ public final class ColonyGeneratorTunables {
      * One colony per this many blocks on each axis. Also the throne chamber's cell: since
      * Ep2 there is exactly one throne, and one queen, per colony by construction.
      *
-     * <p><b>Round 2 compaction: 384 -&gt; 320.</b> The play-test asked for colonies that were
-     * less spread out and for chambers that were less rare, and the second is why the spacing
-     * moved rather than only the radii. Chambers sit on a fixed 96-block grid, so the number a
-     * colony can hold is {@code (eligible area) / 96^2} -- shrinking the radii alone cuts that
-     * hard (measured: 4.9 nurseries per colony down to 1.3). Pulling the spacing in at the
-     * same time raises the cells available per colony to {@code (320/96)^2} = 11.1, which is
-     * what pays for the smaller radii. {@link NoiseProbe}'s per-colony chamber census is the
-     * judge of the result, not this paragraph.
+     * <p><b>Round 2 compaction: 384 -&gt; 320. Round 3: 320 -&gt; 288.</b> The play-test asked
+     * for colonies that were less spread out and for chambers that were less rare, and the
+     * second is why the spacing moved rather than only the radii. Chambers sit on a fixed
+     * 96-block grid, so the number a colony can hold is {@code (eligible area) / 96^2} --
+     * shrinking the radii alone cuts that hard (measured in round 2: 4.9 nurseries per colony
+     * down to 1.3). Pulling the spacing in at the same time raises the cells available per
+     * colony to {@code (288/96)^2} = 9.0.
+     *
+     * <p><b>Round 3 is the round where those two stopped paying for each other, and Logan
+     * chose the spacing.</b> Told that the tighter radii he asked for put the per-kind chamber
+     * census below the round-2 target of 4-6, he took the compactness: colonies you meet often
+     * and can walk across quickly, with fewer rooms in each. Spacing 288 is what partially
+     * compensates -- it cannot add rooms to a colony (the budget is
+     * {@code pi * COLONY_OUTER_RADIUS^2 / NURSERY_SPACING^2}, which has nothing to do with
+     * spacing), it raises how often you meet one. {@link NoiseProbe}'s per-colony chamber
+     * census is the judge of the result, not this paragraph, and its acceptance floor moved
+     * to 2 to match the decision.
      */
-    public static final int COLONY_SPACING = 320;
+    public static final int COLONY_SPACING = 288;
 
     /**
      * Seed-jitter of a colony centre inside its cell, in blocks (TOTAL spread, so a centre
@@ -584,58 +593,82 @@ public final class ColonyGeneratorTunables {
      * {@link #SHAFT_JITTER} uses).
      *
      * <p><b>Bounded by an invariant, not by taste.</b> Two neighbouring centres are at least
-     * {@code COLONY_SPACING - COLONY_JITTER} = <b>224</b> blocks apart, and that minimum has
+     * {@code COLONY_SPACING - COLONY_JITTER} = <b>192</b> blocks apart, and that minimum has
      * to stay above {@code 2 *} {@code QueenAntEntity#BOSS_BAR_RADIUS_EXIT} (2 x 28 = 56):
      * a player can only ever be inside two queens' bar radii at once if two thrones are
-     * closer than that, so 224 > 56 is what makes two simultaneous boss bars impossible --
+     * closer than that, so 192 > 56 is what makes two simultaneous boss bars impossible --
      * the symptom play-test round 1 actually reported. {@link NoiseProbe}'s colony section
      * measures the real minimum separation across seeds rather than trusting this algebra.
      *
-     * <p>Play-test round 2 pulled {@link #COLONY_SPACING} in from 384 to 320, which took this
-     * floor from 288 to 224. The jitter itself is unchanged, and the invariant keeps four
-     * times the headroom it needs -- the binding constraint on the spacing is findability and
-     * chamber density, never the boss bar.
+     * <p>Two rounds of compaction have pulled {@link #COLONY_SPACING} from 384 to 320 to 288,
+     * taking this floor from 288 to 224 to 192. The jitter itself is unchanged, and the
+     * invariant still keeps 3.4x the headroom it needs -- the binding constraint on the
+     * spacing is findability and chamber density, never the boss bar.
      */
     public static final double COLONY_JITTER = 96.0;
 
     /**
      * Inside this radius of a colony centre the field is a flat 1.0 -- full density.
      *
-     * <p>Round 2 compaction: 100 -&gt; 80, alongside {@link #COLONY_SPACING} 384 -&gt; 320.
-     * The floor under it is the throne, which hangs off the ramp cell containing the colony
-     * centre and so lands at most {@code 24*sqrt(2) + SHAFT_JITTER/2 + THRONE_APPROACH_DISTANCE}
-     * = 76 blocks out (measured worst case across the probe's sweep: 62.4). A core smaller
-     * than that would put a queen's chamber outside her own colony's full-density zone, so
-     * 80 is the tightest round value that still contains every throne.
+     * <p>Round 2 compaction: 100 -&gt; 80. Round 3: 80 -&gt; 76, alongside
+     * {@link #COLONY_SPACING} 320 -&gt; 288 and {@link #COLONY_OUTER_RADIUS} 128 -&gt; 100.
+     *
+     * <p><b>76 is not a taste value; it is the exact algebraic floor.</b> The throne hangs off
+     * the ramp cell containing the colony centre, so it lands at most
+     * {@code 24*sqrt(2) + SHAFT_JITTER/2 + THRONE_APPROACH_DISTANCE} = 76 blocks out, and a
+     * core smaller than that can put a queen's chamber outside her own colony's full-density
+     * zone. Every block of the compaction that could be taken here has been taken, and not one
+     * more.
+     *
+     * <p><b>Round 3 opened at 64 and measured what that costs, which is the reason this
+     * paragraph exists.</b> At 64 the probe found 1.5-1.8% of thrones outside their core
+     * (56-67 of 3721 colonies per seed), and the round-2 note that the measured worst offset
+     * was 62.4 turned out to be an artifact of a 169-colony sweep -- widened to 3721 the same
+     * distribution reaches 72.3-73.2, with p99 65.2-66.2 and p999 69.8-70.5. 74 was the
+     * smallest value clean on all three probe seeds and was <b>rejected</b>: player worlds run
+     * arbitrary seeds, so clean-on-three-seeds still carries the residue the sweep only
+     * bounded, while 76 is provable for every seed forever. Same provable-over-measured
+     * principle as {@link #THRONE_LARDER_CLEARANCE}. The core is the invisible flat plateau of
+     * a smoothstep falloff, so the two blocks cost nothing anyone can see, and the two dials
+     * the play-test actually asked for -- {@link #COLONY_OUTER_RADIUS} and
+     * {@link #COLONY_SPACING} -- keep the values it set.
      */
-    public static final double COLONY_CORE_RADIUS = 80.0;
+    public static final double COLONY_CORE_RADIUS = 76.0;
 
     /**
      * By this radius the field has fallen to 0.0 -- wilds: worm tunnels and ramps only.
      *
-     * <p>Round 2 compaction: 150 -&gt; 128. This is the hard outer bound on where any chamber
-     * can generate -- {@link #CHAMBER_ELIGIBILITY_MIN_F} can only ever cut inside it -- and so
-     * it, <b>not the gate</b>, is what caps how many rooms a colony can hold. The disc holds
-     * {@code pi * R^2 / NURSERY_SPACING^2} chamber cells, which at 128 is 5.6, and the ~0.8
-     * realization factor (a chamber centre hangs 24 blocks off its ramp axis, and that axis
-     * must clear the same gate) brings the ceiling to about 4.5 rooms of each kind.
+     * <p>Round 2 compaction: 150 -&gt; 128. Round 3: 128 -&gt; 100. This is the hard outer bound
+     * on where any chamber can generate -- {@link #CHAMBER_ELIGIBILITY_MIN_F} can only ever cut
+     * inside it -- and so it, <b>not the gate</b>, is what caps how many rooms a colony can
+     * hold. The disc holds {@code pi * R^2 / NURSERY_SPACING^2} chamber cells, which at 100 is
+     * 3.41, and the ~0.8 realization factor (a chamber centre hangs 24 blocks off its ramp
+     * axis, and that axis must clear the same gate) brings the ceiling to about 2.7 rooms of
+     * each kind.
      *
-     * <p>It landed at 128 rather than 112 because 112 could not feed the census: measured at
-     * an unchanged gate, 112 gave 2.92-3.16 rooms per kind per colony and 128 gives 3.83-3.91,
-     * clearing the probe's [3, 9] floor with margin on every seed. 138 was tried and rejected
-     * -- it reaches 4.31-4.44, inside the nominal 4-6 target, but with centres 320 apart it
-     * leaves only {@code 320 - 2*138} = 44 blocks of true wilds between neighbouring colonies,
-     * which erodes the discrete-colony feel the whole field exists to create. At 128 that gap
-     * is 64 blocks, and the compaction against the original 150 is real.
+     * <p><b>That ceiling is the whole cost of round 3, and it was accepted with the number in
+     * front of it.</b> Round 2 spent its effort pushing this radius UP -- 112 gave 2.92-3.16
+     * rooms per kind and 128 gave 3.83-3.91, against a nominal target of 4-6 -- and round 3
+     * spends the same lever in the opposite direction, because after playing round 2 Logan
+     * asked for tighter colonies again. Told the two conflict, he took compactness. The
+     * probe's census floor moved from 3 to 2 to match; {@code docs/DECISIONS.md} records the
+     * decision itself.
+     *
+     * <p>The other thing 100 buys is the gap between colonies, which is what the discrete
+     * colony feel is actually made of: {@code COLONY_SPACING - 2*R} is now {@code 288 - 200}
+     * = 88 blocks of true wilds between neighbouring centres, against 64 at round 2's 320/128
+     * and the 44 that got radius 138 rejected in round 2 for exactly this reason. Round 3 is
+     * both more compact and more discrete; only the census pays.
      */
-    public static final double COLONY_OUTER_RADIUS = 128.0;
+    public static final double COLONY_OUTER_RADIUS = 100.0;
 
     /**
      * Nursery, fungus garden and larder chambers generate only where the field at their own
      * centre is above this.
      *
-     * <p>0.15 puts the cut at about 103 blocks from a colony centre (solving the falloff for
-     * f = 0.15), i.e. deliberately out in the ring rather than core-only. Nurseries are the
+     * <p>0.15 puts the cut at about 93 blocks from a colony centre (solving the falloff for
+     * f = 0.15 at the round-3 radii), i.e. deliberately out in the ring rather than
+     * core-only. Nurseries are the
      * only larva source and arrival XZ is uncorrelated with colonies -- portals are 1:1 with
      * the anthill thrown at -- so confining chambers to the cores would land half of all first
      * entries in empty tunnels with nothing findable. This is the named tunable for the
@@ -647,7 +680,9 @@ public final class ColonyGeneratorTunables {
      * flat at both ends, so the whole span from {@code f = 0.2} to {@code f = 0} is a thin
      * annulus at the outer edge -- at the 112 outer radius this was first measured against,
      * radius 100.7 out to 112, eleven blocks wide, and dropping the gate to 0.15 bought two of
-     * them. Per-colony chamber census at that radius (probe, seed 1234567, 169 colonies):
+     * them. At round 3's radii the same annulus runs 92.2 to 100, and is thinner still --
+     * the compaction narrowed the whole falloff band to 24 blocks, so this lever has even less
+     * room to move than the round-2 measurement showed. Per-colony chamber census at that radius (probe, seed 1234567, 169 colonies):
      * <pre>
      *   gate 0.20   nursery 3.01   garden 3.09   larder 2.99
      *   gate 0.15   nursery 3.11   garden 3.16   larder 3.05
@@ -670,7 +705,8 @@ public final class ColonyGeneratorTunables {
 
     /**
      * The larder's own, slightly looser floor (play-test round 2): 0.12 against the shared
-     * 0.15, which is about 104 blocks from a colony centre against 103.
+     * 0.15, which at the round-3 radii is about 93.6 blocks from a colony centre against
+     * 93.0.
      *
      * <p>The larder is the one chamber kind that is pure reward -- no brood, no farm, no
      * queen, just a stocked room -- so it is the one whose scarcity was worth relaxing when

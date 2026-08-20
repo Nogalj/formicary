@@ -1217,16 +1217,18 @@ public final class NoiseProbe {
     /**
      * (4) From an arbitrary point, how far is the nearest colony?
      *
-     * <p>The bound is 290 blocks, which is the jittered grid's own worst case -- the far
+     * <p>The bound is 265 blocks, which is the jittered grid's own worst case -- the far
      * corner of a cell whose centre jittered away from you, {@code (COLONY_SPACING/2)*sqrt(2)
-     * + COLONY_JITTER/2} = {@code 160*sqrt(2) + 48} = 274 -- with a little air in it. The
+     * + COLONY_JITTER/2} = {@code 144*sqrt(2) + 48} = 252 -- with a little air in it. The
      * points are drawn from a fixed seed rather than a lattice on purpose: a lattice with any
      * relationship to {@code COLONY_SPACING} would sample the same phase of every cell and
      * could miss the corner case entirely.
      *
-     * <p>Round 2 recomputed it from the new spacing rather than leaving the old 340 in place.
-     * A bound that no longer tracks its derivation is worse than no bound: it would have gone
-     * on passing while saying nothing, and this is the check that a colony is findable at all.
+     * <p>Recomputed from the spacing every time it moves -- 340 at 384, 290 at 320, 265 at
+     * round 3's 288 -- rather than left to rot. A bound that no longer tracks its derivation
+     * is worse than no bound: it would go on passing while saying nothing, and this is the
+     * check that a colony is findable at all. Note which way it moved: tighter spacing makes
+     * colonies easier to find, which is the half of the round-3 trade that pays.
      */
     private static boolean colonyFindability(ColonyNoise noise) {
         RandomSource points = new XoroshiroRandomSource(20260818L);
@@ -1246,7 +1248,7 @@ public final class NoiseProbe {
                 worstZ = z;
             }
         }
-        double bound = 290.0;
+        double bound = 265.0;
         System.out.printf(Locale.ROOT,
                 "%n  findability over %d sample points in +-%d blocks: mean %.1f, worst %.1f (at %d, %d),"
                         + " bound %.0f%n",
@@ -1258,8 +1260,18 @@ public final class NoiseProbe {
         return pass;
     }
 
-    /** Chambers of one kind a colony must hold for the nest to read as a nest. */
-    private static final int CENSUS_MIN = 3;
+    /**
+     * Chambers of one kind a colony must hold for the nest to read as a nest.
+     *
+     * <p><b>Round 3 lowered it from 3 to 2, and it is a recorded decision rather than a
+     * retune.</b> The ceiling is {@code pi * COLONY_OUTER_RADIUS^2 / NURSERY_SPACING^2} times
+     * the ~0.8 realization factor and nothing else, so the round-3 compaction to a 100-block
+     * outer radius puts it at about 2.7 per kind -- below the round-2 target of 4-6 and below
+     * this floor as it stood. Told the two conflict, Logan chose the tighter colonies; see
+     * {@code docs/DECISIONS.md}. The floor is kept rather than deleted because it still
+     * catches the failure it was written for: a colony with one room of a kind, or none.
+     */
+    private static final int CENSUS_MIN = 2;
     /** And the ceiling, above which a colony is a warren rather than a colony. */
     private static final int CENSUS_MAX = 9;
 
@@ -1277,14 +1289,16 @@ public final class NoiseProbe {
      *
      * <p>Counted directly instead. Every in-colony chamber belongs to exactly one colony and
      * the assignment is unambiguous: the field is zero beyond
-     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} = 128 and two centres are at least
-     * {@code COLONY_SPACING - COLONY_JITTER} = 224 apart, so the eligibility discs cannot
+     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} = 100 and two centres are at least
+     * {@code COLONY_SPACING - COLONY_JITTER} = 192 apart, so the eligibility discs cannot
      * overlap. A chamber centre lands within
      * {@code SHAFT_SPACING/2 + SHAFT_JITTER/2 + APPROACH_DISTANCE} = 56 blocks of its cell
-     * centre, so every chamber inside a colony has its cell centre within {@code 128 + 56} =
-     * 184 blocks of that colony centre -- {@link #CENSUS_CELL_RING} = 2 rings of 96 reaches
-     * 192 and covers it. The round-2 radius decision cut that margin from 24 blocks to 8, so
-     * a third ring becomes necessary the moment the outer radius passes 136.
+     * centre, so every chamber inside a colony has its cell centre within {@code 100 + 56} =
+     * 156 blocks of that colony centre -- {@link #CENSUS_CELL_RING} = 2 rings of 96 reaches
+     * 192 and covers it comfortably. Round 2 left this at an 8-block margin and warned that a
+     * third ring became necessary the moment the outer radius passed 136; round 3's compaction
+     * to 100 takes the margin back to 36 blocks, so two rings are no longer the tight part of
+     * this section.
      *
      * <p>The band is asserted on the <b>mean</b> and the spread is printed. Holding every
      * individual colony to a floor would be asserting something the design does not promise --
