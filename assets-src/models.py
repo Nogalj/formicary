@@ -269,13 +269,24 @@ LARVA = {
 # soldier's 6x5x7), the thorax and head carry the soldier's armour language at
 # roughly double scale, and the legs are long enough to carry all of it.
 #
-# Atlas is 128x64. Box-UV packing, checked to fit:
+# Atlas is 128x64. Box-UV packing, checked to fit -- a region is (2d+2w) wide by
+# (d+h) tall, so a box that grows needs its slot re-measured, not just re-placed:
 #   gaster   (0,  0)  72x32     thorax  (0, 32)  56x24
 #   head     (72, 0)  46x20     petiole (72,20)  22x11
-#   crest    (94,20)  22x7      mandible_base (94,27) 16x7
-#   mandible_tip (94,34) 12x6   leg      (56,32)   8x18
+#   crest    (94,20)  22x7      mandible_base (94,27) 22x9
+#   mandible_tip (94,36) 22x11  leg      (56,32)   8x18
 #   antenna_base (64,32) 12x9   antenna_mid   (76,32)  8x7
 #   antenna_tip  (84,32)  8x6
+#
+# The two mandible slots grew with the WP-3b pincers (16x7 -> 22x9, 12x6 -> 22x11) and
+# were re-checked against every neighbour that could collide, not just the ones they
+# touch: crest ends at y=27 so mandible_base starts flush under it; petiole ends at
+# x=94 so both slots start flush right of it; head ends at y=20 and gaster at x=72,
+# both clear; thorax/leg/antenna_base/antenna_mid all live at x<=76, and antenna_tip
+# ends at x=92, so the whole x>=94 column below y=27 is the mandibles' alone. Widest
+# new right edge is 116 and lowest new bottom is 47, inside the 128x64 sheet with room
+# to spare. Verified by exhaustive pairwise rect overlap over every cube in QUEEN_ANT,
+# not by reading this comment.
 #
 # Ground is y=24; her back sits at y=0, i.e. 24px = 1.5 blocks tall, under the
 # 1.8-block hitbox.
@@ -298,16 +309,50 @@ QUEEN_LEG_ROOT_Y = 9.5
 QUEEN_LEG_LENGTH = 16
 
 # Play-test round 1, spec item 2: the mandibles read "too chunky" -- reworked from one
-# 5x4x8 block per side into two tapered segments (base 4x3x4, tip 2x2x4) so the jaw
-# actually narrows toward the point instead of staying a uniform slab. The tip also
-# curls toward the midline (yRot) for a pincer silhouette; sign is empirical -- verified
-# by rendering the preview and checking the tips converge rather than splay. Both
-# segments stay children of `head`, matching the flat single-level part list every other
-# model here uses (see the module docstring): the base's own rest rotation is the
-# identity, so nesting the tip under `head` directly instead of under the base produces
-# an identical absolute pose while keeping this file's "poses are absolute" invariant
-# intact -- no hierarchical composition to hand-simulate.
-QUEEN_MANDIBLE_TIP_ANGLE = 0.3491   # ~20 degrees
+# 5x4x8 block per side into two tapered segments so the jaw actually narrows toward the
+# point instead of staying a uniform slab. The tip also curls toward the midline (yRot)
+# for a pincer silhouette; sign is empirical -- verified by rendering the preview and
+# checking the tips converge rather than splay. Both segments stay children of `head`,
+# matching the flat single-level part list every other model here uses (see the module
+# docstring): the base's own rest rotation is the identity, so nesting the tip under
+# `head` directly instead of under the base produces an identical absolute pose while
+# keeping this file's "poses are absolute" invariant intact -- no hierarchical
+# composition to hand-simulate.
+#
+# Play-test round 2 (ep2), WP-3b: "needs bigger more intimidating pincers." The taper
+# survives, everything else grows -- base 4x3x4 -> 6x4x5, tip 2x2x4 -> 3x3x8, curl
+# 0.3491 -> 0.45 rad. The plan's opening targets were base 5x3x5 / tip 3x2x6; rendered
+# side by side against the old jaw those still read as a thin gold strip under a 12x9x11
+# skull, because what gives a jaw weight in the side view is its HEIGHT and its reach
+# past the face, and 3x2x6 grew neither much. A four-variant sweep settled the step where
+# the silhouette stops reading as a moustache and starts reading as tusks. The taper is
+# still there; it runs 6->3 in width and 4->3 in height instead of 4->2 and 3->2.
+#
+# Four numbers hold the silhouette together and none of them is free:
+#   * the base is RECESSED (front face z=-17.5 against the skull's z=-18) so it never
+#     goes coplanar with the face; it overhangs the 12-wide skull by 3 units per side and
+#     hangs 3 below it, which is what gives the jaws mass from the front. Its top plane
+#     (y=10) sits INSIDE the skull, which is what roots it -- interpenetration is fine,
+#     a shared plane is not, and every plane here is checked against the skull's for
+#     exactly that.
+#   * the tip pivots 1.5 units INSIDE the base (pivot z=-16 vs base front -17.5) and is
+#     narrower (3 vs 6) and shorter (3 vs 4) than it on the other two axes, so its whole
+#     rear face stays buried whatever the flex does. Checked at both extremes of
+#     setupAnim's +/-0.09 flex, which rotates base and tip about DIFFERENT pivots and so
+#     does NOT preserve their relative pose: worst case leaves the rear-outer corner
+#     0.35 units inside the base's outer wall. A shorter overlap detaches the tip at full
+#     gape -- the same "floating box" failure the legs had in the ep2 model pass.
+#   * the tip pivot sits at x +/-7, one unit inside the base's outer wall. Pivot, tip
+#     length and base WIDTH are a single decision, not three: the longer the tip, the
+#     further its point swings inward, so a pivot nearer the midline closes the gap
+#     between the two points; but a pivot nearer the outer wall is what the counter-
+#     rotating base runs out of room for. 6-wide base + pivot 7 is the pair that leaves
+#     margin on both. An earlier 5-wide/pivot-6.5 attempt passed at rest and pushed the
+#     tip 0.15 units out through the base's flank at full closure.
+#   * 0.45 rad brings the points from 4.3 units apart at rest to 3.2 at full closure --
+#     visibly converging, never intersecting -- and the far corner reaches z=-23.9, i.e.
+#     5.9 units clear of the skull's front plane (it used to clear it by 0.8).
+QUEEN_MANDIBLE_TIP_ANGLE = 0.45   # ~26 degrees
 
 # Ep2 model pass, item 2: the antennae were one straight 2x7x2 spike per side,
 # which at her scale read as a stray leg glued to the skull rather than as a
@@ -379,19 +424,19 @@ QUEEN_ANT = {
             {"off": (72, 0), "box": (-6, -4.5, -11, 12, 9, 11)},        # skull
             {"off": (94, 20), "box": (-3, -6.5, -8, 6, 2, 5)},          # crest
         ]},
-        {"name": "mandible_r_base", "pose": (-3, 12, -11), "cubes": [
-            {"off": (94, 27), "box": (-4, -1.5, -4, 4, 3, 4)},
+        {"name": "mandible_r_base", "pose": (-3, 12, -12.5), "cubes": [
+            {"off": (94, 27), "box": (-6, -2, -5, 6, 4, 5)},
         ]},
-        {"name": "mandible_r_tip", "pose": (-5, 12, -15),
+        {"name": "mandible_r_tip", "pose": (-7, 12, -16),
          "rot": (0, -QUEEN_MANDIBLE_TIP_ANGLE, 0), "cubes": [
-            {"off": (94, 34), "box": (-1, -1, -4, 2, 2, 4)},
+            {"off": (94, 36), "box": (-1.5, -1.5, -8, 3, 3, 8)},
         ]},
-        {"name": "mandible_l_base", "pose": (3, 12, -11), "cubes": [
-            {"off": (94, 27), "box": (0, -1.5, -4, 4, 3, 4)},
+        {"name": "mandible_l_base", "pose": (3, 12, -12.5), "cubes": [
+            {"off": (94, 27), "box": (0, -2, -5, 6, 4, 5)},
         ]},
-        {"name": "mandible_l_tip", "pose": (5, 12, -15),
+        {"name": "mandible_l_tip", "pose": (7, 12, -16),
          "rot": (0, QUEEN_MANDIBLE_TIP_ANGLE, 0), "cubes": [
-            {"off": (94, 34), "box": (-1, -1, -4, 2, 2, 4)},
+            {"off": (94, 36), "box": (-1.5, -1.5, -8, 3, 3, 8)},
         ]},
         # --- gaster: the mass. Petiole waist, then the egg-swollen abdomen ------
         {"name": "gaster", "pose": (0, 4, 0), "cubes": [
@@ -1229,23 +1274,58 @@ def paint_queen_ant():
     hband(d, r["north"], 1, Q_PLUM_DARKEST)      # shadow where it meets the skull
 
     # ---- mandibles: plum base with a gold joint accent, then a slimmer gold ------
-    # ---- tip that carries the biting point (play-test round 1, spec item 2) ------
-    r = rects(parts["mandible_r_base"]["cubes"][0])
+    # ---- tip that carries the biting point (play-test round 1, spec item 2; ------
+    # ---- enlarged and serrated for round 2, WP-3b) -------------------------------
+    # Everything here is painted MIRROR-SYMMETRICALLY across west/east. Java draws the
+    # left mandible with .mirror(), the preview renderer does not, so any detail put on
+    # one flank only would sit on the inner face in game and the outer face in the QA
+    # preview -- i.e. the gate would be judging a different model than the one shipping.
+    # Symmetric paint makes the two agree, and a serrated blade wants teeth on both
+    # flanks anyway.
+    #
+    # Rect orientation used below (module docstring): on west/east, rect-x 0 is the
+    # FRONT (min Z) end and rect-y 0 the world-top row; on the world-top rect, rect-y 0
+    # is the BACK and the last row is the front.
+    # Every index below is derived from the box dims rather than written as a literal.
+    # These two boxes have already been resized twice by play-test feedback; hardcoded
+    # rect coordinates silently slide off the face when that happens (a band lands one
+    # texel in from the edge it was meant to be ON), and nothing errors.
+    cube = parts["mandible_r_base"]["cubes"][0]
+    bw, bh, bd = (int(v) for v in cube["box"][3:])
+    r = rects(cube)                                   # flanks bd x bh, caps bw x bd
     for f in ("west", "north", "east", "south", "top"):
-        fill(d, r[f], Q_PLUM_BASE)
+        noise_rect(d, r[f], "mandible_base:" + f, Q_LIMB_PAL, namespace=NS, cell=2,
+                   jitter=0.3)
     fill(d, r["bottom"], Q_PLUM_DARKEST)
+    fill(d, r["south"], Q_PLUM_DARKEST)               # buried in the skull, never lit
     for f in ("west", "east"):
-        hband(d, r[f], 0, Q_GOLD_DEEP)            # joint accent, same motif as the legs
-    px(d, r["top"], 1, 1, Q_GOLD_BRIGHT)
+        hband(d, r[f], 0, Q_PLUM_MID)                 # lit upper ridge of the jaw muscle
+        vband(d, r[f], bd - 1, Q_GOLD_DEEP)           # joint collar, same motif as the legs
+        px(d, r[f], 0, 1, Q_GOLD)                     # socket the tip hinges out of
+        px(d, r[f], 1, 1, Q_GOLD_DEEP)
+    hband(d, r["north"], 0, Q_GOLD_DEEP)              # gold rim around the tip socket
+    hband(d, r["north"], bh - 1, Q_PLUM_DARKEST)
+    for gx in (1, bw - 2):
+        vband(d, r["top"], gx, Q_PLUM_DARKEST)        # two plate seams down the jaw
+    px(d, r["top"], bw // 2, 1, Q_GOLD_BRIGHT)
 
-    r = rects(parts["mandible_r_tip"]["cubes"][0])
+    cube = parts["mandible_r_tip"]["cubes"][0]
+    tw, th, td = (int(v) for v in cube["box"][3:])
+    r = rects(cube)                                   # flanks td x th, caps tw x td
     for f in ("west", "north", "east", "south", "top"):
         fill(d, r[f], Q_GOLD)
     fill(d, r["bottom"], Q_PLUM_DARKEST)
     fill(d, r["north"], Q_GOLD_BRIGHT)            # the -Z face is the true biting point
     for f in ("west", "east"):
         vband(d, r[f], 0, Q_GOLD_BRIGHT)          # brightest right at the point
-        vband(d, r[f], 3, Q_PLUM_DARK)            # dims back toward the base joint
+        vband(d, r[f], td - 2, Q_GOLD_DEEP)
+        vband(d, r[f], td - 1, Q_PLUM_DARK)       # dims back toward the base joint
+        for sx in range(1, td - 2, 2):            # serration notches along the biting edge
+            px(d, r[f], sx, th - 1, Q_PLUM_DARKEST)
+            px(d, r[f], sx + 1, 0, Q_GOLD_BRIGHT)  # a lit tooth crown between them
+    hband(d, r["top"], td - 1, Q_GOLD_BRIGHT)     # lit leading edge (top rect-y max = front)
+    hband(d, r["top"], 0, Q_PLUM_DARK)            # socket end, shaded
+    vband(d, r["top"], tw // 2, Q_GOLD_DEEP)      # ridge down the blade's spine
 
     # ---- antennae: three segments, darkest at the skull and gold at the point --
     # Each rect's y=0 is its min-Y end, i.e. the end AWAY from the head, so the

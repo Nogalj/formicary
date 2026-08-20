@@ -1544,3 +1544,49 @@ jittered 384-block grid, sparse wilds between them.
   collision by deleting the most interesting case: a food store in the Royal Depths is the one
   that puts something worth walking to in the tier a player only otherwise enters to fight the
   queen. The gate costs 5-9% of tier-0 draws; the restriction would have cost all of them.
+
+## Play-test round 2 -- queen pincers (2026-08-19)
+
+- **The jaws shipped bigger than the plan's numbers, because the plan's numbers failed the
+  plan's own gate.** WP-3b opened with base 4x3x4 -> 5x3x5 and tip 2x2x4 -> 3x2x6; built and
+  rendered beside the round-1 jaw, that still read as a thin gold strip under a 12x9x11
+  skull. What gives a mandible weight in the side view -- the view a player actually fights
+  her from -- is its HEIGHT and its reach past the face, and 3x2x6 grew neither much. A
+  four-variant sweep rendered in one sheet (5x3x5/3x2x6, 5x4x5/3x3x7, 5x4x5/3x3x8,
+  6x4x5/3x3x8) put the step change at +1 unit of height on each segment plus +2 of tip
+  length. Shipped: **base 6x4x5, tip 3x3x8, `QUEEN_MANDIBLE_TIP_ANGLE` 0.3491 -> 0.45**
+  (~26 degrees). The round-1 taper survives -- it just runs 6->3 in width and 4->3 in height
+  instead of 4->2 and 3->2 -- as does the flat base+tip-under-`head` structure and the rigid
+  same-flex `setupAnim`, both unchanged.
+- **Tip length, tip pivot and base WIDTH are one decision.** The longer the tip, the further
+  its point swings toward the midline for a given curl, so a pivot nearer the midline is what
+  closes the gap between the two points; but the base counter-rotates under the tip during the
+  idle flex (they hinge about DIFFERENT pivots, since neither is nested under the other), so a
+  pivot nearer the base's outer wall is what the base runs out of room for. The first attempt
+  at 5-wide base / pivot x 6.5 passed at rest and pushed the tip's rear-outer corner 0.15 units
+  out through the base's flank at full closure -- a detached-looking seam of exactly the kind
+  the ep2 leg pass was fixing. 6-wide base with the pivot at x 7 leaves margin on both: worst
+  case over the whole +/-0.09 flex is 0.35 units of the rear corner still inside the base, and
+  the points stay 4.3 units apart at rest / 3.2 at full closure, converging without ever
+  intersecting. Far corner reaches z=-23.9, clearing the skull's front plane by 5.9 (it used
+  to clear it by 0.8).
+- **Interpenetration is fine; a shared plane is not.** The base's top plane sits a unit inside
+  the skull and the tip's half a unit inside it -- that is what roots them, and the reason the
+  jaw never looks glued on. What is banned is a face landing exactly ON another face's plane,
+  which z-fights, so every jaw plane is offset from the skull's bottom (y=11) and from the
+  other segment's: base 10..14, tip 10.5..13.5, base front z=-17.5 against the skull's -18.
+- **The jaw texture is painted mirror-symmetrically across `west`/`east`, on purpose.** Java
+  draws the left mandible with `.mirror()` and the preview renderer does not, so any detail
+  put on one flank alone sits on the inner face in game and the outer face in the QA preview
+  -- the gate would be judging a different model than the one shipping. Symmetric paint makes
+  the two agree, and a serrated blade wants teeth on both flanks anyway. Three notch/crown
+  pairs per flank, gold blade, `Q_GOLD_BRIGHT` on the true biting face, plum base with the
+  legs' gold joint-collar motif.
+- **Every rect index in the mandible paint is now derived from the box dims.** These two boxes
+  have been resized twice by play-test feedback, and a hardcoded rect coordinate slides
+  silently off the face it was meant to be on when that happens -- a band lands one texel in
+  from an edge and nothing errors. Atlas slots grew with them: `mandible_base (94,27) 16x7 ->
+  22x9`, `mandible_tip (94,34) 12x6 -> (94,36) 22x11`. Checked by exhaustive pairwise rect
+  overlap over every cube in `QUEEN_ANT` rather than by re-reading the packing comment;
+  neighbours cleared are crest (ends y=27), petiole (ends x=94), head (ends y=20), gaster
+  (ends x=72), and antenna_tip (ends x=92).

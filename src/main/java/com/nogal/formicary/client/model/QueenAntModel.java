@@ -79,8 +79,13 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
      * sign is per-side (see {@link #createBodyLayer}). Matches
      * {@code assets-src/models.py}'s {@code QUEEN_MANDIBLE_TIP_ANGLE} exactly -- that file
      * is the source of truth, this is the hand translation.
+     *
+     * <p>Play-test round 2 (ep2), WP-3b: "needs bigger more intimidating pincers." Widened
+     * from {@code 0.3491F}; at {@code 0.45F} the tips close from 4.3 units apart at rest to
+     * 3.2 at the extreme of the {@code setupAnim} flex, so they read as converging jaws and
+     * still never intersect.
      */
-    private static final float MANDIBLE_TIP_ANGLE = 0.3491F;
+    private static final float MANDIBLE_TIP_ANGLE = 0.45F;
 
     /** The gaster's rest offset under {@code body}; the idle pulse is written around it. */
     private static final float GASTER_REST_Y = -2.0F;
@@ -161,25 +166,36 @@ public class QueenAntModel<T extends Entity> extends EntityModel<T> {
         // absolute-pose part list -- see QueenAntModel's class javadoc and
         // assets-src/models.py's QUEEN_MANDIBLE_TIP_ANGLE comment. setupAnim flexes both
         // segments of a side by the same angle, so they move together as a rigid unit.
+        //
+        // Play-test round 2 (ep2), WP-3b: base 4x3x4 -> 6x4x5, tip 2x2x4 -> 3x3x8, and the
+        // offsets moved with them. The python spec's poses are ABSOLUTE and `head` sits at
+        // (0, 6.5, -7) absolute, so every offset here is that spec pose minus (0, 6.5, -7):
+        //   mandible_r_base (-3, 12, -12.5) -> (-3, 5.5, -5.5)
+        //   mandible_r_tip  (-7, 12, -16)   -> (-7, 5.5, -9)
+        // Because base and tip flex about their OWN pivots rather than one riding the
+        // other, the tip's 1.5 units of z overlap into the base is what keeps the joint
+        // shut at full gape -- shortening it, or moving the tip pivot outward toward the
+        // base's flank, detaches it. Numbers verified against the spec by the preview
+        // render, which is the only place a mismatch shows up before the client runs.
         head.addOrReplaceChild("mandible_r_base",
                 CubeListBuilder.create()
-                        .texOffs(94, 27).addBox(-4.0F, -1.5F, -4.0F, 4.0F, 3.0F, 4.0F, new CubeDeformation(0.0F)),
-                PartPose.offset(-3.0F, 5.5F, -4.0F));
+                        .texOffs(94, 27).addBox(-6.0F, -2.0F, -5.0F, 6.0F, 4.0F, 5.0F, new CubeDeformation(0.0F)),
+                PartPose.offset(-3.0F, 5.5F, -5.5F));
 
         head.addOrReplaceChild("mandible_r_tip",
                 CubeListBuilder.create()
-                        .texOffs(94, 34).addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 4.0F, new CubeDeformation(0.0F)),
-                PartPose.offsetAndRotation(-5.0F, 5.5F, -8.0F, 0.0F, -MANDIBLE_TIP_ANGLE, 0.0F));
+                        .texOffs(94, 36).addBox(-1.5F, -1.5F, -8.0F, 3.0F, 3.0F, 8.0F, new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-7.0F, 5.5F, -9.0F, 0.0F, -MANDIBLE_TIP_ANGLE, 0.0F));
 
         head.addOrReplaceChild("mandible_l_base",
                 CubeListBuilder.create()
-                        .texOffs(94, 27).mirror().addBox(0.0F, -1.5F, -4.0F, 4.0F, 3.0F, 4.0F, new CubeDeformation(0.0F)).mirror(false),
-                PartPose.offset(3.0F, 5.5F, -4.0F));
+                        .texOffs(94, 27).mirror().addBox(0.0F, -2.0F, -5.0F, 6.0F, 4.0F, 5.0F, new CubeDeformation(0.0F)).mirror(false),
+                PartPose.offset(3.0F, 5.5F, -5.5F));
 
         head.addOrReplaceChild("mandible_l_tip",
                 CubeListBuilder.create()
-                        .texOffs(94, 34).mirror().addBox(-1.0F, -1.0F, -4.0F, 2.0F, 2.0F, 4.0F, new CubeDeformation(0.0F)).mirror(false),
-                PartPose.offsetAndRotation(5.0F, 5.5F, -8.0F, 0.0F, MANDIBLE_TIP_ANGLE, 0.0F));
+                        .texOffs(94, 36).mirror().addBox(-1.5F, -1.5F, -8.0F, 3.0F, 3.0F, 8.0F, new CubeDeformation(0.0F)).mirror(false),
+                PartPose.offsetAndRotation(7.0F, 5.5F, -9.0F, 0.0F, MANDIBLE_TIP_ANGLE, 0.0F));
 
         // Antennae: three hinged segments per side, each a CHILD of the last, unlike every
         // other part of this model. See the class javadoc -- the nesting is what lets the
