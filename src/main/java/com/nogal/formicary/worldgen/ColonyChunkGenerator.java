@@ -261,8 +261,8 @@ public class ColonyChunkGenerator extends ChunkGenerator {
             }
         }
 
-        // Item 8: dirt/gravel/sand pockets. A separate pass rather than a branch inside the
-        // loop above, on purpose -- ColonyNoise#soilPocketsForChunk's own eligibility check
+        // Item 8: dirt/gravel/sand patches. A separate pass rather than a branch inside the
+        // loop above, on purpose -- ColonyNoise#soilPatchesNear's own eligibility check
         // (ColonyNoise#isPlainFabric) is a pure function of the SAME noise state the loop
         // above already resolved (isAir plus each of the five forced-solid claims), not of
         // anything the loop wrote, so there is no ordering dependency between the two; this
@@ -270,19 +270,27 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         // ChunkAccess#setBlockState API (like buildSurface's own force-write passes),
         // deliberately not the raw section writes above -- those are only valid while their
         // sections are held, which the `finally` above has just released.
-        for (ColonyNoise.SoilPocket pocket : noise.soilPocketsForChunk(chunkShafts, chunkThrones, chunkNurseries,
-                chunkGardens, chunkLarders, minX, minZ)) {
-            BlockState material = soilPocketState(pocket.material());
+        //
+        // Round 3 made the patches big enough to cross a chunk boundary, so the enumeration
+        // is over the 3x3 chunk neighbourhood and this pass writes only the blocks that land
+        // inside its own chunk. Both chunks derive the same patch -- it is a pure function of
+        // the chunk that seeded it -- so the two halves meet.
+        for (ColonyNoise.SoilPatch patch : noise.soilPatchesNear(minX, minZ)) {
+            BlockState material = soilPatchState(patch.material());
             BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-            for (ColonyNoise.PocketBlock block : pocket.blocks()) {
+            for (ColonyNoise.PocketBlock block : patch.blocks()) {
+                if (block.x() < minX || block.x() >= minX + 16 || block.z() < minZ || block.z() >= minZ + 16
+                        || block.y() < bottom || block.y() >= top) {
+                    continue;
+                }
                 chunk.setBlockState(cursor.set(block.x(), block.y(), block.z()), material, false);
             }
         }
         return chunk;
     }
 
-    /** Maps a {@link ColonyNoise.SoilPocket#material()} index to its vanilla block state. */
-    private static BlockState soilPocketState(int material) {
+    /** Maps a {@link ColonyNoise.SoilPatch#material()} index to its vanilla block state. */
+    private static BlockState soilPatchState(int material) {
         return switch (material) {
             case ColonyNoise.SOIL_MATERIAL_GRAVEL -> Blocks.GRAVEL.defaultBlockState();
             case ColonyNoise.SOIL_MATERIAL_SAND -> Blocks.SAND.defaultBlockState();

@@ -87,13 +87,16 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ROYAL_RESIN_T
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SHAFT_JITTER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SHAFT_MAX_REACH;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SHAFT_SPACING;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKETS_MAX_PER_CHUNK;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKETS_MIN_PER_CHUNK;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKET_DIRT_WEIGHT;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKET_GRAVEL_WEIGHT;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKET_MAX_SIZE;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKET_MIN_SIZE;
-import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_POCKET_SAND_WEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCHES_MAX_PER_CHUNK;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCHES_MIN_PER_CHUNK;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_AGGREGATE_WEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_DIRT_WEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_HORIZONTAL_BIAS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_MAX_LAYERS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_MAX_RADIUS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_MAX_SIZE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_MIN_LAYERS;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_MIN_SIZE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_APPROACH_DISTANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_CORRIDOR_END;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_CORRIDOR_HALF_WIDTH;
@@ -118,6 +121,8 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.WALL_JITTER_A
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.WALL_JITTER_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.colonyFalloff;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierIndex;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierMaxY;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierMinY;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -2487,6 +2492,10 @@ public final class ColonyNoise {
             return isAir(this.field, this.shafts, this.thrones, this.nurseries, this.gardens, this.larders, x, y, z);
         }
 
+        boolean plainFabric(int x, int y, int z) {
+            return isPlainFabric(this.shafts, this.thrones, this.nurseries, this.gardens, this.larders, x, y, z);
+        }
+
         /** Whether the connectivity spine claims this block as its walkway floor. */
         boolean spineSolid(int x, int y, int z) {
             return this.shafts.length > 0 && shaftState(this.shafts, x, y, z) == SHAFT_SOLID;
@@ -2519,30 +2528,60 @@ public final class ColonyNoise {
     }
 
     // ------------------------------------------------------------------
-    // Soil pockets (play-test round 2, item 8) -- vanilla dirt/gravel/sand blobs through
-    // ordinary fabric. A pure function of chunk position, like everything else in this
-    // class: the block WRITES only happen in ColonyChunkGenerator (only it can touch a
-    // ChunkAccess), but which positions a pocket claims and what material fills it are
-    // decided here, which is what lets NoiseProbe measure them without a running
-    // dimension. Consumed by ColonyChunkGenerator#fill, after its main pass has already
-    // decided the ordinary block palette -- see #isPlainFabric.
+    // Soil patches (play-test round 2 item 8, re-specced in round 3) -- vanilla dirt,
+    // gravel and sand through ordinary fabric. A pure function of chunk position, like
+    // everything else in this class: the block WRITES only happen in ColonyChunkGenerator
+    // (only it can touch a ChunkAccess), but which positions a patch claims and what
+    // material fills it are decided here, which is what lets NoiseProbe measure them
+    // without a running dimension. Consumed by ColonyChunkGenerator#fill, after its main
+    // pass has already decided the ordinary block palette -- see #isPlainFabric.
     // ------------------------------------------------------------------
 
-    /** {@link SoilPocket#material()} values. */
+    /** {@link SoilPatch#material()} values. */
     public static final int SOIL_MATERIAL_DIRT = 0;
     public static final int SOIL_MATERIAL_GRAVEL = 1;
     public static final int SOIL_MATERIAL_SAND = 2;
 
-    private static final int[][] POCKET_NEIGHBOR_OFFSETS =
-            {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    /**
+     * The walk's step directions, with the four horizontal ones repeated
+     * {@link ColonyGeneratorTunables#SOIL_PATCH_HORIZONTAL_BIAS} times each. Drawing
+     * uniformly from this array is what makes a patch a sheet rather than a ball.
+     */
+    private static final int[][] PATCH_STEPS = buildPatchSteps();
 
-    /** One block a soil pocket claims. */
+    private static int[][] buildPatchSteps() {
+        int[][] horizontal = {{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
+        int[][] steps = new int[horizontal.length * SOIL_PATCH_HORIZONTAL_BIAS + 2][];
+        int at = 0;
+        for (int repeat = 0; repeat < SOIL_PATCH_HORIZONTAL_BIAS; repeat++) {
+            for (int[] step : horizontal) {
+                steps[at++] = step;
+            }
+        }
+        steps[at++] = new int[] {0, 1, 0};
+        steps[at] = new int[] {0, -1, 0};
+        return steps;
+    }
+
+    /** One block a carve or decoration pass claims. */
     public record PocketBlock(int x, int y, int z) {
     }
 
-    /** One realized soil pocket: the blocks it claims and which material fills all of them. */
-    public record SoilPocket(PocketBlock[] blocks, int material) {
+    /** One realized soil patch: the blocks it claims and which material fills all of them. */
+    public record SoilPatch(PocketBlock[] blocks, int material, int tier) {
     }
+
+    /**
+     * Which aggregate a tier's patches use alongside dirt (play-test round 3).
+     *
+     * <p>Indexed by tier, so it is a fact about where the player is standing rather than a
+     * world-wide weighted draw: sand in the Fungal Gardens at the top, gravel in the
+     * Nurseries and the Royal Depths below. {@link NoiseProbe} asserts the separation -- no
+     * sand under the top tier, no gravel in it -- rather than trusting this array to be read
+     * correctly at the one call site.
+     */
+    public static final int[] SOIL_PATCH_AGGREGATE_BY_TIER =
+            {SOIL_MATERIAL_GRAVEL, SOIL_MATERIAL_GRAVEL, SOIL_MATERIAL_SAND};
 
     /**
      * Whether the solid position at (x, y, z) is plain fabric -- not a chamber's own shell
@@ -2556,8 +2595,8 @@ public final class ColonyNoise {
      * but "is this solid for no load-bearing reason at all" -- ordinary wilds or colony
      * fabric that a cosmetic decoration pass is free to touch, as opposed to a ramp floor
      * that keeps the spine walkable or a shell that keeps a room's neighbour from breaching
-     * into it. {@link #soilPocketsForChunk} is the one caller; every other kind of solid
-     * reaches {@code isAir} = false by a rule this method exists to keep a pocket away from.
+     * into it. {@link #soilPatchesForChunk} is the one caller; every other kind of solid
+     * reaches {@code isAir} = false by a rule this method exists to keep a patch away from.
      *
      * <p>Callers are expected to already know the position is solid for the SAME column
      * arrays -- this only distinguishes which kind of solid it is, the same relationship
@@ -2584,44 +2623,79 @@ public final class ColonyNoise {
     }
 
     /**
-     * The {@link ColonyGeneratorTunables#SOIL_POCKETS_MIN_PER_CHUNK}-{@link
-     * ColonyGeneratorTunables#SOIL_POCKETS_MAX_PER_CHUNK} soil pockets rolled for the chunk
-     * at ({@code minX}, {@code minZ}).
+     * Every soil patch that can reach into the chunk at ({@code minX}, {@code minZ}),
+     * including the ones seeded by its eight neighbours.
      *
-     * <p>Each pocket is a bounded random walk: a seed position is drawn inside the chunk's
-     * own XZ and the carvable Y band, and if it lands on {@link #isPlainFabric} fabric the
-     * walk repeatedly picks a random already-claimed block and a random axis-neighbour of
-     * it, keeping the neighbour only if it too is plain fabric and not already claimed. The
-     * walk stops once it reaches {@link ColonyGeneratorTunables#SOIL_POCKET_MAX_SIZE}, or
-     * once it exhausts a generous attempt budget without finding a new eligible neighbour --
-     * whichever comes first, so a pocket walled in by a chamber shell on most sides
-     * terminates early instead of looping forever hunting for room that is not there, the
-     * same way a vanilla ore vein terminates against a cave. Positions never leave the
-     * chunk: a pocket that wandered into a neighbour's XZ would be trying to write blocks
-     * the generator has no business touching from here.
+     * <p>The 3x3 neighbourhood is what lets a patch cross a chunk boundary, which round 3's
+     * much larger patches need: a seam up to 15 blocks across confined to the chunk that
+     * seeded it would be a seam with straight edges every 16 blocks. A patch wanders at most
+     * {@link ColonyGeneratorTunables#SOIL_PATCH_MAX_RADIUS} = 7 from its seed column, so a
+     * chunk one further out cannot reach this one and the ring is provably enough. Each
+     * chunk writes only the blocks that land inside itself, and both chunks derive the same
+     * patch because it is a pure function of the seed chunk -- the same discipline every
+     * other cross-chunk feature in this class uses.
+     */
+    public SoilPatch[] soilPatchesNear(int minX, int minZ) {
+        ColumnCache cache = new ColumnCache();
+        List<SoilPatch> patches = new ArrayList<>();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                Collections.addAll(patches, soilPatchesForChunk(cache, minX + dx * 16, minZ + dz * 16));
+            }
+        }
+        return patches.toArray(new SoilPatch[0]);
+    }
+
+    /**
+     * The {@link ColonyGeneratorTunables#SOIL_PATCHES_MIN_PER_CHUNK}-{@link
+     * ColonyGeneratorTunables#SOIL_PATCHES_MAX_PER_CHUNK} soil patches <b>seeded by</b> the
+     * chunk at ({@code minX}, {@code minZ}). Their blocks may lie outside it; see
+     * {@link #soilPatchesNear}.
+     *
+     * <p>Each patch is a bounded random walk with the vertical steps rationed: a seed
+     * position is drawn inside the chunk's own XZ and inside one tier, and if it lands on
+     * {@link #isPlainFabric} fabric the walk repeatedly picks a random already-claimed block
+     * and a random neighbour of it, keeping the neighbour only if it too is plain fabric, is
+     * inside the patch's own box, and is not already claimed. The walk stops once it reaches
+     * its target size, or once it exhausts a generous attempt budget without finding new
+     * eligible fabric -- whichever comes first, so a patch walled in by a chamber shell on
+     * most sides terminates early instead of looping forever hunting for room that is not
+     * there, the same way a vanilla ore vein terminates against a cave.
+     *
+     * <p><b>The patch stays inside the tier it was seeded in</b>, which is what makes the
+     * per-tier palette meaningful: a seam that straddled a boundary would put sand two
+     * blocks into the Nurseries. The box is at most three blocks tall against a 48-block
+     * band, so confining it costs nothing.
      *
      * <p>Not gated by the colony field at all, unlike every chamber/comb chance elsewhere
      * in this class -- these are flavor blocks the colony field has no opinion about, in
      * the wilds exactly as much as in a colony core.
      */
-    public SoilPocket[] soilPocketsForChunk(Shaft[] chunkShafts, Throne[] chunkThrones,
-            Nursery[] chunkNurseries, Garden[] chunkGardens, Larder[] chunkLarders, int minX, int minZ) {
+    private SoilPatch[] soilPatchesForChunk(ColumnCache cache, int minX, int minZ) {
         // y = 8: a ninth independent stream, after shaft (0), throne (1), nursery (2),
         // garden (3), larder (4), colony centre (5), ender slots (6) and the chamber base
         // bearing (7) -- keyed by the chunk's own block coordinates rather than a cell,
-        // since a pocket is a per-chunk feature with no larger grid of its own.
+        // since a patch is a per-chunk feature with no larger grid of its own.
         RandomSource random = this.factory.at(minX, 8, minZ);
-        int count = between(SOIL_POCKETS_MIN_PER_CHUNK, SOIL_POCKETS_MAX_PER_CHUNK, random);
-        List<SoilPocket> pockets = new ArrayList<>(count);
+        int count = between(SOIL_PATCHES_MIN_PER_CHUNK, SOIL_PATCHES_MAX_PER_CHUNK, random);
+        List<SoilPatch> patches = new ArrayList<>(count);
 
         for (int i = 0; i < count; i++) {
-            int material = pickPocketMaterial(random);
-            int targetSize = between(SOIL_POCKET_MIN_SIZE, SOIL_POCKET_MAX_SIZE, random);
+            int targetSize = between(SOIL_PATCH_MIN_SIZE, SOIL_PATCH_MAX_SIZE, random);
+            int layers = between(SOIL_PATCH_MIN_LAYERS, SOIL_PATCH_MAX_LAYERS, random);
+            int tier = random.nextInt(TIER_COUNT);
+            int material = random.nextInt(SOIL_PATCH_DIRT_WEIGHT + SOIL_PATCH_AGGREGATE_WEIGHT)
+                    < SOIL_PATCH_DIRT_WEIGHT ? SOIL_MATERIAL_DIRT : SOIL_PATCH_AGGREGATE_BY_TIER[tier];
             int seedX = minX + random.nextInt(16);
             int seedZ = minZ + random.nextInt(16);
-            int seedY = FLOOR_TOP + random.nextInt(CEILING_BOTTOM - FLOOR_TOP);
-            if (!isPocketEligible(chunkShafts, chunkThrones, chunkNurseries, chunkGardens, chunkLarders,
-                    minX, minZ, seedX, seedY, seedZ)) {
+            int bandBottom = Math.max(FLOOR_TOP, tierMinY(tier));
+            int bandTop = Math.min(CEILING_BOTTOM, tierMaxY(tier));
+            if (bandTop - bandBottom <= layers) {
+                continue;
+            }
+            int baseY = bandBottom + random.nextInt(bandTop - bandBottom - layers);
+            int seedY = baseY + random.nextInt(layers);
+            if (!isPatchEligible(cache, seedX, seedY, seedZ)) {
                 continue;
             }
 
@@ -2632,13 +2706,14 @@ public final class ColonyNoise {
             while (claimed.size() < targetSize && attempts < maxAttempts) {
                 attempts++;
                 int[] from = claimed.get(random.nextInt(claimed.size()));
-                int[] offset = POCKET_NEIGHBOR_OFFSETS[random.nextInt(POCKET_NEIGHBOR_OFFSETS.length)];
+                int[] offset = PATCH_STEPS[random.nextInt(PATCH_STEPS.length)];
                 int nx = from[0] + offset[0];
                 int ny = from[1] + offset[1];
                 int nz = from[2] + offset[2];
-                if (containsPosition(claimed, nx, ny, nz)
-                        || !isPocketEligible(chunkShafts, chunkThrones, chunkNurseries, chunkGardens, chunkLarders,
-                                minX, minZ, nx, ny, nz)) {
+                if (Math.abs(nx - seedX) > SOIL_PATCH_MAX_RADIUS || Math.abs(nz - seedZ) > SOIL_PATCH_MAX_RADIUS
+                        || ny < baseY || ny >= baseY + layers
+                        || containsPosition(claimed, nx, ny, nz)
+                        || !isPatchEligible(cache, nx, ny, nz)) {
                     continue;
                 }
                 claimed.add(new int[] {nx, ny, nz});
@@ -2649,26 +2724,21 @@ public final class ColonyNoise {
                 int[] pos = claimed.get(b);
                 blocks[b] = new PocketBlock(pos[0], pos[1], pos[2]);
             }
-            pockets.add(new SoilPocket(blocks, material));
+            patches.add(new SoilPatch(blocks, material, tier));
         }
-        return pockets.toArray(new SoilPocket[0]);
+        return patches.toArray(new SoilPatch[0]);
     }
 
-    private boolean isPocketEligible(Shaft[] chunkShafts, Throne[] chunkThrones, Nursery[] chunkNurseries,
-            Garden[] chunkGardens, Larder[] chunkLarders, int minX, int minZ, int x, int y, int z) {
-        if (x < minX || x >= minX + 16 || z < minZ || z >= minZ + 16) {
-            return false;
-        }
-        Shaft[] columnShafts = shaftsForColumn(chunkShafts, x, z);
-        Throne[] columnThrones = thronesForColumn(chunkThrones, x, z);
-        Nursery[] columnNurseries = nurseriesForColumn(chunkNurseries, x, z);
-        Garden[] columnGardens = gardensForColumn(chunkGardens, x, z);
-        Larder[] columnLarders = lardersForColumn(chunkLarders, x, z);
-        if (!isPlainFabric(columnShafts, columnThrones, columnNurseries, columnGardens, columnLarders, x, y, z)) {
-            return false;
-        }
-        double field = colonyField(x, z);
-        return !isAir(field, columnShafts, columnThrones, columnNurseries, columnGardens, columnLarders, x, y, z);
+    /**
+     * Whether a patch may claim (x, y, z): solid fabric that nothing load-bearing owns.
+     *
+     * <p>Resolved through {@link ColumnCache} rather than through one chunk's own arrays,
+     * because a patch is allowed to leave the chunk that seeded it and the answer has to be
+     * the same whichever chunk is asking.
+     */
+    private boolean isPatchEligible(ColumnCache cache, int x, int y, int z) {
+        Column column = cache.column(x, z);
+        return column.plainFabric(x, y, z) && !column.air(x, y, z);
     }
 
     private static boolean containsPosition(List<int[]> positions, int x, int y, int z) {
@@ -2678,14 +2748,5 @@ public final class ColonyNoise {
             }
         }
         return false;
-    }
-
-    private static int pickPocketMaterial(RandomSource random) {
-        int total = SOIL_POCKET_DIRT_WEIGHT + SOIL_POCKET_GRAVEL_WEIGHT + SOIL_POCKET_SAND_WEIGHT;
-        int roll = random.nextInt(total);
-        if (roll < SOIL_POCKET_DIRT_WEIGHT) {
-            return SOIL_MATERIAL_DIRT;
-        }
-        return roll < SOIL_POCKET_DIRT_WEIGHT + SOIL_POCKET_GRAVEL_WEIGHT ? SOIL_MATERIAL_GRAVEL : SOIL_MATERIAL_SAND;
     }
 }

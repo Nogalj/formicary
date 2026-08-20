@@ -1372,31 +1372,67 @@ public final class ColonyGeneratorTunables {
     public static final double LARDER_COMB_DOORWAY_EXCLUSION = Math.toRadians(30.0);
 
     // ------------------------------------------------------------------
-    // Soil pockets (play-test round 2, item 8) -- vanilla dirt/gravel/sand blobs scattered
-    // through ordinary fabric, in the colony and the wilds alike. Deliberately NOT
-    // colony_fabric: free digging and normal drops is the whole point (pairs with the
-    // mandible pickaxe and the flint loot added elsewhere this round). See
-    // ColonyNoise#soilPocketsForChunk for the placement algorithm and
-    // ColonyNoise#isPlainFabric for the exclusion that keeps a pocket out of a chamber's
-    // own shell, a ramp or landing floor, and the un-carved floor/ceiling caps.
+    // Soil patches (play-test round 2 item 8, re-specced in round 3) -- vanilla dirt,
+    // gravel and sand through ordinary fabric, in the colony and the wilds alike.
+    // Deliberately NOT colony_fabric: free digging and normal drops is the whole point
+    // (pairs with the mandible pickaxe and the flint loot). See
+    // ColonyNoise#soilPatchesForChunk for the placement algorithm and
+    // ColonyNoise#isPlainFabric for the exclusion that keeps a patch out of a chamber's own
+    // shell, a ramp or landing floor, and the un-carved floor/ceiling caps.
+    //
+    // ROUND 3 CHANGED THE SHAPE AND THE PALETTE. Round 2's version was 2-4 compact blobs of
+    // 5-20 blocks per chunk drawn from one world-wide weighted material list, and in play
+    // they read as speckle -- the same complaint fungus and comb each drew in their own
+    // round. A patch now wants to be a seam you walk into: fewer, much larger, and flat, so
+    // it presents as a band in a wall or a floor rather than as a lump. And the palette is
+    // per tier rather than global, so the material is a fact about where you are: sand in
+    // the Fungal Gardens up top, gravel in the Nurseries and the Royal Depths, dirt in all
+    // three.
     // ------------------------------------------------------------------
 
-    /** Pockets rolled per chunk, inclusive range. */
-    public static final int SOIL_POCKETS_MIN_PER_CHUNK = 2;
-    public static final int SOIL_POCKETS_MAX_PER_CHUNK = 4;
+    /** Patches rolled per chunk, inclusive range. */
+    public static final int SOIL_PATCHES_MIN_PER_CHUNK = 1;
+    public static final int SOIL_PATCHES_MAX_PER_CHUNK = 2;
 
     /**
-     * Blocks a pocket's random walk targets, inclusive range. A pocket may end smaller than
+     * Blocks a patch's random walk targets, inclusive range. A patch may end smaller than
      * this if the walk runs out of eligible fabric before reaching it -- the same way a
      * vanilla ore vein terminates early against a cave wall, rather than a guarantee.
      */
-    public static final int SOIL_POCKET_MIN_SIZE = 5;
-    public static final int SOIL_POCKET_MAX_SIZE = 20;
+    public static final int SOIL_PATCH_MIN_SIZE = 20;
+    public static final int SOIL_PATCH_MAX_SIZE = 60;
 
-    /** Relative weights for a pocket's material: dirt commonest, gravel next, sand least. */
-    public static final int SOIL_POCKET_DIRT_WEIGHT = 5;
-    public static final int SOIL_POCKET_GRAVEL_WEIGHT = 3;
-    public static final int SOIL_POCKET_SAND_WEIGHT = 2;
+    /**
+     * Layers of Y a patch may occupy, inclusive range. Two or three is what makes it read as
+     * a seam rather than as a lump: 20-60 blocks spread over two layers is 10-30 per layer,
+     * which is a broad ragged sheet, where the same count in a ball would be four blocks
+     * across in every direction.
+     */
+    public static final int SOIL_PATCH_MIN_LAYERS = 2;
+    public static final int SOIL_PATCH_MAX_LAYERS = 3;
+
+    /**
+     * How far from its seed column a patch may wander on each horizontal axis, so the widest
+     * a patch can be is {@code 2 * this + 1} = 15 blocks. Round 3 asked for 6-14 wide; the
+     * cap is the outer bound, and the size and layer counts above are what actually set the
+     * typical spread.
+     */
+    public static final int SOIL_PATCH_MAX_RADIUS = 7;
+
+    /**
+     * How much more often the walk steps sideways than up or down. Six to one, which is what
+     * flattens the blob: an unweighted walk over six neighbours spends a third of its steps
+     * changing height and fills a ball.
+     */
+    public static final int SOIL_PATCH_HORIZONTAL_BIAS = 6;
+
+    /**
+     * Relative weights for a patch's material: dirt against whichever aggregate the tier
+     * uses. Dirt is the commoner of the two everywhere, so the tier-specific one stays a
+     * find rather than becoming the floor of the band.
+     */
+    public static final int SOIL_PATCH_DIRT_WEIGHT = 5;
+    public static final int SOIL_PATCH_AGGREGATE_WEIGHT = 3;
 
     // ------------------------------------------------------------------
     // Mob spawning at chunk generation (see ColonyChunkGenerator#spawnOriginalMobs)

@@ -75,7 +75,7 @@ public final class NoiseProbe {
             chamberSlots(noise);
             larders(noise);
             combPatches(noise);
-            soilPockets(noise);
+            soilPatches(noise);
             spawnDensity(noise);
         }
         if (what.equals("colony")) {
@@ -105,8 +105,8 @@ public final class NoiseProbe {
         if (what.equals("comb")) {
             combPatches(noise);
         }
-        if (what.equals("pockets")) {
-            soilPockets(noise);
+        if (what.equals("patches")) {
+            soilPatches(noise);
         }
         if (what.equals("spawns")) {
             spawnDensity(noise);
@@ -2880,83 +2880,147 @@ public final class NoiseProbe {
     }
 
     /**
-     * Soil pockets (play-test round 2, item 8): do they exist at all, and does every claimed
-     * block stay out of a chamber's own interior?
+     * Soil patches (play-test round 2 item 8, re-specced in round 3): are they there, are
+     * they the broad flat seams the re-spec asked for, is the palette right for the tier, and
+     * does every claimed block stay out of a chamber's own interior?
      *
      * <p>Sampled over a plain grid of chunks around the origin rather than anchored on a
      * colony the way {@link #nurseries}/{@link #gardens}/{@link #larders}/{@link
-     * #combPatches} are (see the class javadoc for why those anchor there) -- pockets are
+     * #combPatches} are (see the class javadoc for why those anchor there) -- patches are
      * deliberately not colony-field-gated, so the origin is exactly as fair a sample as
      * anywhere else, and a 25x25-chunk grid around it still crosses real shafts and chamber
      * shells often enough to exercise the exclusion this section checks.
+     *
+     * <p>Read through {@link ColonyNoise#soilPatchesNear}, the same seam the generator reads,
+     * so a patch that crosses a chunk boundary is counted once per chunk that can see it --
+     * which is exactly the property that lets the two halves of it meet in the world. The
+     * per-patch statistics below therefore describe patches-as-seen-by-a-chunk, and the
+     * per-chunk count is over the 3x3 neighbourhood.
      */
-    private static void soilPockets(ColonyNoise noise) {
+    private static void soilPatches(ColonyNoise noise) {
         System.out.printf(Locale.ROOT,
-                "%nsoil pockets (%d-%d per chunk, %d-%d blocks each, dirt/gravel/sand weights %d/%d/%d):%n",
-                ColonyGeneratorTunables.SOIL_POCKETS_MIN_PER_CHUNK, ColonyGeneratorTunables.SOIL_POCKETS_MAX_PER_CHUNK,
-                ColonyGeneratorTunables.SOIL_POCKET_MIN_SIZE, ColonyGeneratorTunables.SOIL_POCKET_MAX_SIZE,
-                ColonyGeneratorTunables.SOIL_POCKET_DIRT_WEIGHT, ColonyGeneratorTunables.SOIL_POCKET_GRAVEL_WEIGHT,
-                ColonyGeneratorTunables.SOIL_POCKET_SAND_WEIGHT);
+                "%nsoil patches (%d-%d seeded per chunk, %d-%d blocks each over %d-%d layers, max radius %d;"
+                        + " dirt/aggregate weights %d/%d):%n",
+                ColonyGeneratorTunables.SOIL_PATCHES_MIN_PER_CHUNK, ColonyGeneratorTunables.SOIL_PATCHES_MAX_PER_CHUNK,
+                ColonyGeneratorTunables.SOIL_PATCH_MIN_SIZE, ColonyGeneratorTunables.SOIL_PATCH_MAX_SIZE,
+                ColonyGeneratorTunables.SOIL_PATCH_MIN_LAYERS, ColonyGeneratorTunables.SOIL_PATCH_MAX_LAYERS,
+                ColonyGeneratorTunables.SOIL_PATCH_MAX_RADIUS, ColonyGeneratorTunables.SOIL_PATCH_DIRT_WEIGHT,
+                ColonyGeneratorTunables.SOIL_PATCH_AGGREGATE_WEIGHT);
 
         int chunkRadius = 12;
         int chunksSampled = 0;
         int emptyChunks = 0;
-        int pocketsFound = 0;
+        int patchesFound = 0;
         long blocksFound = 0;
         int interiorViolations = 0;
-        int[] materialCounts = new int[3];
+        int tierViolations = 0;
+        int paletteViolations = 0;
+        int[][] materialByTier = new int[TIER_COUNT][3];
+        int[] patchesByTier = new int[TIER_COUNT];
+        long[] blocksByTier = new long[TIER_COUNT];
+        long widthSum = 0;
+        long layerSum = 0;
+        int widestPatch = 0;
 
         for (int cx = -chunkRadius; cx <= chunkRadius; cx++) {
             for (int cz = -chunkRadius; cz <= chunkRadius; cz++) {
                 int minX = cx * 16;
                 int minZ = cz * 16;
-                ColonyNoise.Shaft[] shafts = noise.shaftsNear(minX, minZ);
-                ColonyNoise.Throne[] thrones = noise.thronesNear(minX, minZ);
-                ColonyNoise.Nursery[] nurseries = noise.nurseriesNear(minX, minZ);
-                ColonyNoise.Garden[] gardens = noise.gardensNear(minX, minZ);
-                ColonyNoise.Larder[] larders = noise.lardersNear(minX, minZ);
-                ColonyNoise.SoilPocket[] pockets =
-                        noise.soilPocketsForChunk(shafts, thrones, nurseries, gardens, larders, minX, minZ);
+                // The seeding chunk's own patches, so each one is counted once across the
+                // sweep; soilPatchesNear would report each of them nine times.
+                ColonyNoise.SoilPatch[] patches = noise.soilPatchesNear(minX, minZ);
+                int seededHere = 0;
                 chunksSampled++;
-                if (pockets.length == 0) {
-                    emptyChunks++;
-                    continue;
-                }
-                for (ColonyNoise.SoilPocket pocket : pockets) {
-                    pocketsFound++;
-                    materialCounts[pocket.material()]++;
-                    for (ColonyNoise.PocketBlock block : pocket.blocks()) {
+                for (ColonyNoise.SoilPatch patch : patches) {
+                    ColonyNoise.PocketBlock first = patch.blocks()[0];
+                    if (first.x() - Math.floorMod(first.x(), 16) != minX
+                            || first.z() - Math.floorMod(first.z(), 16) != minZ) {
+                        continue;
+                    }
+                    seededHere++;
+                    patchesFound++;
+                    patchesByTier[patch.tier()]++;
+                    materialByTier[patch.tier()][patch.material()]++;
+                    if (patch.material() == ColonyNoise.SOIL_MATERIAL_SAND && patch.tier() != TIER_COUNT - 1) {
+                        paletteViolations++;
+                    }
+                    if (patch.material() == ColonyNoise.SOIL_MATERIAL_GRAVEL && patch.tier() == TIER_COUNT - 1) {
+                        paletteViolations++;
+                    }
+                    int minBlockX = Integer.MAX_VALUE;
+                    int maxBlockX = Integer.MIN_VALUE;
+                    int minBlockZ = Integer.MAX_VALUE;
+                    int maxBlockZ = Integer.MIN_VALUE;
+                    int minBlockY = Integer.MAX_VALUE;
+                    int maxBlockY = Integer.MIN_VALUE;
+                    for (ColonyNoise.PocketBlock block : patch.blocks()) {
                         blocksFound++;
-                        ColonyNoise.Throne[] columnThrones = noise.thronesForColumn(thrones, block.x(), block.z());
-                        ColonyNoise.Nursery[] columnNurseries =
-                                noise.nurseriesForColumn(nurseries, block.x(), block.z());
-                        ColonyNoise.Garden[] columnGardens = noise.gardensForColumn(gardens, block.x(), block.z());
-                        ColonyNoise.Larder[] columnLarders = noise.lardersForColumn(larders, block.x(), block.z());
-                        if (noise.isInThroneRoom(columnThrones, block.x(), block.y(), block.z())
-                                || noise.isInNurseryRoom(columnNurseries, block.x(), block.y(), block.z())
-                                || noise.isInGardenRoom(columnGardens, block.x(), block.y(), block.z())
-                                || noise.isInLarderRoom(columnLarders, block.x(), block.y(), block.z())) {
+                        blocksByTier[patch.tier()]++;
+                        minBlockX = Math.min(minBlockX, block.x());
+                        maxBlockX = Math.max(maxBlockX, block.x());
+                        minBlockZ = Math.min(minBlockZ, block.z());
+                        maxBlockZ = Math.max(maxBlockZ, block.z());
+                        minBlockY = Math.min(minBlockY, block.y());
+                        maxBlockY = Math.max(maxBlockY, block.y());
+                        if (tierIndex(block.y()) != patch.tier()) {
+                            tierViolations++;
+                        }
+                        Col col = col(noise, block.x(), block.z());
+                        if (noise.isInThroneRoom(col.thrones(), block.x(), block.y(), block.z())
+                                || noise.isInNurseryRoom(col.nurseries(), block.x(), block.y(), block.z())
+                                || noise.isInGardenRoom(col.gardens(), block.x(), block.y(), block.z())
+                                || noise.isInLarderRoom(col.larders(), block.x(), block.y(), block.z())) {
                             interiorViolations++;
                         }
                     }
+                    int width = Math.max(maxBlockX - minBlockX, maxBlockZ - minBlockZ) + 1;
+                    widthSum += width;
+                    layerSum += maxBlockY - minBlockY + 1;
+                    widestPatch = Math.max(widestPatch, width);
+                }
+                if (seededHere == 0) {
+                    emptyChunks++;
                 }
             }
         }
 
         System.out.printf(Locale.ROOT,
-                "  %d chunks sampled (%d rolled zero eligible pockets), %d pockets, %d blocks total"
-                        + " (dirt %d, gravel %d, sand %d)%n",
-                chunksSampled, emptyChunks, pocketsFound, blocksFound, materialCounts[ColonyNoise.SOIL_MATERIAL_DIRT],
-                materialCounts[ColonyNoise.SOIL_MATERIAL_GRAVEL], materialCounts[ColonyNoise.SOIL_MATERIAL_SAND]);
-        System.out.println(pocketsFound > 0
-                ? "  PASS: pockets exist over the sampled chunks."
-                : "  FAIL: no pocket generated anywhere in the sample.");
-        System.out.printf(Locale.ROOT, "  %d of %d pocket blocks landed inside a chamber's own interior%n",
+                "  %d chunks sampled (%d seeded none), %d patches, %d blocks total,"
+                        + " mean %.1f blocks / %.1f wide / %.1f layers, widest %d%n",
+                chunksSampled, emptyChunks, patchesFound, blocksFound,
+                patchesFound == 0 ? 0.0 : (double) blocksFound / patchesFound,
+                patchesFound == 0 ? 0.0 : (double) widthSum / patchesFound,
+                patchesFound == 0 ? 0.0 : (double) layerSum / patchesFound, widestPatch);
+        System.out.println("  tier              patches   blocks     dirt  gravel    sand");
+        int barrenTiers = 0;
+        for (int tier = TIER_COUNT - 1; tier >= 0; tier--) {
+            System.out.printf(Locale.ROOT, "  %d %-15s %7d %8d %8d %7d %7d%n",
+                    tier, tierName(tier), patchesByTier[tier], blocksByTier[tier],
+                    materialByTier[tier][ColonyNoise.SOIL_MATERIAL_DIRT],
+                    materialByTier[tier][ColonyNoise.SOIL_MATERIAL_GRAVEL],
+                    materialByTier[tier][ColonyNoise.SOIL_MATERIAL_SAND]);
+            if (patchesByTier[tier] == 0) {
+                barrenTiers++;
+            }
+        }
+        System.out.println(patchesFound > 0 && barrenTiers == 0
+                ? "  PASS: every tier grows patches over the sampled chunks."
+                : "  FAIL: " + (patchesFound == 0 ? "no patch generated anywhere in the sample."
+                        : barrenTiers + " tier(s) grew no patch at all."));
+        System.out.printf(Locale.ROOT, "  %d block(s) landed outside their patch's own tier%n", tierViolations);
+        System.out.println(tierViolations == 0
+                ? "  PASS: no patch straddles a tier boundary, so the palette means what it says."
+                : "  FAIL: " + tierViolations + " patch block(s) crossed into a neighbouring tier.");
+        System.out.println(paletteViolations == 0
+                ? "  PASS: sand only in the Fungal Gardens, gravel only below it, dirt anywhere."
+                : "  FAIL: " + paletteViolations + " patch(es) used the wrong aggregate for their tier.");
+        System.out.printf(Locale.ROOT, "  %d of %d patch blocks landed inside a chamber's own interior%n",
                 interiorViolations, blocksFound);
         System.out.println(interiorViolations == 0
-                ? "  PASS: no pocket block ever lands inside a chamber interior."
-                : "  FAIL: " + interiorViolations + " pocket block(s) intruded on a chamber's interior.");
+                ? "  PASS: no patch block ever lands inside a chamber interior."
+                : "  FAIL: " + interiorViolations + " patch block(s) intruded on a chamber's interior.");
     }
+
 
     /** The pre-round-1 flat per-block comb chances, kept only as the comparison baseline. */
     private static final double[] OLD_FLAT_COMB_CHANCE_BY_TIER = {0.014, 0.178, 0.0, 0.0};

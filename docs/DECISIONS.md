@@ -1788,3 +1788,40 @@ jittered 384-block grid, sparse wilds between them.
   that owns it, and that every written comb has a face onto the room. Measured after: 100% of
   slots written and 100% visible on all three seeds, mean **5.93-5.99 visible combs per
   larder**, fewest 5.
+
+## Play-test round 3 -- soil patches, re-specced (2026-08-19)
+
+- **Fewer, bigger, flatter -- the same correction fungus and comb each got in their own
+  round.** Round 2 shipped 2-4 compact blobs of 5-20 blocks per chunk, and in play they read
+  as speckle rather than as anything worth digging for. A patch is now **1-2 per chunk of
+  20-60 blocks over 2-3 layers**, which makes it a seam you walk into instead of a lump you
+  walk past. Measured over 625 chunks per seed: 801-822 patches, mean **40.4 blocks, 8.3
+  blocks wide, 2.2 layers**, widest 13 -- inside the 6-14 the re-spec asked for.
+- **Flatness is a weighted step, not a shape.** The walk draws from four horizontal
+  directions repeated `SOIL_PATCH_HORIZONTAL_BIAS` = 6 times each against one up and one
+  down, and is boxed into 2-3 layers of Y. An unweighted six-neighbour walk spends a third of
+  its steps changing height and fills a ball; this one spreads.
+- **The palette is per tier, so the material tells you where you are.** Sand and dirt in the
+  Fungal Gardens, gravel and dirt in the Nurseries and the Royal Depths, from
+  `SOIL_PATCH_AGGREGATE_BY_TIER`. The world-wide dirt/gravel/sand weights are gone; what is
+  left is one dirt-against-aggregate ratio (5:3), so the tier's own aggregate stays a find
+  rather than becoming the floor of the band.
+- **A patch is confined to one tier, which is what makes that palette honest.** The band is
+  at most three blocks tall against a 48-block tier, so the confinement costs nothing, and
+  without it a seam straddling y=96 would put sand two blocks into the Nurseries. Asserted
+  per block rather than per patch.
+- **Patches cross chunk boundaries now, and that needed the neighbourhood pattern.** A seam
+  up to 15 blocks across confined to the chunk that seeded it would have straight edges every
+  16 blocks. `soilPatchesNear` enumerates the 3x3 chunk neighbourhood and each chunk writes
+  only the blocks that land inside itself; a patch wanders at most `SOIL_PATCH_MAX_RADIUS` = 7
+  from its seed column, so a chunk one further out cannot reach and the ring is provably
+  enough. Both chunks derive the same patch because it is a pure function of the chunk that
+  seeded it -- the same discipline the chambers use, and the reason the two halves meet.
+- **The safety rule is unchanged and still measured**: fabric only, never a chamber interior,
+  shell, corridor, ramp or landing floor, never the floor or ceiling caps -- all of it through
+  the one `isPlainFabric` predicate. The eligibility test now resolves each column through
+  `ColumnCache` rather than through the seeding chunk's own arrays, because a patch that
+  leaves its chunk has to get the same answer whichever chunk is asking.
+- **Three new probe invariants**, all green on all three seeds: every tier grows patches, no
+  patch block lands outside its patch's own tier, and no patch uses the wrong aggregate for
+  its tier (0 sand below the top tier, 0 gravel in it).
