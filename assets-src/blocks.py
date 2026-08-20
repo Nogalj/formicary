@@ -869,7 +869,10 @@ def scent_gland_item():
     the top where it was torn free."""
     img = blank()
     px = img.load()
-    cx, cy = 8.0, 9.0
+    # WP-S2 item 2 fallout (2026-08-20): the border guard also caught this
+    # one -- the translucent rim's vertical reach (d<34, /0.82 scale) put its
+    # bottom edge past row 15. cy nudged up; shape/technique unchanged.
+    cx, cy = 8.0, 8.0
     core = (250, 224, 176, 255)
     mid = (224, 168, 88, 255)
     rim = (188, 118, 40, 255)
@@ -955,7 +958,11 @@ def royal_jelly_item():
     right, and outlined so the silhouette holds at 16px."""
     img = blank()
     px = img.load()
-    cx, cy = 8.0, 10.5
+    # WP-S2 item 2 fallout (2026-08-20): the border guard the brief added for
+    # the two named tool icons also caught this one -- the bulb's bottom edge
+    # plus outline()'s +1px ring reached row 15. cy nudged up 1.5px; shape
+    # and technique otherwise unchanged.
+    cx, cy = 8.0, 9.0
 
     def sdf(x, y):
         dx, dy = x + 0.5 - cx, y + 0.5 - cy
@@ -1136,9 +1143,16 @@ HORN_LEGEND = {
 # A curved horn: flared bell low-left, tapering up-right to the mouthpiece, with
 # a gold band around the bell. Diagonal on purpose -- every other item in this
 # mod is a vertical blob or a vial, so the silhouette alone identifies it.
+# WP-S2 item 2 fallout (2026-08-20): the border guard also caught this mask
+# -- the original rows 0 and 15 (the mouthpiece tip-cap and the bell
+# base-cap) put filled pixels directly on the top/bottom edge. Trimmed to
+# the original rows 2-13 (unchanged) with two blank rows at each end -- one
+# more than the strict minimum, since pheromone_horn_item() doesn't call
+# outline() on this mask, kept for a comfortable margin. Same diagonal, same
+# bands, 2 rows shorter at each end.
 HORN_MASK = [
-    "...........ooo..",
-    "..........obHHo.",
+    "................",
+    "................",
     ".........obHHbo.",
     "........obHHbo..",
     ".......obHHbo...",
@@ -1151,8 +1165,8 @@ HORN_MASK = [
     ".obGHAAHbo......",
     ".obGGHAHbo......",
     ".obgGGHHbo......",
-    "..obgggbo.......",
-    "...ooooo........",
+    "................",
+    "................",
 ]
 
 
@@ -1376,21 +1390,43 @@ TOOL_STICK_DARK = (140, 104, 62, 255)
 # below this is bare stick handle, everything at/above it is the head profile.
 TOOL_HEAD_T_MIN = -3
 
+# WP-S2 item 2 (2026-08-20): both tool icons used to paint corner-to-corner --
+# the stick ran to the literal (0,15) corner and the head tapered out toward
+# the opposite corner -- and outline() then rings the filled shape with one
+# more pixel on top of that, so the visible sprite touched all four canvas
+# edges. Logan's screenshots showed the blade/prong truncating at the icon
+# edge; first-person rendering (which crops and magnifies the icon further)
+# made it worse. TOOL_MARGIN keeps every RAW fill pixel at least this far
+# from the edge so that after outline()'s +1px ring the sprite still has a
+# fully transparent row/column on every side -- not just a smaller version of
+# the same corner-touching shape, an actually-contained one.
+TOOL_MARGIN = 2
+TOOL_MIN = TOOL_MARGIN
+TOOL_MAX = SIZE - 1 - TOOL_MARGIN  # 13: highest x/y a raw fill pixel may use
+
+
+def _in_tool_bounds(x, y):
+    return TOOL_MIN <= x <= TOOL_MAX and TOOL_MIN <= y <= TOOL_MAX
+
 
 def _tool_icon(head_width_fn, center_fn=None):
     """Diagonal tool icon shared by both tools: a rotated coordinate frame
-    where `t` runs along the antidiagonal (-15 at the bottom-left corner, +15 at
-    the top-right tip) and `s` is the perpendicular offset from it. Below
-    TOOL_HEAD_T_MIN the icon is a 1px stick handle; at/above it, head_width_fn(t)
-    gives the chitin head's half-width in `s` units around center_fn(t) (0 when
-    omitted, i.e. centred on the stick), so each tool is just a profile
-    function -- and optionally a curve -- over one shared diagonal frame (the
-    same head-shape-as-a-function idea the crop age models already use for
-    stage interpolation)."""
+    where `t` runs along the antidiagonal and `s` is the perpendicular offset
+    from it. Below TOOL_HEAD_T_MIN the icon is a 1px stick handle; at/above
+    it, head_width_fn(t) gives the chitin head's half-width in `s` units
+    around center_fn(t) (0 when omitted, i.e. centred on the stick), so each
+    tool is just a profile function -- and optionally a curve -- over one
+    shared diagonal frame (the same head-shape-as-a-function idea the crop
+    age models already use for stage interpolation). Painting is clipped to
+    `_in_tool_bounds` -- see TOOL_MARGIN above -- so head_width_fn/center_fn
+    only need to shape the silhouette; staying inside the canvas is
+    guaranteed here rather than trusted to their tuning."""
     img = blank()
     px = img.load()
     for y in range(SIZE):
         for x in range(SIZE):
+            if not _in_tool_bounds(x, y):
+                continue
             s = x + y - (SIZE - 1)
             t = x - y
             if t < TOOL_HEAD_T_MIN:
@@ -1430,6 +1466,8 @@ def _paint_prong(px, base, control, tip, half_width_start, half_width_end, sampl
     pts = [_bezier_point(base, control, tip, i / (samples - 1)) for i in range(samples)]
     for y in range(SIZE):
         for x in range(SIZE):
+            if not _in_tool_bounds(x, y):
+                continue
             cx, cy = x + 0.5, y + 0.5
             best_d2, best_i = None, 0
             for i, (sx, sy) in enumerate(pts):
@@ -1475,6 +1513,8 @@ def mandible_pickaxe_item():
     px = img.load()
     for y in range(SIZE):
         for x in range(SIZE):
+            if not _in_tool_bounds(x, y):
+                continue
             s = x + y - (SIZE - 1)
             t = x - y
             if t < TOOL_HEAD_T_MIN and s == 0:
@@ -1482,20 +1522,36 @@ def mandible_pickaxe_item():
 
     # The shaft (s == 0, t odd) last paints at t == -5 -> (x=5, y=10); the
     # head starts one diagonal step further out, at t == -3 -> (x=6, y=9).
+    # WP-S2 item 2: the original control/tip points (2.0,6.0)->(1.0,2.0) and
+    # (11.5,4.5)->(14.5,1.0) ran the picks out to the canvas corners, which is
+    # what clipped in-game. Both prongs are now scaled 0.68x toward `base`
+    # (same curve shape, same divergent-mandible silhouette, just contained)
+    # so the tips land inside TOOL_MARGIN with room for outline()'s ring.
     base = (6.5, 8.5)
-    _paint_prong(px, base, (2.0, 6.0), (1.0, 2.0), 1.7, 0.5)
-    _paint_prong(px, base, (11.5, 4.5), (14.5, 1.0), 1.7, 0.5)
+    _paint_prong(px, base, (3.44, 6.8), (2.76, 4.08), 1.7, 0.5)
+    _paint_prong(px, base, (9.9, 5.78), (11.94, 3.4), 1.7, 0.5)
     return outline(img, CHITIN_OUTLINE)
 
 
 def pincer_sword_item():
     """A single blade that tapers to a point while curving off the straight
     diagonal -- the offset (via center_fn) is what turns a straight blade
-    into a hooked claw silhouette."""
+    into a hooked claw silhouette.
+
+    WP-S2 item 2: the old width(t) had a 0.6px floor and only zeroed out via
+    a hard `t >= 15` cutoff -- the blade never actually tapered to a point,
+    it ran at (near) full width straight into the canvas edge and got
+    chopped there, which is what read as clipped in-game. width(t) now
+    tapers linearly to a real 0 by TOOL_T_MAX (well inside TOOL_MARGIN), so
+    the blade comes to an actual point that fits on the canvas instead of a
+    flat edge that happened to fit."""
+    TOOL_T_MAX = 9
+    span = TOOL_T_MAX - TOOL_HEAD_T_MIN
+
     def width(t):
-        if t >= 15:
+        if t >= TOOL_T_MAX:
             return 0
-        return max(0.6, 1.6 - (t - TOOL_HEAD_T_MIN) * 0.07)
+        return max(0.0, 1.6 * (1 - (t - TOOL_HEAD_T_MIN) / span))
 
     def curve(t):
         if t < TOOL_HEAD_T_MIN:
@@ -1556,25 +1612,28 @@ def fungal_stew_item():
     broth = (46, 121, 96, 255)
 
     # bowl: a wide shallow arc, rim two pixels thick
+    # WP-S2 item 2 fallout (2026-08-20): the border guard also caught this
+    # one -- the original rows ran 11-15, putting the bowl's base directly on
+    # the bottom edge. Every row shifted up by 1 (10-14); shape unchanged.
     bowl_rows = {
-        11: range(2, 14), 12: range(1, 15), 13: range(1, 15),
-        14: range(2, 14), 15: range(3, 13),
+        10: range(2, 14), 11: range(1, 15), 12: range(1, 15),
+        13: range(2, 14), 14: range(3, 13),
     }
     for y, xs in bowl_rows.items():
         for x in xs:
             px[x, y] = wood_dark
-    for (x, y) in [(1, 12), (2, 11), (13, 11), (14, 12)]:
+    for (x, y) in [(1, 11), (2, 10), (13, 10), (14, 11)]:
         px[x, y] = wood_rim
     # broth pool inside the rim
-    broth_rows = {10: range(3, 13), 11: range(2, 14), 12: range(2, 14)}
+    broth_rows = {9: range(3, 13), 10: range(2, 14), 11: range(2, 14)}
     for y, xs in broth_rows.items():
         for x in xs:
             px[x, y] = broth
-    for (x, y) in [(4, 10), (11, 10), (7, 11), (8, 12)]:
+    for (x, y) in [(4, 9), (11, 9), (7, 10), (8, 11)]:
         px[x, y] = broth_deep
     # a fleck of bright glow, off-centre, echoing fungal_bloom's cap highlight
-    px[9, 10] = FUNGAL_BRIGHT
-    px[8, 11] = FUNGAL_GLOW
+    px[9, 9] = FUNGAL_BRIGHT
+    px[8, 10] = FUNGAL_GLOW
     return img
 
 
@@ -1597,12 +1656,15 @@ def royal_jelly_treat_item():
             if d < 14:
                 px[x, y] = lerp_color(JELLY_CORE, JELLY_MID, min(1.0, d / 14))
     # comb wafer base beneath the droplet
-    for y in range(12, 15):
+    # WP-S2 item 2 fallout (2026-08-20): the border guard also caught this
+    # one -- the wafer's bottom row (14) plus outline()'s +1px ring reached
+    # row 15. Both ranges shifted up by 1; shape unchanged.
+    for y in range(11, 14):
         for x in range(4, 12):
             if px[x, y][3] == 0:
                 px[x, y] = (150, 104, 40, 255)
     for x in range(4, 12):
-        px[x, 12] = (192, 140, 62, 255)
+        px[x, 11] = (192, 140, 62, 255)
     outline(img, JELLY_RIM)
     # specular, upper-left shoulder
     if px[5, 6][3] != 0:
@@ -1924,6 +1986,43 @@ def family_wall_sheet(families, cols=6, rows=4, scale=6):
     return sheet
 
 
+def assert_item_borders_transparent(items):
+    """Permanent guard (WP-S2 item 2, 2026-08-20): the mandible pickaxe and
+    pincer sword icons shipped with their blade/prong truncating at the
+    canvas edge -- Logan's screenshots showed the cut mid-shape, and
+    first-person rendering crops and magnifies the icon further, which is
+    what made it visible in-game. Fixing those two by eye doesn't stop a
+    future icon from doing the same thing, so this checks EVERY item
+    texture written this run: the outermost row/column on all four sides
+    must be fully transparent (alpha 0), i.e. >=1px of margin. A violation
+    names the offending texture, pixel, and colour, and the whole script
+    exits non-zero -- a texture that fails this can never reach
+    textures/item/ unnoticed."""
+    failures = []
+    for name, img in items:
+        px = img.load()
+        w, h = img.size
+        for x in range(w):
+            if px[x, 0][3] != 0:
+                failures.append((name, x, 0, px[x, 0]))
+            if px[x, h - 1][3] != 0:
+                failures.append((name, x, h - 1, px[x, h - 1]))
+        for y in range(h):
+            if px[0, y][3] != 0:
+                failures.append((name, 0, y, px[0, y]))
+            if px[w - 1, y][3] != 0:
+                failures.append((name, w - 1, y, px[w - 1, y]))
+    if failures:
+        for (name, x, y, color) in failures:
+            print(f"BORDER GUARD FAILED: {name} has a non-transparent pixel "
+                  f"at ({x},{y}) = {color} -- item textures need >=1px of "
+                  f"transparent margin on every side.")
+        offenders = sorted({name for (name, *_rest) in failures})
+        raise SystemExit(
+            f"border guard: {len(failures)} violation(s) across "
+            f"{len(offenders)} item texture(s): {', '.join(offenders)}")
+
+
 def main():
     BLOCK_TEX_DIR.mkdir(parents=True, exist_ok=True)
     ITEM_TEX_DIR.mkdir(parents=True, exist_ok=True)
@@ -1939,12 +2038,16 @@ def main():
         generated.append((name, img))
         print(f"wrote {out.relative_to(REPO_ROOT)}")
 
+    item_images = []
     for name, make in ITEM_TEXTURES.items():
         img = make()
         out = ITEM_TEX_DIR / f"{name}.png"
         img.save(out)
         generated.append((name, img))
+        item_images.append((name, img))
         print(f"wrote {out.relative_to(REPO_ROOT)}")
+
+    assert_item_borders_transparent(item_images)
 
     layers = []
     for name, make in ARMOR_LAYER_TEXTURES.items():
