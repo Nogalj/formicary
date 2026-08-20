@@ -764,6 +764,7 @@ public final class NoiseProbe {
         boolean green = colonySeparation(noise);
         green &= colonyFindability(noise);
         green &= colonyThrones(noise);
+        green &= colonyChamberCensus(noise);
         green &= colonyDensityProfile(noise);
         green &= colonyChamberWalks(noise);
 
@@ -848,6 +849,111 @@ public final class NoiseProbe {
                 ? "  PASS: a colony is always within committed-exploration range."
                 : "  FAIL: a sample point was further from a colony than the bound allows.");
         return pass;
+    }
+
+    /** Chambers of one kind a colony must hold for the nest to read as a nest. */
+    private static final int CENSUS_MIN = 3;
+    /** And the ceiling, above which a colony is a warren rather than a colony. */
+    private static final int CENSUS_MAX = 9;
+
+    /**
+     * (5) How many nurseries, gardens and larders does one colony actually contain?
+     *
+     * <p>Added in play-test round 2, and it is the measurement the round's whole chamber-density
+     * argument turns on. Before it existed the only available number was the per-cell gate rate
+     * ("88 of 289 sampled cells generate a chamber"), which answers a question nobody has:
+     * a player does not walk a grid of cells, they walk into a colony and count rooms. Reading
+     * one off the other means multiplying by {@code (COLONY_SPACING / CHAMBER_SPACING)^2} and
+     * hoping the sample straddled colonies evenly -- which is exactly the kind of derived
+     * statistic that hid the fact that colonies already held about five of each kind while the
+     * play-test was reporting chambers as rare.
+     *
+     * <p>Counted directly instead. Every in-colony chamber belongs to exactly one colony and
+     * the assignment is unambiguous: the field is zero beyond
+     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} = 112 and two centres are at least
+     * {@code COLONY_SPACING - COLONY_JITTER} = 224 apart, so the eligibility discs cannot
+     * overlap. A chamber centre lands within
+     * {@code SHAFT_SPACING/2 + SHAFT_JITTER/2 + APPROACH_DISTANCE} = 56 blocks of its cell
+     * centre, so every chamber inside a colony has its cell centre within {@code 112 + 56} =
+     * 168 blocks of that colony centre -- {@link #CENSUS_CELL_RING} = 2 rings of 96 reaches
+     * 192 and covers it.
+     *
+     * <p>The band is asserted on the <b>mean</b> and the spread is printed. Holding every
+     * individual colony to a floor would be asserting something the design does not promise --
+     * a colony whose centre jittered next to a sparse patch of the ramp grid legitimately gets
+     * fewer rooms -- while the mean is what "a colony carries four to six of each" actually
+     * claims.
+     */
+    private static boolean colonyChamberCensus(ColonyNoise noise) {
+        String[] kinds = {"nursery", "garden", "larder"};
+        int[][] counts = new int[3][(2 * COLONY_CELL_SWEEP + 1) * (2 * COLONY_CELL_SWEEP + 1)];
+        int colonies = 0;
+        for (int cx = -COLONY_CELL_SWEEP; cx <= COLONY_CELL_SWEEP; cx++) {
+            for (int cz = -COLONY_CELL_SWEEP; cz <= COLONY_CELL_SWEEP; cz++) {
+                ColonyNoise.Colony colony = noise.colonyCenterForCell(cx, cz);
+                int cellX = Math.floorDiv((int) Math.round(colony.centreX()),
+                        ColonyGeneratorTunables.NURSERY_SPACING);
+                int cellZ = Math.floorDiv((int) Math.round(colony.centreZ()),
+                        ColonyGeneratorTunables.NURSERY_SPACING);
+                for (int dx = -CENSUS_CELL_RING; dx <= CENSUS_CELL_RING; dx++) {
+                    for (int dz = -CENSUS_CELL_RING; dz <= CENSUS_CELL_RING; dz++) {
+                        int bx = (cellX + dx) * ColonyGeneratorTunables.NURSERY_SPACING;
+                        int bz = (cellZ + dz) * ColonyGeneratorTunables.NURSERY_SPACING;
+                        ColonyNoise.Nursery nursery = noise.nurseriesNear(bx, bz)[4];
+                        if (nursery.inColony() && belongsTo(colony, nursery.centreX(), nursery.centreZ())) {
+                            counts[0][colonies]++;
+                        }
+                        ColonyNoise.Garden garden = noise.gardensNear(bx, bz)[4];
+                        if (garden.inColony() && belongsTo(colony, garden.centreX(), garden.centreZ())) {
+                            counts[1][colonies]++;
+                        }
+                        ColonyNoise.Larder larder = noise.lardersNear(bx, bz)[4];
+                        if (larder.inColony() && belongsTo(colony, larder.centreX(), larder.centreZ())) {
+                            counts[2][colonies]++;
+                        }
+                    }
+                }
+                colonies++;
+            }
+        }
+
+        System.out.printf(Locale.ROOT,
+                "%n  chambers per colony over %d colonies (%d cells each within reach), acceptance band"
+                        + " [%d, %d] on the mean:%n",
+                colonies, (2 * CENSUS_CELL_RING + 1) * (2 * CENSUS_CELL_RING + 1), CENSUS_MIN, CENSUS_MAX);
+        boolean pass = true;
+        for (int kind = 0; kind < kinds.length; kind++) {
+            int[] mine = Arrays.copyOf(counts[kind], colonies);
+            Arrays.sort(mine);
+            double mean = 0.0;
+            for (int value : mine) {
+                mean += value;
+            }
+            mean /= colonies;
+            boolean ok = mean >= CENSUS_MIN && mean <= CENSUS_MAX;
+            pass &= ok;
+            System.out.printf(Locale.ROOT,
+                    "    %-8s mean %4.2f   min %d  median %d  max %d   %s%n",
+                    mine.length == 0 ? kinds[kind] : kinds[kind], mean, mine[0], mine[colonies / 2],
+                    mine[colonies - 1], ok ? "" : "<-- OUTSIDE THE BAND");
+        }
+        System.out.println(pass
+                ? "  PASS: a colony carries enough of every chamber kind to read as a working nest."
+                : "  FAIL: a chamber kind's per-colony mean is outside [" + CENSUS_MIN + ", " + CENSUS_MAX + "].");
+        return pass;
+    }
+
+    /**
+     * Rings of 96-block chamber cells scanned around each colony centre by
+     * {@link #colonyChamberCensus}. Two: see that method's own derivation ({@code 112 + 56}
+     * = 168 blocks of reach against the 192 two rings cover).
+     */
+    private static final int CENSUS_CELL_RING = 2;
+
+    /** Whether a chamber centre falls inside {@code colony}'s eligibility disc. */
+    private static boolean belongsTo(ColonyNoise.Colony colony, double x, double z) {
+        return Math.hypot(x - colony.centreX(), z - colony.centreZ())
+                <= ColonyGeneratorTunables.COLONY_OUTER_RADIUS;
     }
 
     /** (1) Exactly one throne per colony, and it sits inside the core. */
@@ -1085,7 +1191,61 @@ public final class NoiseProbe {
                 closest = throne;
             }
         }
+        throneBand(noise);
         throneWalk(noise, closest);
+    }
+
+    /**
+     * The throne's band containment -- added in play-test round 2, and added because its
+     * absence was caught rather than because it was tidy.
+     *
+     * <p>The nursery, garden and larder sections have each asserted "this room sits wholly
+     * inside its tier" since they were written. The throne never did: {@link #thrones} checked
+     * only that its dais is walkable from the ramp. That gap was measured, not supposed --
+     * a trial run of the rejected {@code TIER_HEIGHT = 32} dial put throne floors in
+     * {@code [8, 32]} against a band ceiling of 32, so every one of them punched up into the
+     * Nurseries, and this section stayed green throughout while the other three went red.
+     *
+     * <p>The throne is the <em>binding</em> case for {@link ColonyGeneratorTunables#TIER_HEIGHT}
+     * (it is the tallest room in the dimension, and its one block of margin is what makes 48 a
+     * floor -- see {@code CHAMBER_FLOOR_MIN_Y_BY_TIER}'s javadoc), so it was exactly the wrong
+     * one to leave unchecked. Same shape as the other three: floor minus shell above the
+     * band's bottom, shell top below the next boundary.
+     */
+    private static boolean throneBand(ColonyNoise noise) {
+        int shell = (int) Math.ceil(ColonyGeneratorTunables.THRONE_SHELL_THICKNESS);
+        int roomTop = ColonyGeneratorTunables.THRONE_WALL_HEIGHT
+                + ColonyGeneratorTunables.THRONE_DOME_HEIGHT + shell;
+        int inBand = 0;
+        int total = 0;
+        int minFloor = Integer.MAX_VALUE;
+        int maxTop = Integer.MIN_VALUE;
+        for (int cx = -COLONY_CELL_SWEEP; cx <= COLONY_CELL_SWEEP; cx++) {
+            for (int cz = -COLONY_CELL_SWEEP; cz <= COLONY_CELL_SWEEP; cz++) {
+                ColonyNoise.Colony colony = noise.colonyCenterForCell(cx, cz);
+                ColonyNoise.Throne throne = noise.nearestThrone((int) Math.round(colony.centreX()),
+                        (int) Math.round(colony.centreZ()));
+                int top = throne.floorY() + roomTop;
+                total++;
+                minFloor = Math.min(minFloor, throne.floorY());
+                maxTop = Math.max(maxTop, top);
+                if (throne.floorY() >= ColonyGeneratorTunables.CHAMBER_FLOOR_MIN_Y_BY_TIER[0]
+                        && throne.floorY() - shell >= tierMinY(0) && top < tierMaxY(0)) {
+                    inBand++;
+                }
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "  %d thrones sampled: floor y in [%d, %d], highest shell top y=%d; %d of %d wholly inside "
+                        + "the Royal Depths band y[%d,%d)  (margin to the boundary: %d)%n",
+                total, minFloor, maxTop - roomTop, maxTop, inBand, total, tierMinY(0), tierMaxY(0),
+                tierMaxY(0) - maxTop);
+        boolean pass = inBand == total;
+        System.out.println(pass
+                ? "  PASS: every sampled throne sits wholly inside the Royal Depths."
+                : "  FAIL: a throne crosses a tier boundary -- the tallest room in the dimension "
+                        + "does not fit its band.");
+        return pass;
     }
 
     private static void throneWalk(ColonyNoise noise, ColonyNoise.Throne throne) {

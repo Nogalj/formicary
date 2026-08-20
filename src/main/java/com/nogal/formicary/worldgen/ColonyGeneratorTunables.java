@@ -576,18 +576,42 @@ public final class ColonyGeneratorTunables {
      * Nursery, fungus garden and larder chambers generate only where the field at their own
      * centre is above this.
      *
-     * <p>0.2 puts the cut at about 134 blocks from a colony centre (solving the falloff for
-     * f = 0.2), i.e. deliberately out in the ring rather than core-only. Nurseries are the
+     * <p>0.15 puts the cut at about 103 blocks from a colony centre (solving the falloff for
+     * f = 0.15), i.e. deliberately out in the ring rather than core-only. Nurseries are the
      * only larva source and arrival XZ is uncorrelated with colonies -- portals are 1:1 with
-     * the anthill thrown at -- so confining chambers to the cores (~21% of the area) would
-     * land half of all first entries in empty tunnels with nothing findable. This is the
-     * named tunable for the near-arrival experience.
+     * the anthill thrown at -- so confining chambers to the cores would land half of all first
+     * entries in empty tunnels with nothing findable. This is the named tunable for the
+     * near-arrival experience.
+     *
+     * <p><b>Round 2 loosened it from 0.2, and measured that this is a nearly dead lever.</b>
+     * The reason is worth writing down, because it will otherwise be reached for again. The
+     * falloff is a smoothstep over {@code [COLONY_CORE_RADIUS, COLONY_OUTER_RADIUS]} = [80,
+     * 112], and it is flat at both ends -- so the whole span from {@code f = 0.2} to
+     * {@code f = 0} is the annulus from radius 100.7 out to 112, eleven blocks wide. Dropping
+     * the gate from 0.2 to 0.15 buys two of those blocks. Measured per-colony chamber census
+     * (probe, seed 1234567, 169 colonies):
+     * <pre>
+     *   gate 0.20   nursery 3.01   garden 3.09   larder 2.99
+     *   gate 0.15   nursery 3.11   garden 3.16   larder 3.05
+     *   gate 0.01   nursery 3.45   garden 3.50   larder 3.37   &lt;- the lever's own ceiling
+     * </pre>
+     *
+     * <p>So a colony holds about three rooms of each kind and no setting of this constant
+     * changes that. What bounds it is {@link #COLONY_OUTER_RADIUS}: the field is exactly zero
+     * beyond it, so the eligible disc can never exceed {@code pi * 112^2}, which is 4.3 cells
+     * of the 96-block chamber grid, and the ~0.8 realization factor (a chamber centre hangs 24
+     * blocks off its ramp axis, and that axis must clear the same gate) brings it to ~3.5.
+     * Note this is independent of {@link #COLONY_SPACING} -- spacing sets how often you meet a
+     * colony, not how many rooms one holds. Raising the count past 3.5 means widening the
+     * outer radius (back toward the 150 round 2 just compacted away) or shrinking the chamber
+     * grid (which round 2 measured as collapsing cross-cell separation from 46.3 blocks to
+     * 1.0 -- see {@code NURSERY_SPACING}). Both are design decisions, not retunes.
      */
-    public static final double CHAMBER_ELIGIBILITY_MIN_F = 0.2;
+    public static final double CHAMBER_ELIGIBILITY_MIN_F = 0.15;
 
     /**
-     * The larder's own, slightly looser floor (play-test round 2, item 7): 0.15 instead of
-     * the shared 0.2, which is about 140 blocks from a colony centre against 134.
+     * The larder's own, slightly looser floor (play-test round 2): 0.12 against the shared
+     * 0.15, which is about 104 blocks from a colony centre against 103.
      *
      * <p>The larder is the one chamber kind that is pure reward -- no brood, no farm, no
      * queen, just a stocked room -- so it is the one whose scarcity was worth relaxing when
@@ -595,12 +619,18 @@ public final class ColonyGeneratorTunables {
      * already the outer edge of a colony, and this is the only chamber constant in the file
      * that differs from the shared gate, which is why it is named rather than inlined.
      *
+     * <p>"Small" is now literal, and measured: one block of extra radius. See
+     * {@link #CHAMBER_ELIGIBILITY_MIN_F} for why the whole lever is worth so little -- the
+     * ring it moves inside is eleven blocks wide end to end. The gap is kept because the
+     * <em>ordering</em> is the point (the larder is the loosest of the three by design), not
+     * because the block it buys matters.
+     *
      * <p>It does <b>not</b> put larders out in the wilds. A chamber also has to hang off a
      * realized ramp ({@code ColonyNoise#isChamberAnchored}), and ramps are gated at the
-     * shared 0.2, so the extra band this opens up is only the sliver where a larder points
+     * shared 0.15, so the extra band this opens up is only the sliver where a larder points
      * outward from a ramp that a colony did dig.
      */
-    public static final double LARDER_ELIGIBILITY_MIN_F = 0.15;
+    public static final double LARDER_ELIGIBILITY_MIN_F = 0.12;
 
     /**
      * Ender ants runtime-spawn where the field is <em>below</em> this -- i.e. out in the
