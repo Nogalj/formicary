@@ -234,7 +234,7 @@ public final class ColonyNoise {
      * <p>One colony neighbourhood serves all nine axes. An axis sits at most
      * {@code SHAFT_SPACING + SHAFT_JITTER/2} = 56 blocks outside the chunk, and
      * {@link #coloniesNear}'s own derivation leaves 432 blocks to the nearest excluded
-     * centre against an outer radius of 112, so 56 blocks of slack changes nothing.
+     * centre against an outer radius of 128, so 56 blocks of slack changes nothing.
      */
     public Shaft[] shaftsNear(int blockMinX, int blockMinZ) {
         int cellX = Math.floorDiv(blockMinX, SHAFT_SPACING);
@@ -425,7 +425,7 @@ public final class ColonyNoise {
      * {@code C} the own-cell centre is at most {@code 160*sqrt(2) + 48} = 274 blocks away
      * while a centre two cells out is at least {@code 2*320 - 160 - 48} = 432. The nearest
      * centre is therefore always inside the ring, and since
-     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} is 112 no colony outside it can
+     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} is 128 no colony outside it can
      * contribute anything but zero.
      */
     public Colony[] coloniesNear(int blockX, int blockZ) {
@@ -1366,10 +1366,10 @@ public final class ColonyNoise {
      * <p>Six, and the number is derived rather than generous. From an arbitrary point the
      * nearest colony centre is at most {@code 160*sqrt(2) + 48} = 274 blocks away, and a
      * chamber inside that colony is eligible out to at most
-     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} = 112 blocks from its centre
+     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} = 128 blocks from its centre
      * (whatever {@link ColonyGeneratorTunables#CHAMBER_ELIGIBILITY_MIN_F} is set to -- the
      * field is exactly zero beyond the outer radius), so an eligible chamber always exists
-     * within {@code 274 + 112} = 386 blocks. Six rings of 96 reach 576, which covers it with
+     * within {@code 274 + 128} = 402 blocks. Six rings of 96 reach 576, which covers it with
      * margin the round-2 compaction only widened. 169 cells of closed-form arithmetic is
      * nothing for a command that runs on demand.
      */

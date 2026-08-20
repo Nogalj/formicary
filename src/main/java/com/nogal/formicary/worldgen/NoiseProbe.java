@@ -870,13 +870,14 @@ public final class NoiseProbe {
      *
      * <p>Counted directly instead. Every in-colony chamber belongs to exactly one colony and
      * the assignment is unambiguous: the field is zero beyond
-     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} = 112 and two centres are at least
+     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} = 128 and two centres are at least
      * {@code COLONY_SPACING - COLONY_JITTER} = 224 apart, so the eligibility discs cannot
      * overlap. A chamber centre lands within
      * {@code SHAFT_SPACING/2 + SHAFT_JITTER/2 + APPROACH_DISTANCE} = 56 blocks of its cell
-     * centre, so every chamber inside a colony has its cell centre within {@code 112 + 56} =
-     * 168 blocks of that colony centre -- {@link #CENSUS_CELL_RING} = 2 rings of 96 reaches
-     * 192 and covers it.
+     * centre, so every chamber inside a colony has its cell centre within {@code 128 + 56} =
+     * 184 blocks of that colony centre -- {@link #CENSUS_CELL_RING} = 2 rings of 96 reaches
+     * 192 and covers it. The round-2 radius decision cut that margin from 24 blocks to 8, so
+     * a third ring becomes necessary the moment the outer radius passes 136.
      *
      * <p>The band is asserted on the <b>mean</b> and the spread is printed. Holding every
      * individual colony to a floor would be asserting something the design does not promise --
@@ -945,8 +946,8 @@ public final class NoiseProbe {
 
     /**
      * Rings of 96-block chamber cells scanned around each colony centre by
-     * {@link #colonyChamberCensus}. Two: see that method's own derivation ({@code 112 + 56}
-     * = 168 blocks of reach against the 192 two rings cover).
+     * {@link #colonyChamberCensus}. Two: see that method's own derivation ({@code 128 + 56}
+     * = 184 blocks of reach against the 192 two rings cover).
      */
     private static final int CENSUS_CELL_RING = 2;
 

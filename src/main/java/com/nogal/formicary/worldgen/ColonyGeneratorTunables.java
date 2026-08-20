@@ -564,13 +564,22 @@ public final class ColonyGeneratorTunables {
     /**
      * By this radius the field has fallen to 0.0 -- wilds: worm tunnels and ramps only.
      *
-     * <p>Round 2 compaction: 150 -&gt; 112, holding the ring's width at 40% of the core
-     * (150/100 = 1.5, 112/80 = 1.4) so the falloff keeps roughly the same shape rather than
-     * becoming a cliff. This is the hard outer bound on where any chamber can generate --
-     * {@link #CHAMBER_ELIGIBILITY_MIN_F} can only ever cut inside it -- and so it, not the
-     * gate, is what caps how many rooms a colony can hold.
+     * <p>Round 2 compaction: 150 -&gt; 128. This is the hard outer bound on where any chamber
+     * can generate -- {@link #CHAMBER_ELIGIBILITY_MIN_F} can only ever cut inside it -- and so
+     * it, <b>not the gate</b>, is what caps how many rooms a colony can hold. The disc holds
+     * {@code pi * R^2 / NURSERY_SPACING^2} chamber cells, which at 128 is 5.6, and the ~0.8
+     * realization factor (a chamber centre hangs 24 blocks off its ramp axis, and that axis
+     * must clear the same gate) brings the ceiling to about 4.5 rooms of each kind.
+     *
+     * <p>It landed at 128 rather than 112 because 112 could not feed the census: measured at
+     * an unchanged gate, 112 gave 2.92-3.16 rooms per kind per colony and 128 gives 3.83-3.91,
+     * clearing the probe's [3, 9] floor with margin on every seed. 138 was tried and rejected
+     * -- it reaches 4.31-4.44, inside the nominal 4-6 target, but with centres 320 apart it
+     * leaves only {@code 320 - 2*138} = 44 blocks of true wilds between neighbouring colonies,
+     * which erodes the discrete-colony feel the whole field exists to create. At 128 that gap
+     * is 64 blocks, and the compaction against the original 150 is real.
      */
-    public static final double COLONY_OUTER_RADIUS = 112.0;
+    public static final double COLONY_OUTER_RADIUS = 128.0;
 
     /**
      * Nursery, fungus garden and larder chambers generate only where the field at their own
@@ -585,27 +594,28 @@ public final class ColonyGeneratorTunables {
      *
      * <p><b>Round 2 loosened it from 0.2, and measured that this is a nearly dead lever.</b>
      * The reason is worth writing down, because it will otherwise be reached for again. The
-     * falloff is a smoothstep over {@code [COLONY_CORE_RADIUS, COLONY_OUTER_RADIUS]} = [80,
-     * 112], and it is flat at both ends -- so the whole span from {@code f = 0.2} to
-     * {@code f = 0} is the annulus from radius 100.7 out to 112, eleven blocks wide. Dropping
-     * the gate from 0.2 to 0.15 buys two of those blocks. Measured per-colony chamber census
-     * (probe, seed 1234567, 169 colonies):
+     * falloff is a smoothstep over {@code [COLONY_CORE_RADIUS, COLONY_OUTER_RADIUS]} and it is
+     * flat at both ends, so the whole span from {@code f = 0.2} to {@code f = 0} is a thin
+     * annulus at the outer edge -- at the 112 outer radius this was first measured against,
+     * radius 100.7 out to 112, eleven blocks wide, and dropping the gate to 0.15 bought two of
+     * them. Per-colony chamber census at that radius (probe, seed 1234567, 169 colonies):
      * <pre>
      *   gate 0.20   nursery 3.01   garden 3.09   larder 2.99
      *   gate 0.15   nursery 3.11   garden 3.16   larder 3.05
      *   gate 0.01   nursery 3.45   garden 3.50   larder 3.37   &lt;- the lever's own ceiling
      * </pre>
      *
-     * <p>So a colony holds about three rooms of each kind and no setting of this constant
-     * changes that. What bounds it is {@link #COLONY_OUTER_RADIUS}: the field is exactly zero
-     * beyond it, so the eligible disc can never exceed {@code pi * 112^2}, which is 4.3 cells
-     * of the 96-block chamber grid, and the ~0.8 realization factor (a chamber centre hangs 24
-     * blocks off its ramp axis, and that axis must clear the same gate) brings it to ~3.5.
-     * Note this is independent of {@link #COLONY_SPACING} -- spacing sets how often you meet a
-     * colony, not how many rooms one holds. Raising the count past 3.5 means widening the
-     * outer radius (back toward the 150 round 2 just compacted away) or shrinking the chamber
-     * grid (which round 2 measured as collapsing cross-cell separation from 46.3 blocks to
-     * 1.0 -- see {@code NURSERY_SPACING}). Both are design decisions, not retunes.
+     * <p>So the gate cannot move the census much, and the number that can is
+     * {@link #COLONY_OUTER_RADIUS}: holding this constant at 0.15 and taking the radius from
+     * 112 to 128 moved the same census from 3.11 to 3.83. That is the comparison to remember
+     * -- the disc's area is the budget ({@code pi * R^2 / NURSERY_SPACING^2} cells), and this
+     * constant only shaves its rim.
+     *
+     * <p>Note the budget is independent of {@link #COLONY_SPACING}: spacing sets how often you
+     * meet a colony, not how many rooms one holds. The only other lever is the chamber grid
+     * itself, and round 2 measured shrinking that from 96 to 48 as collapsing cross-cell
+     * separation from 46.3 blocks to 1.0 -- see {@code NURSERY_SPACING}. Design decisions,
+     * not retunes.
      */
     public static final double CHAMBER_ELIGIBILITY_MIN_F = 0.15;
 

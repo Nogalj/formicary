@@ -1545,6 +1545,63 @@ jittered 384-block grid, sparse wilds between them.
   that puts something worth walking to in the tier a player only otherwise enters to fight the
   queen. The gate costs 5-9% of tier-0 draws; the restriction would have cost all of them.
 
+## Play-test round 2 -- dimension geometry (2026-08-19)
+
+- **The dimension got shallower by losing a TIER, not by shortening one.** The review asked
+  for a shorter descent and the obvious dial was `TIER_HEIGHT` 48 -> 32. It is arithmetically
+  impossible, and the probe measured it rather than the algebra being trusted: 101 of 289
+  nursery chambers crossed their boundary and the top tier's rooms punched through the ceiling
+  cap. A band has to hold `LANDING_INTERIOR_HEIGHT` (8) + a full ramp turn (`floor(2*PI/0.26)`
+  = 24) + the tallest room's shell top (the throne's 15) = 47, so **48 is a floor, not a
+  preference**, and the shipped value was already sitting on it with one block to spare.
+  Steepening the coil to fit 32 would need `RAMP_RADIANS_PER_BLOCK` 0.26 -> 0.698, dropping the
+  walked grade from 0.51 to 0.19 blocks of descent per block walked -- i.e. *lengthening* the
+  on-foot descent, worsening the exact complaint. `TIER_COUNT` 4 -> 3 (`HEIGHT` 192 -> 144)
+  leaves every intra-tier bound byte-identical and shortens a full descent by 25% at an
+  unchanged grade. The Upper Galleries went; the cap and its membranes now sit on the Fungal
+  Gardens, whose 0.115 tunnel bore is the widest in the dimension, so arrival reads as open
+  gallery rather than the retired tier's 0.070 crawl.
+- **The throne's band containment was never asserted, and that is how the 32 trial nearly
+  passed.** The other three chamber kinds have always checked "this room sits wholly inside its
+  tier"; `NoiseProbe#thrones` checked only that the dais is walkable. The throne is the tallest
+  room and the *binding* case for `TIER_HEIGHT`, so it was exactly the wrong one to leave
+  unchecked -- during the 32 trial its section stayed green while the other three went red.
+  `throneBand` closes it. Seed 42 measures the true extremum: shell top 47 against the boundary
+  at 48.
+- **Chambers per colony is bounded by `pi * COLONY_OUTER_RADIUS^2 / NURSERY_SPACING^2`, and
+  nothing else.** This correction is the whole reason the compaction landed where it did. The
+  planning arithmetic reasoned from cells per colony *cell* -- `(320/96)^2` = 11.1 -- and asked
+  for 40-50% eligibility to reach 4-6 rooms. But rooms live in the eligibility *disc*, not the
+  cell, and at a 112 outer radius that disc is only `pi*112^2/320^2` = 38.5% of the cell: the
+  target was above the geometric maximum. Note the budget is independent of `COLONY_SPACING`,
+  which sets how often you *meet* a colony, not how many rooms one holds.
+- **`CHAMBER_ELIGIBILITY_MIN_F` is a nearly dead lever; the radius is the live one.** Measured
+  at the 112 radius, seed 1234567: gate 0.20 gave 3.01/3.09/2.99 rooms per kind, gate 0.15 gave
+  3.11/3.16/3.05, and gate 0.01 -- the lever's absolute ceiling -- gave 3.45/3.50/3.37. The
+  falloff is a smoothstep, flat at both ends, so the entire span from f=0.2 to f=0 was an
+  eleven-block annulus at the rim. Holding the gate at 0.15 and taking the radius 112 -> 128
+  moved the same census 3.11 -> 3.83. Shipped: **core 80, outer 128, spacing 320, gates
+  0.15 / 0.12 (larder)**.
+- **Rejected: outer radius 138.** It reaches 4.31-4.44, inside the nominal 4-6 target, but with
+  centres 320 apart it leaves only `320 - 2*138` = 44 blocks of true wilds between neighbouring
+  colonies. The discrete-colony feel is what the whole field was built for in Ep2, and a 44-block
+  gap erodes it. 128 leaves 64 blocks and still clears the probe's [3, 9] floor with margin on
+  every seed (3.76-3.91).
+- **Rejected: chamber grid 96 -> 48** as the density lever. Measured, it collapses cross-cell
+  separation from a 46.3-block minimum to **1.0** (104 of 768 garden pairs under the required
+  32; larders 38 pairs overlapping) -- the same failure the 48-block cell produced when
+  `NURSERY_SPACING` was first chosen, now worse. At 48 a chamber cell *is* a shaft cell, so
+  neighbouring rooms hang off axes only `48 - SHAFT_JITTER` = 32 apart while each reaches 24
+  outward; no value of `APPROACH_DISTANCE` satisfies it (it would need to be <= 0 against a hard
+  lower bound of 23.1). The same-cell 120-degree slot bound is untouched by any of this -- it
+  depends only on approach distance and slot step, and stayed green throughout.
+- **Compaction re-derived every bound it touched rather than leaving them to rot.** Boss-bar
+  separation floor 288 -> 224 (still 4x the 56 it needs, measured minimum 235.1-235.9);
+  `coloniesNear` 3x3 sufficiency (274 own-cell vs 432 two cells out); the probe's findability
+  bound 340 -> 290, recomputed from `160*sqrt(2) + 48`. `COLONY_CORE_RADIUS` 80 is the tightest
+  round value that still contains every throne, whose centre lands at most 76 blocks from its
+  colony centre -- verified at 0 thrones outside the core, not assumed.
+
 ## Play-test round 2 -- queen pincers (2026-08-19)
 
 - **The jaws shipped bigger than the plan's numbers, because the plan's numbers failed the
