@@ -1373,23 +1373,80 @@ def _tool_icon(head_width_fn, center_fn=None):
     return outline(img, CHITIN_OUTLINE)
 
 
+def _bezier_point(p0, p1, p2, t):
+    """A point on the quadratic Bezier curve p0 -> p1 (control) -> p2."""
+    mt = 1.0 - t
+    x = mt * mt * p0[0] + 2.0 * mt * t * p1[0] + t * t * p2[0]
+    y = mt * mt * p0[1] + 2.0 * mt * t * p1[1] + t * t * p2[1]
+    return x, y
+
+
+def _paint_prong(px, base, control, tip, half_width_start, half_width_end, samples=64):
+    """Rasterises one tapered, curved pick as a dense set of samples along a
+    quadratic Bezier from `base` to `tip` (bowing toward `control`), shading
+    each covered pixel by which side of the LOCAL tangent it falls on (RIM on
+    the outer edge, DARK on the inner edge, MID in between) rather than by
+    position in a single global frame -- which is what lets the stroke curve
+    on its own instead of just widening along one straight axis."""
+    pts = [_bezier_point(base, control, tip, i / (samples - 1)) for i in range(samples)]
+    for y in range(SIZE):
+        for x in range(SIZE):
+            cx, cy = x + 0.5, y + 0.5
+            best_d2, best_i = None, 0
+            for i, (sx, sy) in enumerate(pts):
+                d2 = (cx - sx) ** 2 + (cy - sy) ** 2
+                if best_d2 is None or d2 < best_d2:
+                    best_d2, best_i = d2, i
+            t = best_i / (samples - 1)
+            half = half_width_start + (half_width_end - half_width_start) * t
+            if best_d2 > half * half:
+                continue
+            i0, i1 = max(0, best_i - 1), min(samples - 1, best_i + 1)
+            tx, ty = pts[i1][0] - pts[i0][0], pts[i1][1] - pts[i0][1]
+            length = (tx * tx + ty * ty) ** 0.5 or 1.0
+            tx, ty = tx / length, ty / length
+            nx, ny = -ty, tx
+            sx, sy = pts[best_i]
+            perp = (cx - sx) * nx + (cy - sy) * ny
+            if perp <= -half * 0.4:
+                px[x, y] = CHITIN_RIM
+            elif perp >= half * 0.4:
+                px[x, y] = CHITIN_DARK
+            else:
+                px[x, y] = CHITIN_MID
+
+
 def mandible_pickaxe_item():
-    """A head that bulges out from the shaft then pinches sharply to near-
-    nothing right at the tip: _tool_icon always traces a RIM edge along one
-    side of the head and a DARK edge along the other, so a bulge-then-pinch
-    profile reads as two curved edges closing on the same point -- a pair of
-    mandibles -- rather than a single flat pick head."""
-    def profile(t):
-        if t >= 15:
-            return 0
-        if t <= 4:
-            return 1
-        if t <= 9:
-            return 1 + (t - 4) * 0.5
-        if t <= 13:
-            return 3.5 - (t - 9) * 0.7
-        return 0.6
-    return _tool_icon(profile)
+    """A pickaxe head that splits into two curved, tapered picks flaring away
+    from the shaft's top -- not _tool_icon's single symmetric blob (that
+    shape reads as a fat stick regardless of its width profile, since it is
+    still just one mass traced along one straight axis; that was the WP-R3
+    item 3 bug report this rewrite fixes).
+
+    The shaft reuses _tool_icon's rotated (t, s) diagonal frame (stick handle
+    only, no head band). The head is two independent tapered Bezier strokes
+    (see _paint_prong) planted at the point the shaft's diagonal naturally
+    ends -- one curving up and to the left, one curving up and to the right,
+    each its own curve with its own tangent at every point along it. That
+    independence is what a single shared profile function over one axis
+    cannot produce: two picks that visibly diverge and curve on their own,
+    like a pair of ant mandibles gripping the point where the shaft ends,
+    rather than one lobe that merely widens then narrows again."""
+    img = blank()
+    px = img.load()
+    for y in range(SIZE):
+        for x in range(SIZE):
+            s = x + y - (SIZE - 1)
+            t = x - y
+            if t < TOOL_HEAD_T_MIN and s == 0:
+                px[x, y] = TOOL_STICK_DARK if (x // 2) % 2 else TOOL_STICK_LIGHT
+
+    # The shaft (s == 0, t odd) last paints at t == -5 -> (x=5, y=10); the
+    # head starts one diagonal step further out, at t == -3 -> (x=6, y=9).
+    base = (6.5, 8.5)
+    _paint_prong(px, base, (2.0, 6.0), (1.0, 2.0), 1.7, 0.5)
+    _paint_prong(px, base, (11.5, 4.5), (14.5, 1.0), 1.7, 0.5)
+    return outline(img, CHITIN_OUTLINE)
 
 
 def pincer_sword_item():
