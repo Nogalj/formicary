@@ -8,6 +8,9 @@ import com.nogal.formicary.colony.ColonyAnger;
 
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
@@ -24,6 +27,7 @@ import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 
@@ -57,6 +61,10 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
      * through an override rather than setting {@code Mob#xpReward} directly.
      */
     public static final int XP_REWARD = 7;
+
+    /** Play-test round 2: "I am against a wall this tick". See {@link AntClimbing}. */
+    private static final EntityDataAccessor<Boolean> DATA_CLIMBING =
+            SynchedEntityData.defineId(SoldierAntEntity.class, EntityDataSerializers.BOOLEAN);
 
     private int remainingAngerTime;
 
@@ -123,6 +131,36 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
         });
         // A horn-summoned ally fights for its summoner instead of for the colony (M7).
         this.targetSelector.addGoal(5, new AlliedSoldierTargetGoal(this));
+    }
+
+    // ------------------------------------------------------------ climbing --
+
+    /** @see AntClimbing */
+    @Override
+    protected PathNavigation createNavigation(Level level) {
+        return AntClimbing.navigation(this, level);
+    }
+
+    /** @see AntClimbing */
+    @Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(DATA_CLIMBING, false);
+    }
+
+    /** @see AntClimbing */
+    @Override
+    public void tick() {
+        super.tick();
+        if (!this.level().isClientSide) {
+            this.entityData.set(DATA_CLIMBING, this.horizontalCollision);
+        }
+    }
+
+    /** @see AntClimbing */
+    @Override
+    public boolean onClimbable() {
+        return this.entityData.get(DATA_CLIMBING);
     }
 
     // ------------------------------------------------------------- summoned --

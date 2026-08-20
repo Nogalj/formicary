@@ -89,6 +89,26 @@ NORMAL difficulty (Monsters safe).
   reaction immediately after `hurt()` returns; where a delayed window is load-bearing (a
   negative assertion must give a deferred reaction time to happen), zero the velocity with
   `setDeltaMovement(Vec3.ZERO)` after the reposition instead. (`verified: 2026-08-18`)
+- **A climbing mob does not stay in a `skyAccess = true` arena, and once out it is gone for
+  good.** As of the 2026-08-19 climbing pass every ant except the queen and the larva has
+  `WallClimberNavigation` + Spider's `horizontalCollision` -> `onClimbable` flag, which means
+  *any* horizontal collision lifts it 0.2/tick. `StructureUtils.encaseStructure(bounds, level,
+  !skyAccess)` places the side walls either way but only roofs the arena when `skyAccess` is
+  false, so an open-topped arena is a wall the mob can now walk up and over. Worse, it cannot
+  come back: the arena floor sits one block ABOVE the test world's surface, so outside the
+  walls there is a one-block air gap running underneath the whole arena, and the escapee ends
+  up below its own floor with `helper.getBounds().contains(...) == false`. Seen as a ~1-in-5
+  timeout on `a_bound_worker_never_carries_two_crops_at_once`, whose worker idles for a
+  200-tick deposit cooldown between trips -- long enough to brush a wall. Only long-idling
+  tests are exposed; a test that finishes its business in a few dozen ticks rarely touches a
+  wall at all. The fix is not a longer timeout: keep the default barrier roof and buy the
+  light some other way. Crops need `CropBlock.hasSufficientLight`, which is
+  `getRawBrightness(pos, 0) >= 8` -- block light counts, so a glowstone sunk into the arena
+  floor lights a crop patch just as well as the sky does. Corollary for diagnosis: a
+  GameTest timeout is mute by itself, so put the state that separates the hypotheses into the
+  assertion message (here: chest count, pack count, position relative to the arena, and
+  `inBounds`) -- those four numbers named the cause on the first failing run.
+  (`verified: 2026-08-19`)
 - **RESOLVED -- the former "Flake watch" on `bound_worker_collects_a_ground_item_and_deposits_it`.**
   Reproduced 2026-08-18 at 2 failures in 33 runs (~6%), then twice more with instrumentation.
   It was **not** arena cross-contamination, which was the standing prime suspect: a diagnostic

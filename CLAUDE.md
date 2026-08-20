@@ -100,7 +100,8 @@ subsystem, and bank new rules there, not here.
   (no advancements, invisible to `getNearestPlayer`), custom dimension absent on
   GameTestServer, replant tests flaking ~9% on wheat seeds, `helper.destroyBlock` dropping
   nothing and popping no XP (it hardcodes `dropBlock=false`), a distance assertion sampled
-  ticks after the test's own swing drifting on residual knockback -> `gametest.md`.
+  ticks after the test's own swing drifting on residual knockback, an ant vanishing from a
+  long-running `skyAccess = true` arena (it climbs out and cannot get back) -> `gametest.md`.
   A test swing that lands no damage and leaves no grudge is the `hurt` invulnerability
   window -- that one is in `entity-ai.md`.
 - **Server dies at JSON parse loading a dimension**; biome bands land at 1/4 height; mobs

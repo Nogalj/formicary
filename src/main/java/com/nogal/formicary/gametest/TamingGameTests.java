@@ -597,12 +597,28 @@ public class TamingGameTests {
      * <p>The high-water mark is monotonic on purpose. A violation is transient in the world
      * -- the worker does eventually deliver everything -- so an assertion that only looked at
      * the pack right now would let the run recover into a pass.
+     *
+     * <p><b>Lit from a block, not from the sky</b>, which every other crop test in this file
+     * does the other way round. This is the one crop test that has to survive a long idle
+     * stretch (the worker waits out {@code RETRY_COOLDOWN_TICKS} between trips), and ants
+     * climb walls as of round 2: {@code skyAccess = true} leaves the arena open-topped, and a
+     * worker that brushes a wall during that wait goes straight up and over it. Caught here
+     * as a ~1-in-5 timeout whose diagnostic put the worker below its own floor and outside
+     * the bounds -- once out, the one-block gap between the world surface and the arena floor
+     * lets it wander under the arena, and nothing brings it back. So this arena keeps the
+     * harness's default barrier roof and pays for the replant with a glowstone in the floor
+     * instead: {@code CropBlock.canSurvive} asks {@code hasSufficientLight}, which is
+     * {@code getRawBrightness(pos, 0) >= 8}, and that reads block light and sky light alike.
      */
     @PrefixGameTestTemplate(false)
-    @GameTest(template = "farm_platform", skyAccess = true, timeoutTicks = 600)
+    @GameTest(template = "farm_platform", timeoutTicks = 600)
     public static void a_bound_worker_never_carries_two_crops_at_once(GameTestHelper helper) {
         BlockPos chest = new BlockPos(2, STAND_Y, 4);
         helper.setBlock(chest, Blocks.CHEST);
+        // Sunk into the floor layer in the middle of the patch: three blocks from the
+        // furthest crop, so every one of them reads light 12 or better against the 8 the
+        // replant needs, and nothing the worker walks into.
+        helper.setBlock(new BlockPos(4, FLOOR_Y, 4), Blocks.GLOWSTONE);
         // Four ripe crops in a tight patch, all nearer this arena's chest than anything in a
         // neighbouring arena can be (see lift()'s javadoc on the grid): the scanner picks the
         // nearest ripe crop to the anchor, so the worker always has one of these to cut.
@@ -628,8 +644,15 @@ public class TamingGameTests {
             Container container = HopperBlockEntity.getContainerAt(helper.getLevel(),
                     helper.absolutePos(chest));
             helper.assertTrue(container != null, "the bound chest should still be a container");
+            // The counts and the position are in the message on purpose: a timeout here says
+            // nothing on its own, and it was exactly these three numbers that identified the
+            // climb-out (chest=1 pack=1, worker below its own floor, inBounds=false).
             helper.assertTrue(container.countItem(Items.BEETROOT) >= 2,
-                    "the worker should have completed two separate one-crop trips");
+                    "the worker should have completed two separate one-crop trips; chest="
+                            + container.countItem(Items.BEETROOT) + " pack="
+                            + worker.getPack().countItem(Items.BEETROOT) + " worker at rel "
+                            + worker.blockPosition().subtract(helper.absolutePos(BlockPos.ZERO))
+                            + " inBounds=" + helper.getBounds().contains(worker.position()));
         });
     }
 

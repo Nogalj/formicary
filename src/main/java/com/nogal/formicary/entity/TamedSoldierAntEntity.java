@@ -5,6 +5,9 @@ import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
@@ -26,6 +29,7 @@ import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.OwnerHurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.OwnerHurtTargetGoal;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -51,6 +55,10 @@ import net.minecraft.world.level.Level;
 public class TamedSoldierAntEntity extends TamableAnimal implements TamedAnt {
     private static final String TAG_STATIONED = "Stationed";
     private static final String TAG_GUARD_POST = "GuardPost";
+
+    /** Play-test round 2: "I am against a wall this tick". See {@link AntClimbing}. */
+    private static final EntityDataAccessor<Boolean> DATA_CLIMBING =
+            SynchedEntityData.defineId(TamedSoldierAntEntity.class, EntityDataSerializers.BOOLEAN);
 
     private boolean stationed;
 
@@ -112,6 +120,36 @@ public class TamedSoldierAntEntity extends TamableAnimal implements TamedAnt {
             }
         });
         this.targetSelector.addGoal(4, new GuardPostTargetGoal(this));
+    }
+
+    // ------------------------------------------------------------ climbing --
+
+    /** @see AntClimbing */
+    @Override
+    protected PathNavigation createNavigation(Level level) {
+        return AntClimbing.navigation(this, level);
+    }
+
+    /** @see AntClimbing */
+    @Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(DATA_CLIMBING, false);
+    }
+
+    /** @see AntClimbing */
+    @Override
+    public void tick() {
+        super.tick();
+        if (!this.level().isClientSide) {
+            this.entityData.set(DATA_CLIMBING, this.horizontalCollision);
+        }
+    }
+
+    /** @see AntClimbing */
+    @Override
+    public boolean onClimbable() {
+        return this.entityData.get(DATA_CLIMBING);
     }
 
     // ------------------------------------------------------------ stations --

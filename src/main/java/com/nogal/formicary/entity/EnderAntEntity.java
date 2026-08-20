@@ -7,6 +7,9 @@ import com.nogal.formicary.worldgen.ColonyGeneratorTunables;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
@@ -27,6 +30,7 @@ import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
@@ -131,6 +135,10 @@ public class EnderAntEntity extends PathfinderMob {
      */
     private static final double TELEPORT_APPROACH_GAP = 1.5;
 
+    /** Play-test round 2: "I am against a wall this tick". See {@link AntClimbing}. */
+    private static final EntityDataAccessor<Boolean> DATA_CLIMBING =
+            SynchedEntityData.defineId(EnderAntEntity.class, EntityDataSerializers.BOOLEAN);
+
     public EnderAntEntity(EntityType<? extends EnderAntEntity> entityType, Level level) {
         super(entityType, level);
         this.xpReward = XP_REWARD;
@@ -163,6 +171,36 @@ public class EnderAntEntity extends PathfinderMob {
         // at the ACQUISITION layer, and canAttack below honours it at the continuation layer.
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Player.class, 10, true, false,
                 living -> living instanceof Player player && ColonyAnger.isValidTarget(player)));
+    }
+
+    // ------------------------------------------------------------ climbing --
+
+    /** @see AntClimbing */
+    @Override
+    protected PathNavigation createNavigation(Level level) {
+        return AntClimbing.navigation(this, level);
+    }
+
+    /** @see AntClimbing */
+    @Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(DATA_CLIMBING, false);
+    }
+
+    /** @see AntClimbing */
+    @Override
+    public void tick() {
+        super.tick();
+        if (!this.level().isClientSide) {
+            this.entityData.set(DATA_CLIMBING, this.horizontalCollision);
+        }
+    }
+
+    /** @see AntClimbing */
+    @Override
+    public boolean onClimbable() {
+        return this.entityData.get(DATA_CLIMBING);
     }
 
     // -------------------------------------------------------- spawn rules --

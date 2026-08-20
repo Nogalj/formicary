@@ -35,6 +35,7 @@ import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.MoveTowardsRestrictionGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -105,6 +106,10 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
     private static final EntityDataAccessor<ItemStack> DATA_CARRIED =
             SynchedEntityData.defineId(TamedWorkerAntEntity.class, EntityDataSerializers.ITEM_STACK);
 
+    /** Play-test round 2: "I am against a wall this tick". See {@link AntClimbing}. */
+    private static final EntityDataAccessor<Boolean> DATA_CLIMBING =
+            SynchedEntityData.defineId(TamedWorkerAntEntity.class, EntityDataSerializers.BOOLEAN);
+
     private final SimpleContainer pack = new SimpleContainer(INVENTORY_SIZE);
 
     @Nullable
@@ -125,6 +130,28 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
         super.defineSynchedData(builder);
         builder.define(DATA_CARRIED, ItemStack.EMPTY);
+        builder.define(DATA_CLIMBING, false);
+    }
+
+    /** @see AntClimbing */
+    @Override
+    protected PathNavigation createNavigation(Level level) {
+        return AntClimbing.navigation(this, level);
+    }
+
+    /** @see AntClimbing */
+    @Override
+    public void tick() {
+        super.tick();
+        if (!this.level().isClientSide) {
+            this.entityData.set(DATA_CLIMBING, this.horizontalCollision);
+        }
+    }
+
+    /** @see AntClimbing */
+    @Override
+    public boolean onClimbable() {
+        return this.entityData.get(DATA_CLIMBING);
     }
 
     @Override

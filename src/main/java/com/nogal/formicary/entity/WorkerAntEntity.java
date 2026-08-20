@@ -7,6 +7,9 @@ import javax.annotation.Nullable;
 import com.nogal.formicary.colony.ColonyAnger;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.damagesource.DamageSource;
@@ -20,6 +23,7 @@ import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -56,6 +60,10 @@ public class WorkerAntEntity extends PathfinderMob implements CarriesItem {
      * Animal.java}. Setting the field there would compile and silently do nothing.
      */
     public static final int XP_REWARD = 3;
+
+    /** Play-test round 2: "I am against a wall this tick". See {@link AntClimbing}. */
+    private static final EntityDataAccessor<Boolean> DATA_CLIMBING =
+            SynchedEntityData.defineId(WorkerAntEntity.class, EntityDataSerializers.BOOLEAN);
 
     private int fleeTicks;
 
@@ -125,6 +133,38 @@ public class WorkerAntEntity extends PathfinderMob implements CarriesItem {
         this.fleeTicks = 0;
         this.fleeFrom = null;
     }
+
+    // ------------------------------------------------------------ climbing --
+
+    /** @see AntClimbing */
+    @Override
+    protected PathNavigation createNavigation(Level level) {
+        return AntClimbing.navigation(this, level);
+    }
+
+    /** @see AntClimbing */
+    @Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(DATA_CLIMBING, false);
+    }
+
+    /** @see AntClimbing */
+    @Override
+    public void tick() {
+        super.tick();
+        if (!this.level().isClientSide) {
+            this.entityData.set(DATA_CLIMBING, this.horizontalCollision);
+        }
+    }
+
+    /** @see AntClimbing */
+    @Override
+    public boolean onClimbable() {
+        return this.entityData.get(DATA_CLIMBING);
+    }
+
+    // --------------------------------------------------------------- panic --
 
     @Override
     protected void customServerAiStep() {

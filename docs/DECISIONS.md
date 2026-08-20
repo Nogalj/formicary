@@ -1647,3 +1647,39 @@ jittered 384-block grid, sparse wilds between them.
   overlap over every cube in `QUEEN_ANT` rather than by re-reading the packing comment;
   neighbours cleared are crest (ends y=27), petiole (ends x=94), head (ends y=20), gaster
   (ends x=72), and antenna_tip (ends x=92).
+
+## Play-test round 2 -- entity behaviour (2026-08-19)
+
+- **The one-crop rule belongs on the harvest side, not the deposit side.** Round 1 wrote it
+  as "the deposit goal needs only a non-empty pack and outranks the harvest", and Logan's
+  next play session still had workers sweeping whole fields. The gap was the window between
+  trips, which is the dial the round-1 log left open at the bottom of *Ep2 worker shuttle*:
+  `DepositToChestGoal` puts itself on `RETRY_COOLDOWN_TICKS` after every delivery -- 100
+  `canUse` calls, about 200 ticks on the alternating AI cadence -- and for that whole window
+  nothing outranked a harvest goal gated on `isPackFull`. `HarvestCropsGoal` now requires an
+  **empty** pack in both `canUse` and `canContinueToUse`. `RETRY_COOLDOWN_TICKS` itself is
+  untouched: it is still the pacing dial, and it is now the *only* thing that sets the trip
+  rhythm rather than an accidental licence to keep cutting.
+- **A carried load is a carried load, whatever it is.** The gate is `pack.isEmpty()`, not
+  "no produce", so a worker that picked a stray item off the ground also stops cutting until
+  it has delivered. Stacking errands is the behaviour being removed; making an exception for
+  the ferry would reintroduce it in miniature.
+- **Ants climb; the queen and larvae do not.** `WallClimberNavigation` + the synched
+  `horizontalCollision` flag + `onClimbable` (the decompiled `Spider`, all three parts) goes
+  on worker, soldier, ender ant and both tamed castes -- five separate copies, because the
+  tamed castes descend from `TamableAnimal` and the wild ones from `PathfinderMob` and there
+  is no shared base to hold it (`AntClimbing` holds the shared *explanation*; the code has to
+  be per-class because `SynchedEntityData.defineId` is). **The queen is excluded** because
+  her fight is designed as a ground phase inside a walled arena, and a boss that can leave
+  the arena mid-fight is a different fight than the one that was tuned. **Larvae are
+  excluded** because they do not walk at all. Spider's flag is bit 0 of a shared `BYTE`
+  accessor for historical reasons; with exactly one flag to carry, each ant defines a plain
+  `BOOLEAN` accessor instead -- same synchronised state, and it matches `LarvaEntity`.
+- **Climbing changes what a GameTest arena is.** An open-topped arena (`skyAccess = true`,
+  which every crop test needs for light) no longer holds an ant: it climbs the barrier wall,
+  drops outside, and the one-block gap between the world surface and the arena floor lets it
+  wander *under* its own arena, unrecoverably. Only a test that idles for a long stretch is
+  exposed, and the fix is to stop buying light with the roof:
+  `a_bound_worker_never_carries_two_crops_at_once` keeps the default barrier roof and lights
+  its crops with a glowstone sunk into the floor, because `CropBlock.hasSufficientLight` is
+  `getRawBrightness(pos, 0) >= 8` and that reads block light just as happily as sky light.
