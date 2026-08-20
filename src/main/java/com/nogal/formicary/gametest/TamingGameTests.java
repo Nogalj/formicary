@@ -35,6 +35,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.BeetrootBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.entity.HopperBlockEntity;
@@ -547,10 +548,89 @@ public class TamingGameTests {
                 "one crop in the pack is enough to start the trip -- it no longer has to be full");
         helper.assertTrue(depositOutranksHarvest(worker),
                 "the deposit goal must be registered above the harvest goal, or the trip never preempts");
+        // Play-test round 2, spec item 1: outranking the harvest goal is only half of the
+        // rule, and on its own it is the half that let the field get swept anyway -- the
+        // deposit goal spends most of its life on RETRY_COOLDOWN_TICKS, and a harvest goal
+        // whose only pack condition was "not full" was free to cut all through that window.
+        // The rule the worker actually has to obey is on this side: carrying anything at all
+        // is a reason not to cut.
+        helper.assertFalse(harvest.canUse(),
+                "a worker already carrying produce must not start another harvest");
         helper.assertBlockState(far, CropHarvest::isHarvestable,
                 () -> "the second crop must still be standing when the trip starts, found "
                         + helper.getBlockState(far));
         helper.succeed();
+    }
+
+    /**
+     * <b>Play-test round 2, spec item 1</b>: the regression guard for the bug Logan reported
+     * after round 1 shipped -- a bound worker still cut every ripe crop in the field before
+     * walking one load home.
+     *
+     * <p>Round 1 put the whole one-at-a-time rule on the deposit side ({@code
+     * DepositToChestGoal} needs nothing but a non-empty pack, and it outranks the harvest),
+     * and {@link #one_harvest_sends_the_worker_home_before_the_next_crop} proves that much
+     * holds. What it does not cover is the <em>window between trips</em>, which is where the
+     * bug lived: after a delivery {@code DepositToChestGoal} puts itself on {@code
+     * RETRY_COOLDOWN_TICKS} (100 {@code canUse} calls, and {@code Mob.serverAiStep} only
+     * makes one every other tick -- so about 200 ticks), and for that whole window a harvest
+     * goal gated on {@code isPackFull} was free to keep cutting. One crop went home, the next
+     * eight piled up in the pack.
+     *
+     * <p>The obvious end-to-end assertion -- "the chest receives produce while crops are
+     * still standing" -- does <em>not</em> reproduce it, which is worth recording: the very
+     * first trip is correct even with the bug (an empty pack means no cooldown is running
+     * yet), so that assertion passes either way. The defect is only visible from the second
+     * trip on. What separates the two behaviours at every tick is what the ant is
+     * <em>carrying</em>: one crop per trip means the pack never holds two crops' produce at
+     * once.
+     *
+     * <p>Beetroot rather than carrot, and that is what makes the count exact rather than
+     * statistical. Read out of {@code data/minecraft/loot_table/blocks/beetroots.json} in the
+     * client-extra jar: an age-3 break yields exactly one {@code beetroot} from an
+     * unconditional pool, and its seed is a <em>separate</em> item ({@code beetroot_seeds},
+     * fortune-binomial) -- so {@code CropHarvest.takeSeed} spends a seed, never the produce.
+     * {@code pack.countItem(BEETROOT)} is therefore precisely "crops cut and not yet
+     * delivered". A carrot cannot do this job: carrot is both produce and seed, so the
+     * replant eats one and a cut contributes 0-3 to the pack.
+     *
+     * <p>The high-water mark is monotonic on purpose. A violation is transient in the world
+     * -- the worker does eventually deliver everything -- so an assertion that only looked at
+     * the pack right now would let the run recover into a pass.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "farm_platform", skyAccess = true, timeoutTicks = 600)
+    public static void a_bound_worker_never_carries_two_crops_at_once(GameTestHelper helper) {
+        BlockPos chest = new BlockPos(2, STAND_Y, 4);
+        helper.setBlock(chest, Blocks.CHEST);
+        // Four ripe crops in a tight patch, all nearer this arena's chest than anything in a
+        // neighbouring arena can be (see lift()'s javadoc on the grid): the scanner picks the
+        // nearest ripe crop to the anchor, so the worker always has one of these to cut.
+        for (BlockPos crop : List.of(new BlockPos(4, STAND_Y, 3), new BlockPos(4, STAND_Y, 5),
+                new BlockPos(5, STAND_Y, 3), new BlockPos(5, STAND_Y, 5))) {
+            plantRipeBeetroot(helper, crop);
+        }
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(3, STAND_Y, 4));
+        worker.tame(keeper);
+        worker.bindTo(helper.absolutePos(chest));
+
+        int[] mostCarriedAtOnce = {0};
+        helper.succeedWhen(() -> {
+            mostCarriedAtOnce[0] = Math.max(mostCarriedAtOnce[0],
+                    worker.getPack().countItem(Items.BEETROOT));
+            helper.assertTrue(mostCarriedAtOnce[0] <= 1,
+                    "one crop per trip: the pack held " + mostCarriedAtOnce[0]
+                            + " beetroots at once, so the worker cut another crop while still"
+                            + " carrying the last one");
+            Container container = HopperBlockEntity.getContainerAt(helper.getLevel(),
+                    helper.absolutePos(chest));
+            helper.assertTrue(container != null, "the bound chest should still be a container");
+            helper.assertTrue(container.countItem(Items.BEETROOT) >= 2,
+                    "the worker should have completed two separate one-crop trips");
+        });
     }
 
     /**
@@ -752,6 +832,20 @@ public class TamingGameTests {
     private static void plantRipeCarrot(GameTestHelper helper, BlockPos rel) {
         helper.setBlock(rel.below(), Blocks.FARMLAND);
         helper.setBlock(rel, Blocks.CARROTS.defaultBlockState().setValue(CropBlock.AGE, 7));
+    }
+
+    /**
+     * A ripe beetroot on fresh farmland at {@code rel}, for the one test that needs a crop
+     * whose produce and seed are different items.
+     *
+     * <p>{@code BeetrootBlock.AGE} rather than {@code CropBlock.AGE}: beetroot shortens the
+     * range to 0-3 and carries {@code AGE_3}, so setting {@code CropBlock}'s {@code AGE_7} on
+     * it throws {@code Cannot get property ... as it does not exist in BeetrootBlock}.
+     */
+    private static void plantRipeBeetroot(GameTestHelper helper, BlockPos rel) {
+        helper.setBlock(rel.below(), Blocks.FARMLAND);
+        helper.setBlock(rel, Blocks.BEETROOTS.defaultBlockState()
+                .setValue(BeetrootBlock.AGE, BeetrootBlock.MAX_AGE));
     }
 
     /**

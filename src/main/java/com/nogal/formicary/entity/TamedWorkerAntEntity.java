@@ -130,8 +130,11 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        // Deposit outranks harvest and pickup: a full pack has to be emptied before more
-        // is cut or collected.
+        // Deposit outranks harvest and pickup: whatever is in the pack has to be emptied
+        // before more is cut or collected. Play-test round 2 -- the ordering alone was not
+        // enough, because this goal spends most of its life on its retry cooldown and
+        // nothing outranked the harvest during that window; the binding half of the rule
+        // lives in HarvestCropsGoal.canUse (an empty pack, not a not-full one).
         this.goalSelector.addGoal(1, new DepositToChestGoal(this, 1.0));
         this.goalSelector.addGoal(2, new HarvestCropsGoal(this, 1.0));
         // Play-test round 1, spec item 2: ground pickup ranks below the crop harvest
