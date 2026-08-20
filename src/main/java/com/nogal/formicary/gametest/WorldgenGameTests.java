@@ -434,7 +434,7 @@ public class WorldgenGameTests {
     @PrefixGameTestTemplate(false)
     @GameTest(template = "platform")
     public static void no_colony_biome_spawns_larvae(GameTestHelper helper) {
-        String[] tiers = {"royal_depths", "nurseries", "fungal_gardens", "upper_galleries"};
+        String[] tiers = {"royal_depths", "nurseries", "fungal_gardens"};
         int checked = 0;
         for (String tier : tiers) {
             Optional<Biome> biome = helper.getLevel().registryAccess()

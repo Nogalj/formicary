@@ -1103,7 +1103,7 @@ public final class ColonyNoise {
     // ------------------------------------------------------------------
 
     /**
-     * One food-storage chamber: a small domed room in the Upper Galleries tier, built
+     * One food-storage chamber: a small domed room in a tier the cell picks, built
      * exactly like {@link Garden} -- centred at ({@code centreX}, {@code centreZ}) with its
      * floor at {@code floorY}, joined to the connectivity ramp at
      * ({@code axisX}, {@code axisZ}) by a straight corridor along the unit vector
@@ -1154,7 +1154,7 @@ public final class ColonyNoise {
      * larder's alone, and both are play-test round 2, item 7.
      *
      * <p><b>It can be dug into any tier.</b> The floor used to be the first ramp turn at or
-     * above one hard number, so every larder in the world was in the Upper Galleries. The cell
+     * above one hard number, so every larder in the world was in the top tier. The cell
      * now picks a tier uniformly from {@code [0, LARDER_TIER_COUNT)} and the floor is the
      * first ramp turn at or above {@link ColonyGeneratorTunables#CHAMBER_FLOOR_MIN_Y_BY_TIER}
      * for that tier -- {@code [8, 33)}, {@code [56, 80)}, {@code [104, 128)} or
@@ -1841,7 +1841,7 @@ public final class ColonyNoise {
      *   <li>{@code y} is in the bottom {@link ColonyGeneratorTunables#MEMBRANE_THICKNESS}
      *       layers of the cap, so the patch is flush with the ceiling's underside.</li>
      *   <li>The block directly below the cap is air, so the patch is actually <i>visible</i>
-     *       from inside the Upper Galleries. Only 10.4-13.1% of ceiling columns qualify
+     *       from inside the top tier. Only 10.4-13.1% of ceiling columns qualify
      *       (measured by {@code NoiseProbe -PprobeWhat=membrane} over 192x192 columns on
      *       seeds 1234567 / 42 / 987654321); a patch anywhere else is a decoration nobody
      *       ever sees, and would make any reachability claim a lie.</li>
@@ -1962,7 +1962,8 @@ public final class ColonyNoise {
             return FABRIC_HARDENED_SOIL;
         }
         return switch (tier) {
-            case 3 -> FABRIC_PACKED_SOIL;
+            // Tier 2 is the top band since round 2 retired the Upper Galleries (whose own
+            // Packed Soil survives as the ceiling cap, handled above).
             case 2 -> FABRIC_AMBER_EARTH;
             case 1 -> FABRIC_DEEP_LOAM;
             // Royal Depths: Deep Loam shot through with Hardened Soil (above) and resin.

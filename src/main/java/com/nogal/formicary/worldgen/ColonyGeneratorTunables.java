@@ -18,10 +18,31 @@ import net.minecraft.util.RandomSource;
  * <pre>
  *   0 = Royal Depths     y   0 -  47
  *   1 = Nurseries        y  48 -  95
- *   2 = Fungal Gardens   y  96 - 143
- *   3 = Upper Galleries  y 144 - 191
+ *   2 = Fungal Gardens   y  96 - 143   (the top tier; its last 6 blocks are the cap)
  * </pre>
  * The player enters at the top and descends, so the array order reads "deepest first".
+ *
+ * <h2>Why three tiers of 48 rather than four of 32 (play-test round 2)</h2>
+ * The round-2 review asked for a shallower dimension -- "too deep to traverse". The obvious
+ * dial, {@link #TIER_HEIGHT} 48 -&gt; 32, is <b>arithmetically impossible</b> and was measured
+ * to be so before this change landed. A chamber's floor is the first ramp turn at or above
+ * its tier's floor minimum, so a band has to hold three things end to end:
+ * <pre>
+ *   TIER_HEIGHT  &gt;  LANDING_INTERIOR_HEIGHT + floor(RAMP_PERIOD) + tallest room's shell top
+ *                =  8                       + 24                 + 15  (the throne)
+ *                =  47      i.e. TIER_HEIGHT &gt;= 48
+ * </pre>
+ * 48 is therefore the exact floor the current ramp/landing/boss-arena arithmetic admits, and
+ * the shipped value was already sitting on it with one block to spare. At 32 the band has
+ * {@code 32 - 8 - 24 = 0} blocks left for a room before one exists at all; {@link NoiseProbe}
+ * measured 101 of 289 nursery chambers crossing their boundary, and tier 2's rooms punching
+ * through the ceiling cap.
+ *
+ * <p>Steepening the coil to make 32 fit would need {@link #RAMP_RADIANS_PER_BLOCK} 0.26 -&gt;
+ * 0.698, which drops the walked grade from 0.51 to 0.19 blocks of descent per block walked --
+ * i.e. it would <em>lengthen</em> the on-foot descent, worsening the exact complaint that
+ * motivated the change. Dropping a tier instead leaves every intra-tier bound byte-identical
+ * (the arithmetic above is untouched) and shortens a full descent by 25% at the same grade.
  */
 public final class ColonyGeneratorTunables {
 
@@ -31,11 +52,24 @@ public final class ColonyGeneratorTunables {
 
     /** Dimension floor. Must be a multiple of 16 (DimensionType codec enforces it). */
     public static final int MIN_Y = 0;
-    /** Dimension height. Must be a multiple of 16. Four 48-block tiers. */
-    public static final int HEIGHT = 192;
-    /** Blocks per tier band. {@code HEIGHT / TIER_COUNT}. */
+    /**
+     * Dimension height. Must be a multiple of 16. Three 48-block tiers.
+     *
+     * <p>Play-test round 2 took this from 192 to 144 by dropping a tier rather than by
+     * shortening one -- see the class javadoc for the measurement that ruled the other way
+     * out. The Upper Galleries band is the one that went: the ceiling cap and its daylight
+     * membranes now sit directly on top of the Fungal Gardens.
+     */
+    public static final int HEIGHT = 144;
+    /**
+     * Blocks per tier band. {@code HEIGHT / TIER_COUNT}.
+     *
+     * <p><b>48 is a hard floor, not a preference.</b> See the class javadoc: it is
+     * {@code LANDING_INTERIOR_HEIGHT + floor(RAMP_PERIOD) + the throne's shell top} rounded
+     * up, and anything smaller cannot hold a chamber whose floor is chosen by ramp turn.
+     */
     public static final int TIER_HEIGHT = 48;
-    public static final int TIER_COUNT = 4;
+    public static final int TIER_COUNT = 3;
 
     /** Solid Hardened Soil cap at the bottom -- never carved, so there is no exposed void. */
     public static final int FLOOR_THICKNESS = 5;
@@ -47,8 +81,14 @@ public final class ColonyGeneratorTunables {
     /** First Y of the ceiling cap; carving stops below this. */
     public static final int CEILING_BOTTOM = MIN_Y + HEIGHT - CEILING_THICKNESS;
 
-    /** Where {@code getSpawnHeight} points -- inside the Upper Galleries. M5 owns real entry. */
-    public static final int SPAWN_HEIGHT = 176;
+    /**
+     * Where {@code getSpawnHeight} points -- inside the top tier. M5 owns real entry.
+     *
+     * <p>Round 2 re-derived it rather than re-typing it: 128 sits the same 32 blocks above its
+     * tier's floor ({@code tierMinY(2)} = 96) and the same 10 blocks below
+     * {@link #CEILING_BOTTOM} that 176 did inside the retired Upper Galleries.
+     */
+    public static final int SPAWN_HEIGHT = 128;
 
     // ------------------------------------------------------------------
     // Worm tunnels -- two noise fields, carve where both are near zero
@@ -70,10 +110,13 @@ public final class ColonyGeneratorTunables {
     /**
      * Half-width of the carved slab around each worm field's zero set, in raw noise units.
      * Tunnel thickness is roughly {@code halfWidth / scale} blocks per side, so 0.07 at the
-     * scales above is about a 3-block bore. Spec: narrow in the Upper Galleries, widest in
-     * Fungal Gardens.
+     * scales above is about a 3-block bore. Spec: widest in the Fungal Gardens.
+     *
+     * <p>The Upper Galleries' own 0.070 -- the narrowest bore in the dimension -- went with
+     * that tier in round 2. The player now arrives into the Fungal Gardens' 0.115 instead,
+     * which is the widest, so first contact reads as open gallery rather than as a crawl.
      */
-    public static final double[] TUNNEL_HALF_WIDTH_BY_TIER = {0.085, 0.095, 0.115, 0.070};
+    public static final double[] TUNNEL_HALF_WIDTH_BY_TIER = {0.085, 0.095, 0.115};
 
     // ------------------------------------------------------------------
     // Blob chambers -- two scales so tiers differ in chamber SIZE, not just count.
@@ -93,9 +136,9 @@ public final class ColonyGeneratorTunables {
     public static final double CHAMBER_LARGE_Y_SCALE = 0.045;
 
     /** Carve where the small-blob field exceeds this. Lower = more/bigger small chambers. */
-    public static final double[] CHAMBER_SMALL_THRESHOLD_BY_TIER = {0.50, 0.32, 0.36, 0.44};
+    public static final double[] CHAMBER_SMALL_THRESHOLD_BY_TIER = {0.50, 0.32, 0.36};
     /** Carve where the large-blob field exceeds this. Lower = more/bigger cathedral rooms. */
-    public static final double[] CHAMBER_LARGE_THRESHOLD_BY_TIER = {0.34, 0.55, 0.50, 9.00};
+    public static final double[] CHAMBER_LARGE_THRESHOLD_BY_TIER = {0.34, 0.55, 0.50};
 
     // ------------------------------------------------------------------
     // Organic wall jitter -- purely additive, so it can bulge a shaft wall outward
@@ -212,6 +255,23 @@ public final class ColonyGeneratorTunables {
      * gave the tier its second tenant -- a larder may now pick any tier -- so the number stops
      * being the throne's private constant and becomes the band's.
      *
+     * <p><b>The fit, written out</b> (round 2 -- this is the arithmetic that ruled out a
+     * 32-block tier, so it belongs next to the constant rather than in a commit message). A
+     * chamber's floor is the first ramp turn at or above the value here, and the ramp descends
+     * {@link #RAMP_RADIANS_PER_BLOCK}'s {@code 2*PI/0.26} = 24.17 blocks per turn, so a floor
+     * lands anywhere in {@code [min, min + 24]}. Adding the room's own shell top:
+     * <pre>
+     *   throne   floor in [ 8,  32], + WALL 6 + DOME 7 + shell 2 = 15  -&gt; top &lt;=  47  &lt; 48
+     *   nursery  floor in [56,  80], + WALL 3 + DOME 4 + shell 2 =  9  -&gt; top &lt;=  89  &lt; 96
+     *   garden   floor in [104,128], + WALL 3 + DOME 4 + shell 2 =  9  -&gt; top &lt;= 137  &lt; 144
+     * </pre>
+     * The throne is the binding case at one block of margin, which is what makes
+     * {@link #TIER_HEIGHT} = 48 a floor rather than a choice. Tier 2 has a second, tighter
+     * ceiling since round 2 made it the top band: its highest shell block at 137 sits one
+     * below {@link #CEILING_BOTTOM} = 138, so a garden or larder never intrudes into the cap.
+     * {@link NoiseProbe} asserts all three bands (the throne's was added in round 2 -- it was
+     * the one kind whose containment nothing checked).
+     *
      * <p>Declared here, above every consumer, because Java initialises static fields in
      * textual order: {@link #THRONE_FLOOR_MIN_Y} and friends read out of this array and would
      * see zeroes if it sat further down the file.
@@ -220,7 +280,6 @@ public final class ColonyGeneratorTunables {
         MIN_Y + 0 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT,
         MIN_Y + 1 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT,
         MIN_Y + 2 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT,
-        MIN_Y + 3 * TIER_HEIGHT + LANDING_INTERIOR_HEIGHT,
     };
 
     /**
@@ -269,7 +328,7 @@ public final class ColonyGeneratorTunables {
      * down from the Nurseries changes colour in one step. The remaining 18% is Deep Loam
      * mottling and the resin veins below.
      */
-    public static final double[] HARDENED_ACCENT_THRESHOLD_BY_TIER = {-0.26, 0.34, 0.36, 0.32};
+    public static final double[] HARDENED_ACCENT_THRESHOLD_BY_TIER = {-0.26, 0.34, 0.36};
     /**
      * Royal Depths only: buried Resin Block veins where the accent field is below this.
      * Raised from -0.42 to -0.46 alongside the threshold above -- the veins now have to
@@ -296,7 +355,7 @@ public final class ColonyGeneratorTunables {
     // argument the comb-patch field made in round 1, applied to the other growth.
 
     /** Royal Depths' sparse amber accents: Resin Block exposed in a wall. */
-    public static final double[] RESIN_BLOCK_CHANCE_BY_TIER = {0.020, 0.000, 0.000, 0.000};
+    public static final double[] RESIN_BLOCK_CHANCE_BY_TIER = {0.020, 0.000, 0.000};
 
     // --- comb: rarer overall, but in patches rather than speckle ---------------
     //
@@ -324,7 +383,7 @@ public final class ColonyGeneratorTunables {
      * single-octave field: {@code P(v > 0.30) = 14.0%}, {@code P(v > 0.55) = 1.5%}. 9.00 is
      * "never" for the two tiers that grow no comb.
      */
-    public static final double[] COMB_PATCH_THRESHOLD_BY_TIER = {0.55, 0.30, 9.00, 9.00};
+    public static final double[] COMB_PATCH_THRESHOLD_BY_TIER = {0.55, 0.30, 9.00};
 
     /**
      * Brood Comb density <em>inside</em> a patch -- no longer a global per-block chance. It
@@ -335,9 +394,9 @@ public final class ColonyGeneratorTunables {
      * 142 per 1000 against the old flat 178, in patches averaging 7.8 blocks; Royal Depths
      * 10 per 1000 against the old 14.
      */
-    public static final double[] BROOD_COMB_CHANCE_BY_TIER = {0.820, 0.900, 0.000, 0.000};
+    public static final double[] BROOD_COMB_CHANCE_BY_TIER = {0.820, 0.900, 0.000};
     /** Royal Comb -- rare, and only inside a comb patch, where brood comb already belongs. */
-    public static final double[] ROYAL_COMB_CHANCE_BY_TIER = {0.030, 0.045, 0.000, 0.000};
+    public static final double[] ROYAL_COMB_CHANCE_BY_TIER = {0.030, 0.045, 0.000};
 
     // ------------------------------------------------------------------
     // Daylight Membrane exits (M5, retuned in Ep2) -- the way out, embedded in the cap
@@ -375,7 +434,7 @@ public final class ColonyGeneratorTunables {
     // Arrival pocket (M5, retuned in Ep2) -- where a pearl thrown at an anthill lands you
     //
     // Ep2 pulls the whole band up against the ceiling cap. The pocket is no longer just
-    // "somewhere legal in the Upper Galleries": it is the near side of a guaranteed exit,
+    // "somewhere legal in the top tier": it is the near side of a guaranteed exit,
     // with a membrane punched through the cap directly above it (AnthillPortal
     // #openMembraneColumn). A pocket 30 blocks below the roof would put that membrane out
     // of pearl range behind whatever the carve happened to leave in between, so the band
@@ -414,12 +473,18 @@ public final class ColonyGeneratorTunables {
     /**
      * The Y the arrival pocket prefers to be carved at when the scan finds no natural floor
      * at the anthill's XZ. A preference, not a rule: the carve searches down (then up) from
-     * here for a level that already has solid ground beneath it. 180 is one block under the
+     * here for a level that already has solid ground beneath it. 132 is one block under the
      * highest floor the band can hold a whole pocket at ({@code ENTRY_SCAN_TOP -
-     * ENTRY_CARVE_HEIGHT + 1} = 181), which keeps the fallback search a two-sided one:
-     * mostly downward, with a rung above it still available.
+     * ENTRY_CARVE_HEIGHT + 1} = 136 - 4 + 1 = 133), which keeps the fallback search a
+     * two-sided one: mostly downward, with a rung above it still available.
+     *
+     * <p>Round 2 re-derived it off the new {@link #CEILING_BOTTOM} = 138 rather than leaving
+     * the old 180 to be clamped. {@code findCarvableFloor} does clamp it -- it takes
+     * {@code Math.min(ENTRY_CARVE_PREFERRED_Y, highest)} -- so a stale value would have
+     * degraded silently into "always start at the very top rung", quietly deleting the
+     * two-sided search this constant exists to create.
      */
-    public static final int ENTRY_CARVE_PREFERRED_Y = 180;
+    public static final int ENTRY_CARVE_PREFERRED_Y = 132;
 
     /** Half-width of the carved pocket in X/Z; 2 gives a 5x5 footprint. */
     public static final int ENTRY_CARVE_RADIUS = 2;
@@ -906,9 +971,15 @@ public final class ColonyGeneratorTunables {
      * (see its javadoc): the {@code + LANDING_INTERIOR_HEIGHT} keeps a corridor from opening
      * onto the landing disc's drop where it overhangs the ramp's annulus at the tier
      * boundary. The ramp turn chosen is the first one at or above this, and the ramp descends
-     * 24 blocks per turn, so the floor lands in {@code [104, 128)} -- the interior
-     * ({@code floor + 7}) plus its shell stays inside the Fungal Gardens band
-     * ({@code y < 144}) with 8 blocks to spare even at the top of that range.
+     * 24 blocks per turn, so the floor lands in {@code [104, 128]}.
+     *
+     * <p>Round 2 made tier 2 the <b>top</b> tier, so the binding constraint here stopped being
+     * the band and became the cap. The interior ({@code floor + 7}) tops out at 135 and the
+     * shell ({@code floor + 9}) at 137, one block under {@link #CEILING_BOTTOM} = 138 -- so a
+     * garden never intrudes into the ceiling cap, and {@link ColonyNoise#isAir}'s
+     * {@code y >= CEILING_BOTTOM} clamp never has to truncate one. One block of margin is
+     * thin, and it is the reason {@link NoiseProbe} measures the highest shell top rather than
+     * trusting this paragraph.
      */
     public static final int GARDEN_FLOOR_MIN_Y = CHAMBER_FLOOR_MIN_Y_BY_TIER[2];
 
@@ -955,8 +1026,8 @@ public final class ColonyGeneratorTunables {
 
     // ------------------------------------------------------------------
     // Larder chambers (Ep2 D3) -- the colony's food storage rooms, cloned end to end from
-    // the nursery/garden chambers above onto their own 96-block grid, this time in the
-    // Upper Galleries tier (tier 3). Wall/dome/shell/corridor numbers are again cloned
+    // the nursery/garden chambers above onto their own 96-block grid, into a tier the cell
+    // picks for itself. Wall/dome/shell/corridor numbers are again cloned
     // VERBATIM from the nursery's own constants -- see the garden section above for why
     // that is the right default. LARDER_APPROACH_DISTANCE = 24.0 for the identical reason
     // GARDEN_APPROACH_DISTANCE is: it clears the lower bound
@@ -999,16 +1070,17 @@ public final class ColonyGeneratorTunables {
      * How many tiers a larder can be dug into -- all of them, since play-test round 2.
      *
      * <p>There is deliberately no {@code LARDER_FLOOR_MIN_Y} any more. A larder used to be
-     * anchored to one hard number (tier 3's 152), which is why every larder in the world was
-     * in the roof: food storage read as a property of the Upper Galleries rather than as a
+     * anchored to one hard number (the retired top tier's 152), which is why every larder in
+     * the world was in the roof: food storage read as a property of one band rather than as a
      * thing colonies do. The floor minimum is now
      * {@link #CHAMBER_FLOOR_MIN_Y_BY_TIER}{@code [tier]} for a tier picked per cell, and the
      * per-tier band containment is what {@link NoiseProbe}'s larder section asserts instead of
      * a single band.
      *
-     * <p>Uniform over {@code [0, TIER_COUNT)}, so about a quarter of larders land in each
-     * band. The one pick that is not free is tier 0 on the ramp the colony's throne hangs off
-     * -- see {@link ColonyNoise#larderForCell}.
+     * <p>Uniform over {@code [0, TIER_COUNT)} -- {@code {0, 1, 2}} since round 2 dropped a
+     * tier -- so about a third of larders land in each band. The one pick that is not free is
+     * tier 0 on the ramp the colony's throne hangs off -- see
+     * {@link ColonyNoise#larderForCell}.
      */
     public static final int LARDER_TIER_COUNT = TIER_COUNT;
 
@@ -1184,19 +1256,19 @@ public final class ColonyGeneratorTunables {
      * Expected number of mixed ant clusters seeded per chunk, per tier. Fractional: the
      * whole part is always placed and the remainder is a probability.
      */
-    public static final double[] SPAWN_CLUSTERS_PER_CHUNK_BY_TIER = {0.15, 0.32, 0.26, 0.22};
+    public static final double[] SPAWN_CLUSTERS_PER_CHUNK_BY_TIER = {0.15, 0.32, 0.26};
 
     /** Workers per cluster, inclusive range. Tier 0 (Royal Depths) fields none. */
-    public static final int[] CLUSTER_WORKERS_MIN_BY_TIER = {0, 3, 3, 3};
-    public static final int[] CLUSTER_WORKERS_MAX_BY_TIER = {0, 4, 4, 4};
+    public static final int[] CLUSTER_WORKERS_MIN_BY_TIER = {0, 3, 3};
+    public static final int[] CLUSTER_WORKERS_MAX_BY_TIER = {0, 4, 4};
 
     /**
      * Soldiers per cluster, inclusive range. One per party keeps the ratio at the 3:1 -- 4:1
      * the brief asks for; the Royal Depths stay soldier-only, which M4a chose deliberately
      * (a boss-guarding tier with no foragers in it) and nothing in this round disturbs.
      */
-    public static final int[] CLUSTER_SOLDIERS_MIN_BY_TIER = {2, 1, 1, 1};
-    public static final int[] CLUSTER_SOLDIERS_MAX_BY_TIER = {4, 1, 1, 1};
+    public static final int[] CLUSTER_SOLDIERS_MIN_BY_TIER = {2, 1, 1};
+    public static final int[] CLUSTER_SOLDIERS_MAX_BY_TIER = {4, 1, 1};
 
     /** Attempts made per cluster member, per chunk, to find a floor to stand it on. */
     public static final int SPAWN_FLOOR_ATTEMPTS = 12;
@@ -1224,7 +1296,7 @@ public final class ColonyGeneratorTunables {
         return max <= min ? min : min + random.nextInt(max - min + 1);
     }
 
-    /** Bottom-up tier index for a block Y: 0 = Royal Depths ... 3 = Upper Galleries. */
+    /** Bottom-up tier index for a block Y: 0 = Royal Depths ... 2 = Fungal Gardens. */
     public static int tierIndex(int y) {
         return Mth.clamp((y - MIN_Y) / TIER_HEIGHT, 0, TIER_COUNT - 1);
     }

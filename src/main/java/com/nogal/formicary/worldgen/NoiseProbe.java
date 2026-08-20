@@ -131,7 +131,8 @@ public final class NoiseProbe {
                 System.out.printf(Locale.ROOT, "%nnearest ramp axis to the anchor colony: (%.1f, %.1f)%n",
                         closest.axisX(), closest.axisZ());
                 crossSectionXY(noise, (int) Math.round(closest.axisZ()), (int) Math.round(closest.axisX()));
-                crossSectionXZ(noise, 168, anchorX, anchorZ);
+                // One plan slice per tier, at the middle of each band. Round 2 dropped y=168
+                // along with the Upper Galleries; 120 / 72 / 24 are tiers 2 / 1 / 0.
                 crossSectionXZ(noise, 120, anchorX, anchorZ);
                 crossSectionXZ(noise, 72, anchorX, anchorZ);
                 crossSectionXZ(noise, 24, anchorX, anchorZ);
@@ -307,7 +308,7 @@ public final class NoiseProbe {
 
     /**
      * The acceptance criterion that actually matters: a player who cannot mine (the fabric
-     * is gated behind full Chitin Armor) must be able to WALK from the Upper Galleries to
+     * is gated behind full Chitin Armor) must be able to WALK from the top tier down to
      * the Royal Depths and back.
      *
      * <p>So this is not an air flood fill. It builds the graph of standable positions --
@@ -361,7 +362,7 @@ public final class NoiseProbe {
         }
 
         // Seed from every standable spot in the top tier at once: the question is whether
-        // the Upper Galleries as a whole connect down, not whether one arbitrary ledge does.
+        // the top tier as a whole connects down, not whether one arbitrary ledge does.
         boolean[] seen = new boolean[air.length];
         Deque<Integer> queue = new ArrayDeque<>();
         int topTierMin = tierMinY(TIER_COUNT - 1) - MIN_Y;
@@ -414,13 +415,13 @@ public final class NoiseProbe {
         System.out.printf(Locale.ROOT,
                 "%nwalkable connectivity (%dx%dx%d slab centred on the colony at (%d, %d),"
                         + " step height 1, symmetric):%n"
-                        + "  standable positions: %d, reachable on foot from the Upper Galleries: %d (%.1f%%)%n"
+                        + "  standable positions: %d, reachable on foot from the top tier: %d (%.1f%%)%n"
                         + "  deepest standable Y reached = %d   (dimension floor cap top = %d, Royal Depths = y[%d,%d))%n",
                 SLAB, SLAB, HEIGHT, anchorX, anchorZ, standCount, reached, 100.0 * reached / standCount,
                 MIN_Y + deepest, FLOOR_TOP, tierMinY(0), tierMaxY(0));
         System.out.println(MIN_Y + deepest < tierMaxY(0)
                 ? "  PASS: the Royal Depths are reachable on foot from the top tier (and back, edges are symmetric)."
-                : "  FAIL: cannot walk from the Upper Galleries into the Royal Depths.");
+                : "  FAIL: cannot walk from the top tier into the Royal Depths.");
     }
 
     /** Cell rings swept by {@link #shafts}: 25x25 shaft cells around the anchor colony. */
@@ -2330,19 +2331,18 @@ public final class NoiseProbe {
                 meanField, total * meanField);
     }
 
-    // The pre-round-1 spawning parameters, read out of the four biome JSONs. Kept ONLY as
+    // The pre-round-1 spawning parameters, read out of the biome JSONs. Kept ONLY as
     // the baseline the density change is measured against -- nothing in the mod reads them.
     // Indexed by tier; the weighted lists are {weight, minCount, maxCount} per caste, and
     // the larva row of the Nurseries is excluded because the comparison is about ants.
-    private static final double[] LEGACY_CREATURE_PROBABILITY = {0.10, 0.20, 0.16, 0.12};
+    private static final double[] LEGACY_CREATURE_PROBABILITY = {0.10, 0.20, 0.16};
     private static final int[][][] LEGACY_SPAWNERS = {
         {{10, 1, 3}},                        // Royal Depths:    soldier only
         {{8, 2, 3}, {12, 2, 3}, {6, 1, 3}},  // Nurseries:       worker, soldier, LARVA
         {{12, 2, 4}, {5, 1, 2}},             // Fungal Gardens:  worker, soldier
-        {{12, 2, 4}, {2, 1, 1}},             // Upper Galleries: worker, soldier
     };
     /** Index into a tier's {@link #LEGACY_SPAWNERS} row that is the larva, or -1. */
-    private static final int[] LEGACY_LARVA_ROW = {-1, 2, -1, -1};
+    private static final int[] LEGACY_LARVA_ROW = {-1, 2, -1};
 
     /**
      * The same simulation run against the scheme this round replaced, so the multiplier is
@@ -2506,7 +2506,6 @@ public final class NoiseProbe {
 
     private static String tierName(int tier) {
         return switch (tier) {
-            case 3 -> "UpperGalleries";
             case 2 -> "FungalGardens";
             case 1 -> "Nurseries";
             default -> "RoyalDepths";

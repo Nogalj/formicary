@@ -40,7 +40,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 /**
  * {@code /formicary dev ...} -- the maintainer's tooling for looking at this mod.
  *
- * <p>Everything the colony is worth seeing is buried in a 192-block-deep dimension behind a
+ * <p>Everything the colony is worth seeing is buried in a 144-block-deep dimension behind a
  * thrown ender pearl and a descent -- and since the Ep2 colony field, inside one of the
  * cores on a 384-block grid rather than spread evenly through it. Without this, every visual
  * check costs a play session; with it a screenshot of the queen's chamber is two commands.
@@ -60,7 +60,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 public final class FormicaryDevCommands {
 
     /** Bottom-up, matching {@code ColonyGeneratorTunables}' tier indices. */
-    private static final String[] TIER_NAMES = {"Royal Depths", "Nurseries", "Fungal Gardens", "Upper Galleries"};
+    private static final String[] TIER_NAMES = {"Royal Depths", "Nurseries", "Fungal Gardens"};
 
     /** How far in front of the player {@code queenfight} puts the queen. */
     private static final double QUEENFIGHT_DISTANCE = 6.0;

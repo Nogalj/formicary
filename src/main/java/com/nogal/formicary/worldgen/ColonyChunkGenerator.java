@@ -655,11 +655,11 @@ public class ColonyChunkGenerator extends ChunkGenerator {
      * <p>Vanilla's {@code NaturalSpawner.spawnMobsForChunkGeneration} is deliberately not
      * used. Two things about it are wrong here, both verified in the 1.21 sources:
      * {@code NoiseBasedChunkGenerator} feeds it the biome at {@code maxBuildHeight - 1},
-     * which in a four-band dimension is always the Upper Galleries; and its
+     * which in a vertically banded dimension is always the topmost band; and its
      * {@code getTopNonCollidingPos} walks down from the heightmap to the <i>first</i> air
      * pocket under the ceiling (the {@code hasCeiling} branch), so every spawn it makes
      * lands in the topmost gallery no matter which biome it was handed. Running it four
-     * times would populate the top tier four times over and leave the Nurseries and Royal
+     * times would populate the top tier once per band and leave the Nurseries and Royal
      * Depths empty. This does the same job per band instead, with the same placement and
      * event checks vanilla applies.
      *

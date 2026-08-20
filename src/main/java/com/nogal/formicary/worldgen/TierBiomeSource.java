@@ -23,7 +23,12 @@ import net.minecraft.world.level.biome.Climate;
  * <p><b>{@code getNoiseBiome} works in QUART coordinates</b> (one sample per 4x4x4 blocks),
  * not block coordinates -- verified against {@code BiomeSource#getBiomesWithin} and
  * {@code TheEndBiomeSource}, both of which convert with {@link QuartPos}. Forgetting that
- * would put the tier boundaries at y=12/24/36 instead of 48/96/144.
+ * would put the tier boundaries at y=12/24 instead of 48/96.
+ *
+ * <p>Play-test round 2 dropped the Upper Galleries, so this is three bands rather than four.
+ * The conversion is unchanged and still load-bearing: {@link ColonyGeneratorTunables#tierIndex}
+ * clamps to {@code TIER_COUNT - 1}, so a missed {@link QuartPos#toBlock} would not throw -- it
+ * would silently paint the whole dimension in the Royal Depths' colours and spawn list.
  */
 public class TierBiomeSource extends BiomeSource {
 
@@ -31,8 +36,7 @@ public class TierBiomeSource extends BiomeSource {
             instance -> instance.group(
                             Biome.CODEC.fieldOf("royal_depths").forGetter(source -> source.tiers[0]),
                             Biome.CODEC.fieldOf("nurseries").forGetter(source -> source.tiers[1]),
-                            Biome.CODEC.fieldOf("fungal_gardens").forGetter(source -> source.tiers[2]),
-                            Biome.CODEC.fieldOf("upper_galleries").forGetter(source -> source.tiers[3]))
+                            Biome.CODEC.fieldOf("fungal_gardens").forGetter(source -> source.tiers[2]))
                     .apply(instance, TierBiomeSource::new));
 
     /** Indexed bottom-up, matching {@link ColonyGeneratorTunables#tierIndex(int)}. */
@@ -40,8 +44,8 @@ public class TierBiomeSource extends BiomeSource {
 
     @SuppressWarnings("unchecked")
     public TierBiomeSource(Holder<Biome> royalDepths, Holder<Biome> nurseries,
-            Holder<Biome> fungalGardens, Holder<Biome> upperGalleries) {
-        this.tiers = new Holder[] {royalDepths, nurseries, fungalGardens, upperGalleries};
+            Holder<Biome> fungalGardens) {
+        this.tiers = new Holder[] {royalDepths, nurseries, fungalGardens};
     }
 
     /** The biome for a tier index, for callers that already know the band (spawning). */
