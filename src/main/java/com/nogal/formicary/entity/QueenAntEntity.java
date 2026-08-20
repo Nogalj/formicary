@@ -89,8 +89,8 @@ public class QueenAntEntity extends PathfinderMob {
     /** Boss health. Tunable. */
     public static final double MAX_HEALTH = 200.0;
 
-    /** Melee bite. Tunable. */
-    public static final double ATTACK_DAMAGE = 10.0;
+    /** Melee bite. Tunable. (Ep2 play-test round 3: 10.0 -> 6.0, ~40% less lethal.) */
+    public static final double ATTACK_DAMAGE = 6.0;
 
     /** Deliberately slow: her chamber is the arena, and she does not chase far. */
     public static final double MOVEMENT_SPEED = 0.22;
