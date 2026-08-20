@@ -1748,3 +1748,43 @@ jittered 384-block grid, sparse wilds between them.
   column joins the network on foot, and prints a step-by-step trace of the first one that does
   not. Measured after: **256 of 256 on all three seeds**, 0 routes unfound, 0 unwalkable, mean
   72-93 blocks carved per arrival, longest walk 39-66 steps.
+
+## Play-test round 3 -- the larder's missing combs (2026-08-19)
+
+- **The suspected cause was wrong, and the measurement is what said so.** The plan's prime
+  suspect for "my larder has three combs in it, not five to seven" was the per-chunk force
+  write: `ColonyChunkGenerator#forceProvisionComb` refuses any position outside the 16x16 it
+  is filling, so a slot reaching into a neighbouring chunk would be dropped unless that
+  chunk's own pass re-derived it. A write simulation was added to `NoiseProbe#larders` --
+  for every slot, does the chunk that contains it enumerate this larder -- and the answer was
+  **599 of 599, 582 of 582, 635 of 635 slots written, 0 larders short**, on the three seeds.
+  The 3x3 `lardersNear` neighbourhood already covers every slot a 96-block cell can place.
+  Banked because the hypothesis was extremely plausible and cost nothing to refute.
+- **The real defect is that "inside the shell" was never the property that mattered.** The
+  slots sat at `LARDER_COMB_RADIUS` = 8 and were asserted to be inside the forced-solid shell,
+  which spans `(7, 9]`. That assertion passed on every slot for two rounds and was measuring
+  the wrong thing: the shell is two blocks thick, rounding two independent integer coordinates
+  off a non-integer centre puts a slot anywhere in about `[7.3, 8.7]` of true distance, and
+  every slot in the far half of that band is a comb with a block of plain fabric between it
+  and the room. Measured: only 223 of 599 slots had a face onto the hollow -- **a mean of 2.2
+  visible combs per larder** against the 5-7 placed. Logan saw three.
+- **Placement is now a search for the wall's inside face, not a radius.**
+  `ColonyNoise#innerShellSlot` walks outward along the slot's own bearing in quarter blocks
+  and takes the first block that is both shell and room-facing, so visibility is a property of
+  the construction rather than of where the rounding landed. `LARDER_COMB_RADIUS` survives
+  only as the fallback.
+- **The 45-degree corner needed a sidestep, and it was 4% of the slots.** On a diagonal
+  bearing the ray leaves the hollow through a corner, and that corner block's four neighbours
+  are all shell -- the block that actually faces the room is beside the ray, not on it. First
+  version of the walk left exactly those 24-26 of ~600 slots buried. Checking the four face
+  neighbours of each ray block closes it.
+- **The doorway clearance moved, and stayed clear.** Sidestepping can nudge a slot a block
+  around the wall, so the closest any slot comes to the doorway bearing fell from ~28 to
+  22.4-24.9 degrees. The bound that matters is the doorway's real angular half-width at this
+  radius (7.1 degrees), so the margin is still better than 3x and the "no slot in the doorway"
+  invariant is unchanged and still green.
+- **Two new invariants, because the old one passed through the whole bug.** `NoiseProbe`
+  now asserts that every slot the pure function places is actually written by the chunk pass
+  that owns it, and that every written comb has a face onto the room. Measured after: 100% of
+  slots written and 100% visible on all three seeds, mean **5.93-5.99 visible combs per
+  larder**, fewest 5.

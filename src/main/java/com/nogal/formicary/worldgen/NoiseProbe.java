@@ -2178,6 +2178,52 @@ public final class NoiseProbe {
     private static final int WALKS_PER_TIER = 2;
 
     /**
+     * Whether {@code ColonyChunkGenerator#buildSurface}'s force-write pass actually puts a
+     * Provision Comb at this slot.
+     *
+     * <p>The pure function placing a slot and the world holding one are two different claims,
+     * and play-test round 3 reported the second failing: 3 combs visible in a larder the
+     * generator gave 5-7. The write is per chunk -- {@code forceProvisionComb} refuses any
+     * position outside the 16x16 it is filling -- so the slot only lands if the chunk that
+     * contains it is one whose own {@code lardersNear} enumerates this larder. That is the
+     * question asked here, against the real seam rather than against a re-derivation of it.
+     */
+    private static boolean slotIsWritten(ColonyNoise noise, ColonyNoise.Larder larder, int x, int y, int z) {
+        if (y < MIN_Y || y >= MIN_Y + HEIGHT) {
+            return false;
+        }
+        for (ColonyNoise.Larder candidate
+                : noise.lardersNear(x - Math.floorMod(x, 16), z - Math.floorMod(z, 16))) {
+            if (candidate.inColony() && candidate.centreX() == larder.centreX()
+                    && candidate.centreZ() == larder.centreZ() && candidate.floorY() == larder.floorY()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a written comb has a face onto the larder's own hollow -- i.e. whether the
+     * player standing in the room can see it at all.
+     *
+     * <p>The shell is {@code (LARDER_RADIUS, LARDER_RADIUS + SHELL_THICKNESS]} = (7, 9] thick
+     * and the slots are placed at radius 8, so "inside the shell" and "on the inside face of
+     * the shell" are not the same statement -- rounding two independent integer coordinates
+     * off a non-integer centre puts a slot anywhere in [7.3, 8.7] of true distance, and the
+     * far half of that band has a block of plain fabric between it and the room.
+     */
+    private static boolean slotFacesTheRoom(ColonyNoise noise, ColonyNoise.Larder[] justThis, int x, int y, int z) {
+        for (int[] face : SLOT_FACES) {
+            if (noise.larderState(justThis, x + face[0], y + face[1], z + face[2]) == ColonyNoise.LARDER_AIR) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final int[][] SLOT_FACES = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+
+    /**
      * The same-cell slot layout (play-test round 2, item 7).
      *
      * <p>The nursery, garden and larder of one 96-block cell share a cell centre, therefore an
@@ -2304,6 +2350,11 @@ public final class NoiseProbe {
         int combInColony = 0;
         int combCountViolations = 0;
         int combDoorwayViolations = 0;
+        int combWritten = 0;
+        int combExposed = 0;
+        int combExposedPerLarder = 0;
+        int combShortLarders = 0;
+        int combMinExposed = Integer.MAX_VALUE;
         double combDoorwayMinClearanceDeg = Double.MAX_VALUE;
         int[] perTier = new int[TIER_COUNT];
         int[] perTierInColony = new int[TIER_COUNT];
@@ -2348,6 +2399,8 @@ public final class NoiseProbe {
                 // from, recovered here from the stored direction vector rather than a
                 // second copy of the angle itself.
                 double doorwayBearing = Math.atan2(larder.dirZ(), larder.dirX()) + Math.PI;
+                int writtenHere = 0;
+                int exposedHere = 0;
                 for (int i = 0; i < combX.length; i++) {
                     combChecked++;
                     combSolid += noise.larderState(justThis, combX[i], larder.combY(), combZ[i])
@@ -2359,7 +2412,20 @@ public final class NoiseProbe {
                             Math.atan2(combZ[i] - larder.centreZ(), combX[i] - larder.centreX());
                     double delta = Math.abs(Math.IEEEremainder(slotBearing - doorwayBearing, 2.0 * Math.PI));
                     combDoorwayMinClearanceDeg = Math.min(combDoorwayMinClearanceDeg, Math.toDegrees(delta));
+                    if (slotIsWritten(noise, larder, combX[i], larder.combY(), combZ[i])) {
+                        combWritten++;
+                        writtenHere++;
+                        if (slotFacesTheRoom(noise, justThis, combX[i], larder.combY(), combZ[i])) {
+                            combExposed++;
+                            exposedHere++;
+                        }
+                    }
                 }
+                if (writtenHere < combX.length) {
+                    combShortLarders++;
+                }
+                combExposedPerLarder += exposedHere;
+                combMinExposed = Math.min(combMinExposed, exposedHere);
             }
         }
         System.out.printf(Locale.ROOT, "  %d chambers sampled, tier pick spread over %d tiers:%n",
@@ -2399,6 +2465,23 @@ public final class NoiseProbe {
         System.out.println(combDoorwayViolations == 0
                 ? "  PASS: no sampled Provision Comb slot lands in its larder's own doorway."
                 : "  FAIL: " + combDoorwayViolations + " Provision Comb slot(s) landed inside the doorway.");
+
+        System.out.printf(Locale.ROOT,
+                "  write simulation: %d of %d slots are written by the chunk pass that owns them"
+                        + " (%d larder(s) short of their own count)%n",
+                combWritten, combChecked, combShortLarders);
+        System.out.println(combWritten == combChecked
+                ? "  PASS: every Provision Comb slot the pure function places is actually written."
+                : "  FAIL: " + (combChecked - combWritten) + " slot(s) fall in a chunk whose force-write pass"
+                        + " never enumerates their larder.");
+        System.out.printf(Locale.ROOT,
+                "  of those, %d face the room's own hollow -- mean %.2f visible combs per larder, fewest %d%n",
+                combExposed, combInColony == 0 ? 0.0 : (double) combExposedPerLarder / combInColony,
+                combInColony == 0 ? -1 : combMinExposed);
+        System.out.println(combExposed == combWritten
+                ? "  PASS: every written Provision Comb is visible from inside its larder."
+                : "  FAIL: " + (combWritten - combExposed) + " Provision Comb(s) are buried in the shell,"
+                        + " a block deep behind plain fabric where nobody can see or mine them.");
 
         // Overlap: the literal "shells don't touch" bound.
         double requiredSeparation = 2.0 * (ColonyGeneratorTunables.LARDER_RADIUS

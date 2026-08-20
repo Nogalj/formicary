@@ -1329,11 +1329,19 @@ public final class ColonyGeneratorTunables {
     public static final int LARDER_PROVISION_COMB_MAX = 7;
 
     /**
-     * Distance from the chamber centre for a guaranteed comb slot: one block outside
-     * {@link #LARDER_RADIUS}, so it always lands inside the forced-solid shell
-     * ({@code (RADIUS, RADIUS + SHELL_THICKNESS]} = {@code (7, 9]}) and never punches a
-     * hole in the room's own air, even after the +-0.5 rounding two independent integer
-     * coordinates from a non-integer centre can introduce.
+     * Nominal distance from the chamber centre for a guaranteed comb slot: one block outside
+     * {@link #LARDER_RADIUS}, so it lands inside the forced-solid shell
+     * ({@code (RADIUS, RADIUS + SHELL_THICKNESS]} = {@code (7, 9]}) and never punches a hole
+     * in the room's own air.
+     *
+     * <p><b>Round 3 demoted this from the placement rule to its fallback.</b> Being inside
+     * the shell turned out not to be the property that matters: the shell is two blocks
+     * thick, and a slot in its outer half is a comb with a block of plain fabric between it
+     * and the room. Measured, that was most of them -- 2.2 visible per larder against the
+     * 5-7 placed, which is the "my larder has three combs in it" the play-test reported.
+     * {@code ColonyNoise#innerShellSlot} now walks out along the slot's own bearing and takes
+     * the first block that is shell <em>and</em> faces the hollow, so visibility is a
+     * property of the construction; this constant is only what it falls back to.
      */
     public static final double LARDER_COMB_RADIUS = LARDER_RADIUS + 1.0;
 

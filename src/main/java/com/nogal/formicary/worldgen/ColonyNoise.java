@@ -1275,14 +1275,84 @@ public final class ColonyNoise {
         int[] combZ = new int[combCount];
         for (int i = 0; i < combCount; i++) {
             double angle = arcStart + (i + random.nextDouble()) * usableArc / combCount;
-            combX[i] = (int) Math.round(centreXd + LARDER_COMB_RADIUS * Math.cos(angle));
-            combZ[i] = (int) Math.round(centreZd + LARDER_COMB_RADIUS * Math.sin(angle));
+            int[] slot = innerShellSlot(centreXd, centreZd, angle);
+            combX[i] = slot[0];
+            combZ[i] = slot[1];
         }
 
         return new Larder(centreXd, centreZd, shaft.axisX(), shaft.axisZ(), dirX, dirZ, floorY, tier, tierDraw,
                 combX, combZ, floorY + LARDER_COMB_HEIGHT,
                 isChamberAnchored(shaft, centreXd, centreZd, LARDER_ELIGIBILITY_MIN_F));
     }
+
+    /**
+     * The block a Provision Comb slot at {@code angle} actually goes in: the <b>innermost</b>
+     * block of the larder's shell that has a face onto the room, rather than whatever block
+     * a fixed radius happens to round to.
+     *
+     * <p>This is the round-3 fix for "the larder has three combs in it". The slots were
+     * placed at {@link ColonyGeneratorTunables#LARDER_COMB_RADIUS} = 8 and checked for being
+     * inside the shell, which spans {@code (7, 9]} -- and that check passed, on every slot of
+     * every sampled larder, for two rounds. Inside the shell is not the same claim as on the
+     * inside face of it: rounding two independent integer coordinates off a non-integer
+     * centre puts the true distance anywhere in about {@code [7.3, 8.7]}, and the far half of
+     * that band has a block of plain fabric between the comb and the room. Measured by
+     * {@code NoiseProbe#larders}: 599 of 599 slots written, and only 223 of them visible --
+     * a mean of <b>2.2 combs per larder</b> against the 5-7 placed, which is the count the
+     * play-test reported.
+     *
+     * <p>Walking outward and taking the first block that is both shell and room-facing makes
+     * visibility a property of the construction rather than of the rounding. The
+     * quarter-block step is finer than the lattice, so no candidate block on the ray is
+     * skipped. Only the four horizontal neighbours are consulted, and that is not a
+     * simplification: at {@link ColonyGeneratorTunables#LARDER_COMB_HEIGHT} the room is a
+     * cylinder, so the blocks above and below a slot share its distance from the axis exactly
+     * and are shell whenever it is.
+     */
+    private static int[] innerShellSlot(double centreX, double centreZ, double angle) {
+        double cos = Math.cos(angle);
+        double sin = Math.sin(angle);
+        for (double radius = LARDER_RADIUS - 1.0; radius <= LARDER_RADIUS + LARDER_SHELL_THICKNESS;
+                radius += 0.25) {
+            int x = (int) Math.round(centreX + radius * cos);
+            int z = (int) Math.round(centreZ + radius * sin);
+            if (isInsideWallFace(centreX, centreZ, x, z)) {
+                return new int[] {x, z};
+            }
+            // Sidestep once. On a diagonal bearing the ray leaves the hollow through a
+            // corner, and the corner block's own neighbours are all shell -- the block that
+            // faces the room is beside it rather than on the ray. Measured, that was the
+            // last 25 of 599 slots still landing behind a block of fabric.
+            for (int[] face : COMB_FACES) {
+                if (isInsideWallFace(centreX, centreZ, x + face[0], z + face[1])) {
+                    return new int[] {x + face[0], z + face[1]};
+                }
+            }
+        }
+        // No block on this ray is both shell and room-facing, which the lattice makes very
+        // hard to arrange; fall back to the nominal radius, which is still inside the shell.
+        return new int[] {(int) Math.round(centreX + LARDER_COMB_RADIUS * cos),
+            (int) Math.round(centreZ + LARDER_COMB_RADIUS * sin)};
+    }
+
+    /**
+     * Whether a block is shell with a face onto the room -- the inside surface of the wall,
+     * which is the only place a comb is worth putting.
+     */
+    private static boolean isInsideWallFace(double centreX, double centreZ, int x, int z) {
+        double distance = Math.hypot(x - centreX, z - centreZ);
+        if (distance <= LARDER_RADIUS || distance > LARDER_RADIUS + LARDER_SHELL_THICKNESS) {
+            return false;
+        }
+        for (int[] face : COMB_FACES) {
+            if (Math.hypot(x + face[0] - centreX, z + face[1] - centreZ) <= LARDER_RADIUS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final int[][] COMB_FACES = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
     /**
      * Whether a chamber centred at (x, z) would sit inside a throne's exclusion ball -- i.e.
