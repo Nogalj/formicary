@@ -140,6 +140,26 @@ NORMAL difficulty (Monsters safe).
   position clears a 16-block sweep on a 5-block grid. `lift()` is not available either: these
   tests need ground to walk on, and the two existing lifted tests already own that altitude.
   (`verified: 2026-08-20`)
+- **A climbing ant a test deliberately traps against a wall stays wedged there even after its
+  goal retargets somewhere else -- unless the new target's approach avoids the same wall.**
+  Building a real cage for a climbing ant (see the entry above) works exactly as intended: the
+  ant gets pinned against the wall, frozen (`onClimbable() == true`, position unchanged) for
+  the whole approach timeout. The surprise is what happens *after* the goal gives up and
+  retargets a second, genuinely reachable position: if the straight line from the ant's wedged
+  position to that new target still runs anywhere near the same wall, the ant stays wedged --
+  confirmed empirically 2026-08-20 while writing
+  `a_bound_worker_gives_up_on_an_unreachable_crop_and_harvests_a_reachable_one`, whose first
+  draft put the reachable crop just past the far side of the cage (adjacent, one cell outside
+  it) and left the ant frozen against the cage indefinitely even once the goal's own blacklist
+  correctly excluded the caged crop and picked the reachable one -- `WallClimberNavigation`'s
+  "no path -> push the mob at the target with the move control" fallback (see
+  `docs/gotchas/entity-ai.md`'s `AntClimbing` note) still pushes straight through the same
+  wall it is already pinned against when the target lies on the far side of it. The fix is
+  geometric, not code: place a second target so the direct line back to it retraces the
+  ant's own approach (e.g. due west along the same row the ant walked in on) rather than
+  passing the cage again -- confirmed to escape cleanly once repositioned that way. Any test
+  that traps a climbing ant and then expects it to do something else afterward needs this
+  checked, not assumed. (`verified: 2026-08-20`)
 - **RESOLVED -- the former "Flake watch" on `bound_worker_collects_a_ground_item_and_deposits_it`.**
   Reproduced 2026-08-18 at 2 failures in 33 runs (~6%), then twice more with instrumentation.
   It was **not** arena cross-contamination, which was the standing prime suspect: a diagnostic

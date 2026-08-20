@@ -1,5 +1,7 @@
 package com.nogal.formicary.entity;
 
+import java.util.function.Predicate;
+
 import javax.annotation.Nullable;
 
 import net.minecraft.core.BlockPos;
@@ -61,13 +63,30 @@ public class CropScanner {
      */
     @Nullable
     public BlockPos scan(BlockGetter level, BlockPos anchor) {
+        return this.scan(level, anchor, pos -> false);
+    }
+
+    /**
+     * The same sweep as {@link #scan(BlockGetter, BlockPos)}, plus a caller-supplied filter
+     * on the candidate position itself.
+     *
+     * <p>Exists for {@link HarvestCropsGoal}'s per-crop failure blacklist: a crop this ant
+     * has already timed out approaching is still ripe and still the nearest thing on the
+     * field, so without a filter the plain sweep would hand the goal the exact position it
+     * just gave up on. The filter sits in the same loop as the {@code isHarvestable} check
+     * rather than as a retry-after-the-fact, so one call still answers with the true
+     * second-nearest candidate in a single pass -- this stays a pure, stateless sweep either
+     * way; {@code exclude} is just another input, not state the scanner remembers.
+     */
+    @Nullable
+    public BlockPos scan(BlockGetter level, BlockPos anchor, Predicate<BlockPos> exclude) {
         BlockPos best = null;
         double bestDistance = Double.MAX_VALUE;
         for (int dz = -this.radius; dz <= this.radius; dz++) {
             for (int dx = -this.radius; dx <= this.radius; dx++) {
                 for (int dy = this.verticalReach; dy >= -this.verticalReach; dy--) {
                     BlockPos pos = anchor.offset(dx, dy, dz);
-                    if (!CropHarvest.isHarvestable(level.getBlockState(pos))) {
+                    if (!CropHarvest.isHarvestable(level.getBlockState(pos)) || exclude.test(pos)) {
                         continue;
                     }
                     double distance = pos.distSqr(anchor);

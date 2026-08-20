@@ -101,3 +101,17 @@ keeps its original `verified:` date. Routed by the symptom index in CLAUDE.md.
   arrives as 7+1. A GameTest using `anyMatch(orb.getValue() == XP_REWARD)` works for 7 by
   luck of a tier boundary and silently fails for 8 -- assert the SUM of orb values instead
   (`an_ender_ant_death_awards_its_full_xp_reward`). (`verified: 2026-08-18`)
+- **A goal's own give-up timeout does not stop it re-picking the identical target the instant
+  it restarts.** `HarvestCropsGoal.APPROACH_TIMEOUT_TICKS` was documented as "give up on an
+  unreachable crop rather than standing on a wall forever" and did stop the goal -- but
+  `canUse()` re-scans immediately, `CropScanner` has no memory of the failed attempt, and it
+  answers with the same nearest-but-unreachable crop every time, so the goal restarts at it: a
+  permanent lock-on, discovered as a known gap in commit `0e595bb`'s play-test trace and fixed
+  2026-08-20. The fix is a per-position failure blacklist owned by the goal (not the scanner --
+  `CropScanner.scan` gained a `Predicate<BlockPos> exclude` overload instead, keeping it a pure
+  stateless sweep), keyed to an expiry (`level.getGameTime() + duration`, ~1200 ticks) rather
+  than a boolean, so a transiently-blocked position clears itself without a second code path,
+  and cleared explicitly the moment the goal actually reaches a position (proof it was
+  reachable after all) rather than only on a successful action there. Any "give up and try
+  again" goal that re-derives its own target from scratch on every `canUse()` call has this
+  exposure unless the derivation itself excludes recent failures. (`verified: 2026-08-20`)

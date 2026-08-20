@@ -1,6 +1,9 @@
 package com.nogal.formicary.entity;
 
 import java.util.EnumSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import javax.annotation.Nullable;
 
@@ -32,9 +35,47 @@ public class HarvestCropsGoal extends Goal {
     /** Ticks between path recalculations while walking to the crop. */
     private static final int REPATH_INTERVAL_TICKS = 10;
 
+    /**
+     * How long a crop stays off-limits after an approach timeout, in ticks -- about a minute
+     * at 20 tps. This is the trade the constant makes explicit: a genuinely-blocked crop (a
+     * player's fence, an unreachable ledge) gets retried once a minute, which is cheap for a
+     * scan that already runs about once per round trip; a crop that was only transiently
+     * blocked (another mob standing in the doorway, a half-built wall) comes back on the very
+     * next scan after this window instead of staying locked out for good. Discovered 2026-08-20
+     * (commit 0e595bb): without an expiry, {@link #canUse()} re-scans the instant the timeout
+     * stops this goal, {@link CropScanner} picks the identical unreachable crop again, and the
+     * worker never harvests anything reachable -- nor collects any drops, since harvest
+     * outranks {@link CollectDroppedItemsGoal} at goal priority.
+     */
+    private static final int BLACKLIST_DURATION_TICKS = 1200;
+
+    /** Defensive cap on {@link #blacklistedUntil} so a worker that spends a long life failing
+     * approaches (a field that slowly gets walled in around it) cannot grow the map without
+     * bound; the oldest entry is dropped to make room. 32 is generous against a single ant's
+     * realistic failure rate -- the field it patrols is bounded by {@link
+     * TamedWorkerAntEntity#PATROL_RADIUS} and most crops in it are reachable. */
+    private static final int BLACKLIST_MAX_SIZE = 32;
+
     private final TamedWorkerAntEntity ant;
     private final double speedModifier;
     private final CropScanner scanner;
+
+    /**
+     * Crop positions this goal has given up approaching, mapped to the game time they become
+     * eligible again. Per-instance (per-ant) rather than shared: a crop unreachable to one
+     * worker's patrol may sit right next to another's chest.
+     *
+     * <p>Deliberately not saved across a relog -- {@link #target} and {@link #approachTicks}
+     * already are not, and a reload gives every goal a fresh start regardless (the {@code
+     * restrictTo} gotcha in {@code docs/gotchas/entity-ai.md} is the same shape: some state
+     * costs more to lose than this, and even that only gets saved because
+     * {@link TamedWorkerAntEntity} chooses to re-apply it in {@code readAdditionalSaveData}).
+     * A relog also resets the far cheaper thing this blacklist protects against -- a worker
+     * that was mid-approach loses that progress too -- so a permanently-blocked crop is simply
+     * rediscovered and re-blacklisted on the worker's next attempt after loading, at the same
+     * one-minute cost paid the first time.
+     */
+    private final Map<BlockPos, Long> blacklistedUntil = new LinkedHashMap<>();
 
     private int approachTicks;
     private int repathTicks;
@@ -81,7 +122,7 @@ public class HarvestCropsGoal extends Goal {
         if (anchor == null || !this.ant.getPack().isEmpty() || !(this.ant.level() instanceof ServerLevel)) {
             return false;
         }
-        this.target = this.scanner.scan(this.ant.level(), anchor);
+        this.target = this.scanner.scan(this.ant.level(), anchor, this::isBlacklisted);
         return this.target != null;
     }
 
@@ -126,6 +167,10 @@ public class HarvestCropsGoal extends Goal {
 
         if (this.ant.distanceToSqr(this.target.getX() + 0.5, this.target.getY() + 0.5,
                 this.target.getZ() + 0.5) <= REACH_SQR) {
+            // Reaching it proves it reachable, whatever an earlier attempt on this same
+            // position may have concluded -- clear it before anything else, not just on a
+            // successful harvest() below.
+            this.blacklistedUntil.remove(this.target);
             this.ant.harvest(level, this.target);
             this.target = null;
             this.ant.getNavigation().stop();
@@ -139,9 +184,51 @@ public class HarvestCropsGoal extends Goal {
         }
     }
 
+    /**
+     * The give-up path: {@link #canContinueToUse()} already stopped returning true once
+     * {@link #approachTicks} hit {@link #APPROACH_TIMEOUT_TICKS}, and by the time the goal
+     * selector calls this the reason is exactly that -- a still-non-null {@link #target} means
+     * the goal did not end via the successful-harvest branch in {@link #tick()}, which already
+     * nulled it out (and cleared any blacklist entry) before this could run. Blacklisting here
+     * rather than at the timeout check itself keeps the bookkeeping in the one place already
+     * responsible for "the goal is ending", instead of mutating state inside a boolean predicate.
+     */
     @Override
     public void stop() {
+        if (this.target != null && this.approachTicks >= APPROACH_TIMEOUT_TICKS) {
+            this.blacklist(this.target);
+        }
         this.target = null;
         this.ant.getNavigation().stop();
+    }
+
+    /** Whether {@code pos} is still inside its post-timeout cooldown window. */
+    private boolean isBlacklisted(BlockPos pos) {
+        Long expiry = this.blacklistedUntil.get(pos);
+        if (expiry == null) {
+            return false;
+        }
+        if (!(this.ant.level() instanceof ServerLevel level) || level.getGameTime() >= expiry) {
+            // Lazily forget an expired entry rather than waiting for it to age out of the
+            // size cap -- keeps the map's real size honest for that cap.
+            this.blacklistedUntil.remove(pos);
+            return false;
+        }
+        return true;
+    }
+
+    /** Records {@code pos} as unreachable for {@link #BLACKLIST_DURATION_TICKS}. */
+    private void blacklist(BlockPos pos) {
+        if (!(this.ant.level() instanceof ServerLevel level)) {
+            return;
+        }
+        this.blacklistedUntil.put(pos, level.getGameTime() + BLACKLIST_DURATION_TICKS);
+        if (this.blacklistedUntil.size() > BLACKLIST_MAX_SIZE) {
+            // LinkedHashMap in insertion order: the first key the iterator yields is the
+            // oldest entry still present.
+            Iterator<BlockPos> oldest = this.blacklistedUntil.keySet().iterator();
+            oldest.next();
+            oldest.remove();
+        }
     }
 }

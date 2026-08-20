@@ -103,7 +103,9 @@ subsystem, and bank new rules there, not here.
   ticks after the test's own swing drifting on residual knockback, an ant vanishing from a
   long-running `skyAccess = true` arena (it climbs out and cannot get back), a mob-behaviour
   test that times out with the goal under test never having STARTED (a neighbouring arena's
-  block pulled a higher-priority goal, and no timeout budget fixes it) -> `gametest.md`.
+  block pulled a higher-priority goal, and no timeout budget fixes it), a climbing ant a test
+  deliberately traps against a wall staying wedged even after its goal retargets elsewhere
+  -> `gametest.md`.
   A test swing that lands no damage and leaves no grudge is the `hurt` invulnerability
   window -- that one is in `entity-ai.md`.
 - **Server dies at JSON parse loading a dimension**; biome bands land at 1/4 height; mobs
@@ -123,7 +125,8 @@ subsystem, and bank new rules there, not here.
   `invulnerableTime` early return -- bites 1.0F GameTest swings), retaliation invisible
   when the hit lands on the mob's spawn tick, `xpReward` set on a `TamableAnimal` but the
   mob still drops 1-3 XP, a mob that parks next to what it wants and never closes the last
-  step (`moveTo`'s arrival is looser than a goal's own reach) -> `entity-ai.md`
+  step (`moveTo`'s arrival is looser than a goal's own reach), a goal whose own give-up
+  timeout re-picks the identical unreachable target and loops forever -> `entity-ai.md`
 - **Any entity model/render work**: held item invisible, `renderToBuffer` signature,
   UV/texture-resolution mismatch, `setupAnim` drift; full art pipeline -> `entity-models.md`
 - **Which 1.21 event replaced `LivingHurtEvent` / `PlayerTickEvent`**; `javap` can't find

@@ -663,6 +663,111 @@ public class TamingGameTests {
     }
 
     /**
+     * <b>The regression guard for the play-test-round-2 defect discovered while diagnosing
+     * commit {@code 0e595bb}</b> (its message spells the trace out in full, under "Not fixed
+     * here, and worth its own look"): a bound worker whose {@link CropScanner} picks a ripe
+     * crop it cannot reach locks onto it permanently. {@code HarvestCropsGoal
+     * .APPROACH_TIMEOUT_TICKS} stops the goal, but {@code canUse} re-scans immediately, the
+     * scanner returns the identical nearest-but-unreachable crop, and the goal restarts at
+     * it -- an infinite loop. Because harvest outranks {@link CollectDroppedItemsGoal} at
+     * goal priority, the worker also never picks up anything in the meantime: it just stands
+     * at the wall.
+     *
+     * <p>Two ripe beetroots are planted, one nearer the chest than the other, and only the
+     * nearer one is walled off. {@link CropScanner#scan} always answers with the nearest ripe
+     * crop regardless of whether anything can actually reach it, so pre-fix the goal locks
+     * onto the walled one on every single re-scan and the chest never receives anything --
+     * this test simply times out. The fix is a per-crop failure blacklist in
+     * {@code HarvestCropsGoal}: an approach timeout records the position and the next scan
+     * excludes it, so the goal picks the second-nearest crop -- this arena's reachable one --
+     * immediately. Beetroot rather than carrot for the reason
+     * {@link #a_bound_worker_never_carries_two_crops_at_once} already gives: separate produce
+     * and seed items make {@code countItem(BEETROOT)} an exact signal.
+     *
+     * <p><b>The wall has to stop a climbing ant, not just a walking one -- and it has to beat
+     * the goal's own 2-block reach, not just adjacency.</b> Round 2 gave every ant but the
+     * queen and the larva {@code WallClimberNavigation} plus Spider's {@code
+     * horizontalCollision} climb flag ({@code docs/gotchas/gametest.md}), so a 1-high fence is
+     * not a wall -- the ant just climbs it. And {@code HarvestCropsGoal.REACH_SQR} is 4.0, i.e.
+     * a 2-block radius: a ring of barrier on only the eight cells touching the crop still
+     * leaves the four cells exactly 2 blocks out (one per cardinal direction) able to harvest
+     * it without ever entering the ring at all -- caught by this test's own first draft, whose
+     * chest happened to sit at exactly that distance and harvested straight through the wall.
+     * {@link #encaseInBarrier} therefore blocks the full radius-2 square (every cell with
+     * Chebyshev distance <= 2 from the crop, 24 cells, not just the 8 touching it), which
+     * leaves no open cell anywhere inside Euclidean range 2.0 of the crop centre: the nearest
+     * legal position outside the box is exactly 3.0 away. The box runs from {@link #STAND_Y}
+     * through the topmost air layer this template has, rel y 5 -- four full blocks, matching
+     * the height of the arena's own walls. {@code skyAccess} is left at its default
+     * {@code false} on purpose so the harness's own barrier roof caps the box at rel y 6 for
+     * free; climbing the outside of the box gets the ant nowhere it could not already reach by
+     * climbing the arena's own perimeter.
+     *
+     * <p><b>The failed approach leaves the ant physically wedged, and the second crop's
+     * approach has to route it clear of that instead of back into it.</b> A worker denied a
+     * path climbs and stays pinned against the wall it cannot get past for the whole timeout
+     * (observed directly: pos frozen, {@code onClimbable() == true}, for the entire 200-tick
+     * approach) -- exactly the play-test trace in {@code 0e595bb}, which found the worker
+     * "sat under the barrier roof... for the rest of the test". The reachable crop is
+     * deliberately placed at rel (0, *, 1): due <em>west</em> of the chest, along z=1, which
+     * never touches the box's z=2-6 footprint at any x. Retargeting the goal after the
+     * blacklist fires therefore pulls the ant back the way it came and past the chest, not
+     * past the box again -- confirmed empirically (an east-side placement at rel (7, *, 4),
+     * this test's first draft, left the ant wedged against the box indefinitely even after
+     * the blacklist correctly excluded it, because the straight line to that target still ran
+     * through the box's footprint).
+     *
+     * <p><b>Isolated from foreign crops without stripping the goal under test.</b> Every other
+     * radius-searching test in this file that plants no crop of its own calls
+     * {@link #isolateFromForeignCrops} to remove {@code HarvestCropsGoal} entirely -- not an
+     * option here, since that goal's behaviour is the whole point. Instead this test leans on
+     * the fact {@link #a_bound_worker_never_carries_two_crops_at_once} already relies on:
+     * {@code CropScanner} always answers with the crop nearest the anchor, so planting crops
+     * close enough to this arena's own chest beats anything a neighbour could offer. The chest
+     * sits at rel (4, *, 1), one block off this arena's own north wall (z=0); the closest any
+     * block belonging to a neighbouring arena could be is that 1, plus the 6-block gap
+     * {@code StructureGridSpawner.SPACE_BETWEEN_ROWS} leaves between rows of arenas, plus
+     * however far into the neighbour's own footprint the block sits -- at least 7 (the west and
+     * east neighbours, across the narrower 5-block {@code SPACE_BETWEEN_COLUMNS} gap, are
+     * farther still: the chest sits 4 blocks in from either side wall, so at least 4+1+5=10).
+     * Both crops planted here (3.0 and 4.0 blocks from the chest) beat that floor with room to
+     * spare, so the scanner's choice is always one of this arena's own two crops, never a
+     * neighbour's.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "farm_platform", timeoutTicks = 600)
+    public static void a_bound_worker_gives_up_on_an_unreachable_crop_and_harvests_a_reachable_one(
+            GameTestHelper helper) {
+        BlockPos chest = new BlockPos(4, STAND_Y, 1);
+        BlockPos walledCrop = new BlockPos(4, STAND_Y, 4);
+        BlockPos reachableCrop = new BlockPos(0, STAND_Y, 1);
+
+        helper.setBlock(chest, Blocks.CHEST);
+        plantRipeBeetroot(helper, walledCrop);
+        plantRipeBeetroot(helper, reachableCrop);
+        encaseInBarrier(helper, walledCrop);
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(4, STAND_Y, 0));
+        worker.tame(keeper);
+        worker.bindTo(helper.absolutePos(chest));
+
+        helper.succeedWhen(() -> {
+            // A safety net as much as an assertion: if the box ever failed to hold, the
+            // walled crop would stop being "still ripe" the moment it got cut, and this
+            // would keep throwing forever instead of letting a false pass through.
+            helper.assertBlockState(walledCrop, CropHarvest::isHarvestable,
+                    () -> "the walled crop must never be reached, found "
+                            + helper.getBlockState(walledCrop));
+            Container container = HopperBlockEntity.getContainerAt(helper.getLevel(), helper.absolutePos(chest));
+            helper.assertTrue(container != null, "the bound chest should still be a container");
+            helper.assertTrue(container.countItem(Items.BEETROOT) > 0,
+                    "the worker should have abandoned the unreachable crop and harvested the reachable one");
+        });
+    }
+
+    /**
      * Ep2: the replant is guaranteed, not conditional on the loot roll.
      *
      * <p>Wheat on purpose, which is the mirror image of why
@@ -875,6 +980,31 @@ public class TamingGameTests {
         helper.setBlock(rel.below(), Blocks.FARMLAND);
         helper.setBlock(rel, Blocks.BEETROOTS.defaultBlockState()
                 .setValue(BeetrootBlock.AGE, BeetrootBlock.MAX_AGE));
+    }
+
+    /**
+     * Boxes in {@code cropRel} with barrier on every cell within Chebyshev distance 2 (a 5x5
+     * square minus the centre, 24 columns), from {@link #STAND_Y} through the topmost air
+     * layer this template has (rel y 5, four blocks tall) -- a real cage for a climbing ant,
+     * not a 1-high fence it can climb over. See
+     * {@link #a_bound_worker_gives_up_on_an_unreachable_crop_and_harvests_a_reachable_one}'s
+     * javadoc for why radius 2 rather than the immediate ring: {@code HarvestCropsGoal}'s
+     * 2-block reach lets it cut from a cell it never has to enter, so only blocking adjacency
+     * still leaves a straight shot in from exactly 2 blocks out. Height 4 is enough because the
+     * arena's own default barrier roof caps it at rel y 6 regardless.
+     */
+    private static void encaseInBarrier(GameTestHelper helper, BlockPos cropRel) {
+        for (int dz = -2; dz <= 2; dz++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
+                BlockPos column = cropRel.offset(dx, 0, dz);
+                for (int y = STAND_Y; y <= STAND_Y + 3; y++) {
+                    helper.setBlock(new BlockPos(column.getX(), y, column.getZ()), Blocks.BARRIER);
+                }
+            }
+        }
     }
 
     /**
