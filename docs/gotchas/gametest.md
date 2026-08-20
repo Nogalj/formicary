@@ -109,6 +109,37 @@ NORMAL difficulty (Monsters safe).
   assertion message (here: chest count, pack count, position relative to the arena, and
   `inBounds`) -- those four numbers named the cause on the first failing run.
   (`verified: 2026-08-19`)
+- **A radius search escaping its arena does not have to reach an entity to wreck a test -- it
+  can reach a BLOCK, and then a higher-priority goal quietly eats the whole run.** The grid
+  entry above is about what a search finds; this is about what finding it costs. A tamed
+  worker's `HarvestCropsGoal.canUse` sweeps `CropScanner` over `PATROL_RADIUS = 16` blocks
+  around the **bound chest** -- a 33x33x7 box, against arenas that are 9 wide and 5-6 apart --
+  so a ripe crop planted by a *neighbouring test* is a perfectly ordinary find. Harvest is
+  goal priority 2 and `CollectDroppedItemsGoal` is 3, and `GoalSelector` only lets a strictly
+  lower-numbered goal preempt a running one, so once harvest starts the pickup goal never gets
+  `MOVE`/`LOOK` and **never starts at all** -- the failing test's own drop is never targeted,
+  and its trace is empty rather than wrong. Caught 2026-08-20 on
+  `a_drop_just_outside_pickup_range_is_still_collected`, which plants no crop of its own:
+  arena bounds `[..., 9131134] -> [..., 9131143]`, chest anchor `z=9131138`, harvest target
+  `BlockPos{x=2152091, y=-58, z=9131152} minecraft:beetroots[age=3]` -- `cropOffsetFromAnchor
+  =(0,0,14)`, nine blocks past its own wall. Three things make this worse than it sounds.
+  (a) **No timeout budget can fix it**: `APPROACH_TIMEOUT_TICKS` stops the goal, then `canUse`
+  re-scans, picks the identical unreachable crop and starts again -- observed as a second
+  `HARVEST START` on the same block. (b) **It presents as a latency problem**, because the
+  test just times out; raising `timeoutTicks` 100 -> 200 changed nothing. (c) **It looks like
+  goal-tick parity**, because the trigger is "two unrelated tests were added earlier in the
+  session" -- which does shift `(tickCount + getId()) % 2`, and also re-packs the arena grid.
+  The grid is the real coupling; parity was a coincidence riding along. Diagnosis that
+  actually named it in one run: dump *which goals are running* on the mob each tick, not just
+  its position -- `worker.goalSelector.getAvailableGoals()` with `WrappedGoal::isRunning` put
+  `HarvestCropsGoal[RUN]` on screen while the drop sat 1.700 blocks away untouched. The fix is
+  per-test and lives in `TamingGameTests.isolateFromForeignCrops`: `goalSelector.removeAllGoals`
+  (which is `@VisibleForTesting` in vanilla) strips the goal that is not under test. Pre-loading
+  the pack to close harvest's `getPack().isEmpty()` gate does NOT work -- a non-empty pack wakes
+  `DepositToChestGoal` at priority 1 and starves the pickup identically -- and no anchor
+  position clears a 16-block sweep on a 5-block grid. `lift()` is not available either: these
+  tests need ground to walk on, and the two existing lifted tests already own that altitude.
+  (`verified: 2026-08-20`)
 - **RESOLVED -- the former "Flake watch" on `bound_worker_collects_a_ground_item_and_deposits_it`.**
   Reproduced 2026-08-18 at 2 failures in 33 runs (~6%), then twice more with instrumentation.
   It was **not** arena cross-contamination, which was the standing prime suspect: a diagnostic

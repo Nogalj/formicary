@@ -350,6 +350,7 @@ public class TamingGameTests {
                 new BlockPos(4, STAND_Y, 4));
         worker.tame(keeper);
         worker.bindTo(helper.absolutePos(chest));
+        isolateFromForeignCrops(worker);
 
         BlockPos absoluteDrop = helper.absolutePos(dropPos);
         ItemEntity drop = new ItemEntity(helper.getLevel(), absoluteDrop.getX() + 0.5,
@@ -390,6 +391,10 @@ public class TamingGameTests {
      * hand-placed positions put the ant and the drop 1.70 apart in adjacent blocks every
      * single run. It fails on every run without the last-stretch nudge in
      * {@link CollectDroppedItemsGoal#tick()} and passes on every run with it.
+     *
+     * <p>The geometry above was never the fragile part. What was is where the arena lands on
+     * the shared test grid -- see {@link #isolateFromForeignCrops}, which this test went red
+     * for want of on 2026-08-20.
      */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "farm_platform", timeoutTicks = 100)
@@ -402,6 +407,7 @@ public class TamingGameTests {
                 new BlockPos(4, STAND_Y, 4));
         worker.tame(keeper);
         worker.bindTo(helper.absolutePos(chest));
+        isolateFromForeignCrops(worker);
 
         // The exact geometry the flake trace captured: the ant near the west edge of its
         // block, the drop near the east edge of the block next door. 1.70 apart -- outside
@@ -869,6 +875,41 @@ public class TamingGameTests {
         helper.setBlock(rel.below(), Blocks.FARMLAND);
         helper.setBlock(rel, Blocks.BEETROOTS.defaultBlockState()
                 .setValue(BeetrootBlock.AGE, BeetrootBlock.MAX_AGE));
+    }
+
+    /**
+     * Takes {@link HarvestCropsGoal} off a worker whose test is about <em>ground pickup</em>,
+     * so the run cannot be hijacked by a crop belonging to another test.
+     *
+     * <p>Not a convenience and not a way to make a slow test faster -- it repairs a genuine
+     * hole in these two tests' isolation, found 2026-08-20. Every arena in a batch shares one
+     * level on a 5-by-6 grid (already banked in {@code docs/gotchas/gametest.md}), and
+     * {@code HarvestCropsGoal.canUse} runs {@link CropScanner} over
+     * {@code PATROL_RADIUS = 16} blocks around the <em>bound chest</em> -- a 33x33x7 box that
+     * covers this arena and several of its neighbours. Neither test plants a crop, so both
+     * looked isolated; what they actually depended on was the luck of no neighbouring arena
+     * holding a ripe crop at that offset. Adding two tests anywhere earlier in the session
+     * re-packs the grid and changes which neighbour lands in the box.
+     *
+     * <p>When it does land there the run is not slow, it is over: harvest is priority 2 and
+     * pickup priority 3, {@code GoalSelector} only lets a strictly lower-numbered goal preempt
+     * a running one, so {@code CollectDroppedItemsGoal} never gets {@code MOVE}/{@code LOOK}
+     * and never starts at all. The worker walks off toward the foreign crop, meets the arena
+     * wall, and -- since round 2 gave every ant {@code WallClimberNavigation} plus Spider's
+     * {@code horizontalCollision} climb flag -- climbs it and sits under the barrier roof for
+     * the rest of the test. {@code HarvestCropsGoal}'s own {@code APPROACH_TIMEOUT_TICKS}
+     * does not rescue it either: the goal stops, {@code canUse} re-scans, picks the same
+     * unreachable crop and starts again, so no timeout budget can ever make this pass.
+     *
+     * <p>The alternative isolations were all worse. The pack cannot be pre-loaded to close
+     * the {@code getPack().isEmpty()} gate, because a non-empty pack wakes
+     * {@link DepositToChestGoal} at priority 1 and starves pickup just the same; and there is
+     * no radius the anchor could sit at that clears a 16-block sweep on a 5-block grid. What
+     * the harvest goal contributes to these two tests is nothing -- the harvest-over-pickup
+     * ordering is asserted structurally by {@link #priorityOf}, not by racing the two goals.
+     */
+    private static void isolateFromForeignCrops(TamedWorkerAntEntity worker) {
+        worker.goalSelector.removeAllGoals(goal -> goal instanceof HarvestCropsGoal);
     }
 
     /**

@@ -101,7 +101,9 @@ subsystem, and bank new rules there, not here.
   GameTestServer, replant tests flaking ~9% on wheat seeds, `helper.destroyBlock` dropping
   nothing and popping no XP (it hardcodes `dropBlock=false`), a distance assertion sampled
   ticks after the test's own swing drifting on residual knockback, an ant vanishing from a
-  long-running `skyAccess = true` arena (it climbs out and cannot get back) -> `gametest.md`.
+  long-running `skyAccess = true` arena (it climbs out and cannot get back), a mob-behaviour
+  test that times out with the goal under test never having STARTED (a neighbouring arena's
+  block pulled a higher-priority goal, and no timeout budget fixes it) -> `gametest.md`.
   A test swing that lands no damage and leaves no grudge is the `hurt` invulnerability
   window -- that one is in `entity-ai.md`.
 - **Server dies at JSON parse loading a dimension**; biome bands land at 1/4 height; mobs
