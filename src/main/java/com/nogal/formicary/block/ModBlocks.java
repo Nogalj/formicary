@@ -167,12 +167,31 @@ public class ModBlocks {
                     .strength(0.4F)
                     .lightLevel(state -> 0));
 
+    /**
+     * Play-test round 2, item 7: bedrock-class properties -- {@code strength(-1.0F,
+     * 3_600_000.0F)} plus {@code noLootTable()}, the exact pair {@code Blocks.BEDROCK} uses
+     * (verified in {@code reference/net/minecraft/world/level/block/Blocks.java}) -- so the
+     * pearl toll at an anthill is the only way out of the colony, not a shovel.
+     *
+     * <p>Confirmed harmless to the pearl-exit mechanic by reading every place that touches
+     * this block: {@code PortalEvents#onProjectileImpact} never breaks or replaces the
+     * membrane at all -- it cancels the pearl, discards it, and calls
+     * {@code AnthillPortal#exitColony}, which only ever teleports the player and never
+     * touches a block. {@code AnthillPortal#openMembraneColumn} (the arrival-pocket punch)
+     * writes the membrane with {@code ServerLevel#setBlock}, not a mining path -- and
+     * {@code setBlock} does not consult hardness at all, only {@code getDestroyProgress}
+     * (survival mining) and vanilla's own {@code Level#destroyBlock} (an unconditional
+     * world-edit style removal used by pistons/explosions) do, neither of which either
+     * class calls on this block. Hardness therefore gates a player's pickaxe and nothing
+     * generation-time does.
+     */
     public static final DeferredBlock<Block> DAYLIGHT_MEMBRANE = BLOCKS.registerSimpleBlock(
             "daylight_membrane",
             BlockBehaviour.Properties.of()
                     .mapColor(MapColor.GOLD)
                     .sound(SoundType.AMETHYST)
-                    .strength(0.3F)
+                    .strength(-1.0F, 3_600_000.0F)
+                    .noLootTable()
                     .lightLevel(state -> 15));
 
     // --- Overworld ---

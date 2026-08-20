@@ -97,7 +97,17 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
         // javadoc for the full silk-touch reasoning. XP comes from ModBlocks.EGG_CLUSTER
         // being a DropExperienceBlock, not from this table.
         dropWhenSilkTouch(ModBlocks.EGG_CLUSTER.get());
-        dropSelf(ModBlocks.DAYLIGHT_MEMBRANE.get());
+        // No entry for DAYLIGHT_MEMBRANE (play-test round 2, item 7): it went bedrock-class
+        // -- strength(-1.0F, 3_600_000.0F) + noLootTable() -- and noLootTable() makes
+        // Block#getLootTable() resolve to the shared BuiltInLootTables.EMPTY sentinel, not a
+        // per-block path. BlockLootSubProvider#generate's own completeness check SKIPS any
+        // block resolving to EMPTY (verified in reference/), so no entry is required; the
+        // opposite was tried first and failed datagen outright -- add()/dropSelf() key their
+        // builder by the block's OWN getLootTable(), so calling either here registers a
+        // builder under the EMPTY key that no block-loop iteration ever claims, and
+        // generate() throws "Created block loot tables for non-blocks: [minecraft:empty]" at
+        // the end. Blocks.BEDROCK carries no loot-table datagen entry either, for the same
+        // reason.
         dropSelf(ModBlocks.ANTHILL_SOIL.get());
         dropSelf(ModBlocks.ANTHILL_CORE.get());
         dropSelf(ModBlocks.QUEENS_CREST.get());

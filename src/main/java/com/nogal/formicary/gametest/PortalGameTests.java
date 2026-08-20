@@ -10,7 +10,10 @@ import com.nogal.formicary.portal.TrailPath;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -79,6 +82,42 @@ public class PortalGameTests {
                 "the arena floor must not be an exit");
         helper.assertFalse(AnthillPortal.isMembrane(helper.getLevel(), helper.absolutePos(new BlockPos(1, 1, 2))),
                 "the air beside it must not be an exit");
+        helper.succeed();
+    }
+
+    /**
+     * Play-test round 2, item 7: the membrane is bedrock-class now, so a survival-mode
+     * player must never be able to mine one -- the pearl toll has to be the only way out.
+     *
+     * <p>Cannot be asserted through {@code GameTestHelper.destroyBlock} or
+     * {@code level.destroyBlock(pos, true)} the way {@code LootXpGameTests} exercises real
+     * breaks: per {@code docs/gotchas/gametest.md}, both of those are "force remove" paths
+     * (the helper hardcodes {@code dropBlock=false}, and {@code Level#destroyBlock} is the
+     * unconditional world-edit removal explosions and pistons use) that do not consult
+     * hardness at all -- either one would "break" this block regardless of the property
+     * change, giving a false pass. The real gate is
+     * {@code BlockState#getDestroyProgress(Player, BlockGetter, BlockPos)}, which
+     * {@code ServerPlayerGameMode.continueDestroyBlock} accumulates every tick to decide
+     * when a block pops: {@code BlockBehaviour#getDestroyProgress} (verified in
+     * {@code reference/}) returns {@code 0.0F} unconditionally whenever
+     * {@code getDestroySpeed} is {@code -1.0F}, before it even looks at the player's tool,
+     * which is exactly bedrock's own mechanism. {@code GameTestHelper.makeMockPlayer} is a
+     * bare {@code Player} (never a real {@code ServerPlayer}), but that is all this call
+     * needs -- no network connection or gamemode plumbing required.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void daylight_membrane_cannot_be_mined_in_survival(GameTestHelper helper) {
+        BlockPos membrane = new BlockPos(2, 1, 2);
+        helper.setBlock(membrane, ModBlocks.DAYLIGHT_MEMBRANE.get());
+        BlockPos absPos = helper.absolutePos(membrane);
+        BlockState state = helper.getLevel().getBlockState(absPos);
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+
+        helper.assertValueEqual(state.getDestroySpeed(helper.getLevel(), absPos), -1.0F,
+                "Daylight Membrane's destroy speed (hardness)");
+        helper.assertValueEqual(state.getDestroyProgress(player, helper.getLevel(), absPos), 0.0F,
+                "Daylight Membrane's per-tick destroy progress for a survival player");
         helper.succeed();
     }
 
