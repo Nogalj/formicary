@@ -197,22 +197,40 @@ public class LootXpGameTests {
     }
 
     /**
-     * The shape of the round-2 Provision Comb table, rolled rather than broken.
+     * The shape of the WP-R3-expanded Provision Comb table, rolled rather than broken.
      *
-     * <p>New coverage, and it exists because the property that changed is a
-     * <em>distribution</em>: pearls went from unconditional to a 5% bonus, and an ore pool
-     * with a 25-of-85 {@code empty} entry appeared. A single world break cannot see either,
-     * and breaking 400 blocks in a shared 5x5 arena would trip the radius-search
-     * contamination trap banked in {@code docs/gotchas/gametest.md}. So this asks the real
-     * registered loot table directly, with a fixed {@code RandomSource}, and asserts bounds
-     * that are many standard deviations wide rather than the nominal rates -- a statistical
-     * test that can only fail on a real change, never on a bad afternoon: at n = 400 the
-     * pearl rate's standard deviation is 1.1 points against a 15-point margin, and the ore
-     * rate's is 2.3 against a 20-point one.
+     * <p><b>Retargeted again in play-test round 2's follow-up revision (WP-R3 item 1),
+     * deliberately not weakened.</b> The table's shape changed twice now: pearls went from
+     * unconditional to a 5% bonus (round 2), and the separate ore pool -- which had a
+     * 25-of-85 {@code empty} entry and only paid out ~71% of the time -- was replaced by one
+     * merged sundries pool with no {@code empty} entry at all, so it now pays out on every
+     * roll, same as the food pool. That "always pays out" property is what survives here in
+     * place of the old payout-band assertion: it is no longer probabilistic, so it is
+     * asserted the same deterministic way the food pool's payout already was, not weakened
+     * into a band. A single world break still cannot see any of this (the pool split, the weights,
+     * or the pearl rate), and breaking 400 blocks in a shared 5x5 arena would trip the
+     * radius-search contamination trap banked in {@code docs/gotchas/gametest.md} -- so this
+     * still asks the real registered loot table directly, with a fixed {@code RandomSource}.
+     *
+     * <p>What is still genuinely statistical is the sundries pool's <em>internal</em>
+     * weighting, so two new checks replace the old ore-payout band, both with margins many
+     * standard deviations wide the same way the pearl check already was:
+     * <ul>
+     *   <li><b>Coal</b> (weight 16 of 113, the pool's single heaviest entry) should turn up
+     *       often. With the pool rolling 1 or 2 times (50/50) the per-break chance of at
+     *       least one coal is ~20.3%; at n = 400 that is a mean of ~81 with SD ~8.0, so the
+     *       [40, 160] band asserted below sits ~5.1 SD below and ~9.8 SD above the mean.</li>
+     *   <li><b>A rare entry</b> (Diamond, Emerald, or any of the four loose leather armor
+     *       pieces -- combined weight 6 of 113, the pool's lightest tier) should still turn
+     *       up sometimes but stay uncommon. Per-break chance ~7.8%; at n = 400 that is a
+     *       mean of ~31 with SD ~5.4, so [1, 133] sits comfortably inside both directions
+     *       (chance of zero hits in 400 breaks is astronomically small, ~6.5e-15) while still
+     *       leaving a wide margin against the "uncommon" upper bound.</li>
+     * </ul>
      */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "platform")
-    public static void provision_comb_pearls_are_a_bonus_and_its_ore_pool_pays_out(GameTestHelper helper) {
+    public static void provision_comb_pearls_are_a_bonus_and_its_sundries_pool_always_pays_out(GameTestHelper helper) {
         LootTable table = helper.getLevel().getServer().reloadableRegistries()
                 .getLootTable(ModBlocks.PROVISION_COMB.get().getLootTable());
         LootParams params = new LootParams.Builder(helper.getLevel())
@@ -227,30 +245,47 @@ public class LootXpGameTests {
         int rolls = 400;
         int withPearl = 0;
         int withFood = 0;
-        int withOre = 0;
+        int withSundries = 0;
+        int withCommonSundries = 0;
+        int withRareSundries = 0;
         for (int roll = 0; roll < rolls; roll++) {
             boolean pearl = false;
             boolean food = false;
-            boolean ore = false;
+            boolean sundries = false;
+            boolean commonSundries = false;
+            boolean rareSundries = false;
             for (ItemStack stack : table.getRandomItems(params, random)) {
                 pearl |= stack.is(Items.ENDER_PEARL);
                 food |= isColonyFood(stack);
-                ore |= isLarderOre(stack);
+                sundries |= isLarderSundries(stack);
+                commonSundries |= stack.is(Items.COAL);
+                rareSundries |= isRareLarderSundries(stack);
             }
             withPearl += pearl ? 1 : 0;
             withFood += food ? 1 : 0;
-            withOre += ore ? 1 : 0;
+            withSundries += sundries ? 1 : 0;
+            withCommonSundries += commonSundries ? 1 : 0;
+            withRareSundries += rareSundries ? 1 : 0;
         }
 
         helper.assertTrue(withFood == rolls,
                 "every Provision Comb roll should yield colony food, got " + withFood + " of " + rolls);
+        helper.assertTrue(withSundries == rolls,
+                "the sundries pool has no empty entry and should pay out on every roll, got "
+                        + withSundries + " of " + rolls);
         helper.assertTrue(withPearl < rolls / 5,
                 "ender pearls should be a rare bonus (nominally 5%), got " + withPearl + " of " + rolls);
         helper.assertTrue(withPearl > 0,
                 "ender pearls should still be possible, got none in " + rolls + " rolls");
-        helper.assertTrue(withOre > rolls / 2 && withOre < rolls * 9 / 10,
-                "the ore pool should pay out on most breaks but not all (nominally 71%), got " + withOre
-                        + " of " + rolls);
+        helper.assertTrue(withCommonSundries > rolls / 10 && withCommonSundries < rolls * 2 / 5,
+                "coal is the sundries pool's heaviest entry and should show up often (nominally ~20%), got "
+                        + withCommonSundries + " of " + rolls);
+        helper.assertTrue(withRareSundries > 0,
+                "the sundries pool's rarest entries (diamond/emerald/leather armor) should still be "
+                        + "possible, got none in " + rolls + " rolls");
+        helper.assertTrue(withRareSundries < rolls / 3,
+                "the sundries pool's rarest entries should stay uncommon (nominally ~7.8%), got "
+                        + withRareSundries + " of " + rolls);
         helper.succeed();
     }
 
@@ -261,10 +296,27 @@ public class LootXpGameTests {
                 || stack.is(ModItems.ROYAL_JELLY_TREAT.get());
     }
 
-    /** The seven vanilla materials the larder's round-2 ore pool draws from. */
-    private static boolean isLarderOre(ItemStack stack) {
-        return stack.is(Items.COAL) || stack.is(Items.RAW_COPPER) || stack.is(Items.RAW_IRON)
-                || stack.is(Items.RAW_GOLD) || stack.is(Items.LAPIS_LAZULI) || stack.is(Items.DIAMOND)
-                || stack.is(Items.EMERALD);
+    /**
+     * Any of the 18 vanilla materials the larder's WP-R3 sundries pool draws from (the
+     * merged replacement for round 2's separate, sometimes-empty ore pool).
+     */
+    private static boolean isLarderSundries(ItemStack stack) {
+        return stack.is(Items.STICK) || stack.is(Items.FLINT) || stack.is(Items.ROTTEN_FLESH)
+                || stack.is(Items.BONE) || stack.is(Items.STRING) || stack.is(Items.LEATHER)
+                || stack.is(Items.FEATHER) || stack.is(Items.COAL) || stack.is(Items.RAW_COPPER)
+                || stack.is(Items.RAW_IRON) || stack.is(Items.RAW_GOLD) || stack.is(Items.LAPIS_LAZULI)
+                || stack.is(Items.DIAMOND) || stack.is(Items.EMERALD) || stack.is(Items.LEATHER_HELMET)
+                || stack.is(Items.LEATHER_CHESTPLATE) || stack.is(Items.LEATHER_LEGGINGS)
+                || stack.is(Items.LEATHER_BOOTS);
+    }
+
+    /**
+     * The sundries pool's lightest weighted tier (1 each, 6 of 113 total): Diamond,
+     * Emerald, and the four loose leather armor pieces.
+     */
+    private static boolean isRareLarderSundries(ItemStack stack) {
+        return stack.is(Items.DIAMOND) || stack.is(Items.EMERALD) || stack.is(Items.LEATHER_HELMET)
+                || stack.is(Items.LEATHER_CHESTPLATE) || stack.is(Items.LEATHER_LEGGINGS)
+                || stack.is(Items.LEATHER_BOOTS);
     }
 }

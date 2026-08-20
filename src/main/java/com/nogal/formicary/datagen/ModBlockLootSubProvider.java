@@ -17,7 +17,6 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraft.world.level.storage.loot.LootTable;
-import net.minecraft.world.level.storage.loot.entries.EmptyLootItem;
 import net.minecraft.world.level.storage.loot.entries.LootItem;
 import net.minecraft.world.level.storage.loot.entries.LootPoolSingletonContainer;
 import net.minecraft.world.level.storage.loot.functions.SetItemCountFunction;
@@ -147,7 +146,8 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
     }
 
     /**
-     * Provision Comb's loot: the colony's larder, reworked in play-test round 2.
+     * Provision Comb's loot: the colony's larder, reworked in play-test round 2 and
+     * expanded further in round 2's follow-up revision (WP-R3 item 1).
      *
      * <p><b>The pearls moved out.</b> Ep2 made this block the exit economy's affordability
      * floor -- an unconditional 1-2 ender pearls per break, so a player who arrived on their
@@ -161,16 +161,23 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
      *   <li><b>Pearls</b> -- one roll of exactly 1, behind {@code random_chance 0.05}. A
      *       chance condition rather than an {@code empty} entry with a weight, because at
      *       one entry the two are equivalent and the condition says what it means.</li>
-     *   <li><b>Food</b> -- 1-2 rolls over three weighted entries (Honeyed Comb 6, Fungal
-     *       Stew 4, Royal Jelly Treat 1). The weights are the change: an equal-weight pool
-     *       made Royal Jelly Treat, the expensive one, as common as bread. 6/4/1 keeps every
-     *       break useful and the treat a find.</li>
-     *   <li><b>Ore</b> -- one roll over a weighted table with a heavy {@code empty} entry
-     *       (25 of 85, so ~71% of breaks yield something). New in round 2: a larder is where
-     *       a colony puts what it dragged home, and a dimension whose only material reward
-     *       was its own blocks gave a player nothing to carry back out. The ladder is
-     *       vanilla's own scarcity order -- coal 20 down to emerald 1 -- with the counts
-     *       tapering the same way, so the tail is a moment rather than a payout.</li>
+     *   <li><b>Food</b> -- exactly 1 roll (down from 1-2 in round 2 -- WP-R3 item 1 tightens
+     *       every break's per-item yield now that the sundries pool below adds its own 1-2
+     *       rolls) over three weighted entries (Honeyed Comb 6, Fungal Stew 4, Royal Jelly
+     *       Treat 1). The weights are the change from an equal-weight pool: an equal-weight
+     *       pool made Royal Jelly Treat, the expensive one, as common as bread. 6/4/1 keeps
+     *       every break useful and the treat a find.</li>
+     *   <li><b>Sundries</b> -- 1-2 rolls over a single merged weighted table, replacing
+     *       round 2's separate ore pool (which had its own heavy {@code empty} entry). WP-R3
+     *       item 1: a larder is where a colony puts what it dragged home, and the old ore
+     *       pool's ~29% miss rate undercut that -- every entry here is a real item and there
+     *       is no {@code empty}, so the pool always pays out on every roll. The weights span
+     *       building/farming odds-and-ends (stick 14 down to feather 6) through vanilla's
+     *       own ore scarcity order (coal 16 down to emerald 1) to a rare set of loose leather
+     *       armor pieces (1 each) -- the same "common junk down to a find" shape the old ore
+     *       pool had, just without ever coming up empty. Net across both non-pearl pools:
+     *       roughly 2-4 items per break (1 food + 1-2 sundries, each sundries roll itself
+     *       worth 1-2 of an item where the entry says so).</li>
      * </ul>
      *
      * <p>Deliberately not wrapped in {@code applyExplosionDecay}/{@code applyExplosionCondition}
@@ -184,28 +191,38 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
                         .when(LootItemRandomChanceCondition.randomChance(PROVISION_PEARL_CHANCE))
                         .add(LootItem.lootTableItem(Items.ENDER_PEARL)))
                 .withPool(LootPool.lootPool()
-                        .setRolls(UniformGenerator.between(1.0F, 2.0F))
+                        .setRolls(ConstantValue.exactly(1.0F))
                         .add(LootItem.lootTableItem(ModItems.HONEYED_COMB.get()).setWeight(6))
                         .add(LootItem.lootTableItem(ModItems.FUNGAL_STEW.get()).setWeight(4))
                         .add(LootItem.lootTableItem(ModItems.ROYAL_JELLY_TREAT.get()).setWeight(1)))
                 .withPool(LootPool.lootPool()
-                        .setRolls(ConstantValue.exactly(1.0F))
-                        .add(oreEntry(Items.COAL, 20, 1.0F, 3.0F))
-                        .add(oreEntry(Items.RAW_COPPER, 14, 1.0F, 3.0F))
-                        .add(oreEntry(Items.RAW_IRON, 12, 1.0F, 3.0F))
-                        .add(oreEntry(Items.RAW_GOLD, 6, 1.0F, 2.0F))
-                        .add(oreEntry(Items.LAPIS_LAZULI, 5, 1.0F, 2.0F))
-                        .add(oreEntry(Items.DIAMOND, 2, 1.0F, 1.0F))
-                        .add(oreEntry(Items.EMERALD, 1, 1.0F, 1.0F))
-                        .add(EmptyLootItem.emptyItem().setWeight(25)));
+                        .setRolls(UniformGenerator.between(1.0F, 2.0F))
+                        .add(sundriesEntry(Items.STICK, 14, 1.0F, 2.0F))
+                        .add(sundriesEntry(Items.FLINT, 10, 1.0F, 2.0F))
+                        .add(sundriesEntry(Items.ROTTEN_FLESH, 8, 1.0F, 2.0F))
+                        .add(sundriesEntry(Items.BONE, 8, 1.0F, 2.0F))
+                        .add(sundriesEntry(Items.STRING, 8, 1.0F, 2.0F))
+                        .add(sundriesEntry(Items.LEATHER, 6, 1.0F, 1.0F))
+                        .add(sundriesEntry(Items.FEATHER, 6, 1.0F, 2.0F))
+                        .add(sundriesEntry(Items.COAL, 16, 1.0F, 2.0F))
+                        .add(sundriesEntry(Items.RAW_COPPER, 12, 1.0F, 2.0F))
+                        .add(sundriesEntry(Items.RAW_IRON, 10, 1.0F, 2.0F))
+                        .add(sundriesEntry(Items.RAW_GOLD, 5, 1.0F, 1.0F))
+                        .add(sundriesEntry(Items.LAPIS_LAZULI, 4, 1.0F, 2.0F))
+                        .add(sundriesEntry(Items.DIAMOND, 1, 1.0F, 1.0F))
+                        .add(sundriesEntry(Items.EMERALD, 1, 1.0F, 1.0F))
+                        .add(sundriesEntry(Items.LEATHER_HELMET, 1, 1.0F, 1.0F))
+                        .add(sundriesEntry(Items.LEATHER_CHESTPLATE, 1, 1.0F, 1.0F))
+                        .add(sundriesEntry(Items.LEATHER_LEGGINGS, 1, 1.0F, 1.0F))
+                        .add(sundriesEntry(Items.LEATHER_BOOTS, 1, 1.0F, 1.0F)));
     }
 
     /**
-     * One weighted entry of {@link #provisionCombTable}'s ore pool. {@code min == max} still
-     * goes through {@code SetItemCountFunction} rather than being left implicit, so every row
-     * of that pool reads as the same kind of thing.
+     * One weighted entry of {@link #provisionCombTable}'s sundries pool. {@code min == max}
+     * still goes through {@code SetItemCountFunction} rather than being left implicit, so
+     * every row of that pool reads as the same kind of thing.
      */
-    private static LootPoolSingletonContainer.Builder<?> oreEntry(Item item, int weight, float min, float max) {
+    private static LootPoolSingletonContainer.Builder<?> sundriesEntry(Item item, int weight, float min, float max) {
         return LootItem.lootTableItem(item)
                 .setWeight(weight)
                 .apply(SetItemCountFunction.setCount(UniformGenerator.between(min, max)));
