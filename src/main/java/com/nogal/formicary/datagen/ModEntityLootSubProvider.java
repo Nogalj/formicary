@@ -41,11 +41,20 @@ import net.minecraft.world.level.storage.loot.providers.number.UniformGenerator;
  * {@link ModBlockLootSubProvider#getKnownBlocks()} works around for blocks.
  */
 public class ModEntityLootSubProvider extends EntityLootSubProvider {
-    /** Worker Scent Gland drop chance. Tunable -- soldiers get the better odds (0.75F). */
-    private static final float WORKER_SCENT_GLAND_CHANCE = 0.5F;
+    /**
+     * Worker Scent Gland drop chance. Tunable -- soldiers get the better odds
+     * ({@link #SOLDIER_SCENT_GLAND_CHANCE}). Halved from 0.5F in the Ep2 play-test
+     * revision, round 2 (WP-R3 item 4): the gland is a farmed disguise ingredient, and
+     * round 1's rate made it too easy to stockpile.
+     */
+    private static final float WORKER_SCENT_GLAND_CHANCE = 0.25F;
 
-    /** Soldier Scent Gland drop chance. Tunable. */
-    private static final float SOLDIER_SCENT_GLAND_CHANCE = 0.75F;
+    /**
+     * Soldier Scent Gland drop chance. Tunable. Down from 0.75F in the same round-2
+     * revision as {@link #WORKER_SCENT_GLAND_CHANCE} -- soldiers still keep noticeably
+     * better odds than a worker.
+     */
+    private static final float SOLDIER_SCENT_GLAND_CHANCE = 0.40F;
 
     /** The queen's Royal Jelly haul, before Looting. Spec says "several". Tunable. */
     private static final float QUEEN_JELLY_MIN = 3.0F;
