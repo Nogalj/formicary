@@ -53,6 +53,20 @@ public final class ModBlockTags {
      */
     public static final TagKey<Block> WORKER_DEPOSITS = create("worker_deposits");
 
+    /**
+     * What the Mandible Pickaxe digs (Ep2 play-test revision, round 2, WP-R3 item 2): the
+     * union of vanilla's {@code #minecraft:mineable/pickaxe} and
+     * {@code #minecraft:mineable/shovel}. The item is registered as a plain {@code
+     * DiggerItem} over this tag instead of {@code PickaxeItem} over
+     * {@code BlockTags.MINEABLE_WITH_PICKAXE} alone (see {@code ModItems#MANDIBLE_PICKAXE}),
+     * so the tier's mining-speed/correct-for-drops rule (built by
+     * {@code Tier#createToolProperties}) matches shovel-family blocks -- sand, gravel, dirt,
+     * ... -- too. Composed via {@code addTag} in {@code ModBlockTagsProvider} rather than
+     * hand-listing every block in both source tags, so it stays correct if either vanilla
+     * tag grows.
+     */
+    public static final TagKey<Block> MINEABLE_WITH_MANDIBLE_PICKAXE = create("mineable_with_mandible_pickaxe");
+
     private static TagKey<Block> create(String path) {
         return BlockTags.create(ResourceLocation.fromNamespaceAndPath(Formicary.MODID, path));
     }

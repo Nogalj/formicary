@@ -8,6 +8,7 @@ import com.nogal.formicary.block.ModBlocks;
 
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.common.data.BlockTagsProvider;
 import net.neoforged.neoforge.common.data.ExistingFileHelper;
@@ -58,5 +59,12 @@ public class ModBlockTagsProvider extends BlockTagsProvider {
                 Blocks.CHEST,
                 Blocks.TRAPPED_CHEST,
                 Blocks.BARREL);
+
+        // Ep2 play-test revision, round 2 (WP-R3 item 2): the Mandible Pickaxe's digging
+        // tag is the union of vanilla's own pickaxe and shovel tags -- addTag composition,
+        // not a hand-copied block list, so it tracks either vanilla tag if it changes.
+        tag(ModBlockTags.MINEABLE_WITH_MANDIBLE_PICKAXE)
+                .addTag(BlockTags.MINEABLE_WITH_PICKAXE)
+                .addTag(BlockTags.MINEABLE_WITH_SHOVEL);
     }
 }

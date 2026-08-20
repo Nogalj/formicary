@@ -1,6 +1,7 @@
 package com.nogal.formicary.item;
 
 import com.nogal.formicary.Formicary;
+import com.nogal.formicary.block.ModBlockTags;
 import com.nogal.formicary.block.ModBlocks;
 
 import net.minecraft.world.effect.MobEffectInstance;
@@ -8,10 +9,10 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.DiggerItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemNameBlockItem;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.PickaxeItem;
 import net.minecraft.world.item.SwordItem;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -148,10 +149,22 @@ public class ModItems {
      * Digging-gate bypass (WP-1 item 3): holding this in the main hand counts as
      * gated-open regardless of armor -- see {@link ChitinArmor#onFabricBreakSpeed} and
      * {@code loot.WearingFullChitinCondition}.
+     *
+     * <p>Registered as a plain {@code DiggerItem} over
+     * {@code ModBlockTags.MINEABLE_WITH_MANDIBLE_PICKAXE} rather than {@code PickaxeItem}
+     * over {@code BlockTags.MINEABLE_WITH_PICKAXE} (Ep2 play-test revision, round 2, WP-R3
+     * item 2) -- verified against the decompiled {@code PickaxeItem}, which is exactly
+     * {@code DiggerItem} + {@code BlockTags.MINEABLE_WITH_PICKAXE} + nothing else, so
+     * swapping the tag for the mod's own union tag (pickaxe + shovel mineables) is enough to
+     * make this dig shovel-family blocks too, at the same speed and with the same
+     * correct-for-drops flag it already had on pickaxe-family blocks. Tier and attack
+     * attributes are exactly what {@code PickaxeItem}'s registration used --
+     * {@code DiggerItem.createAttributes} is the same static method {@code PickaxeItem}
+     * inherited unchanged, not overridden.
      */
-    public static final DeferredItem<PickaxeItem> MANDIBLE_PICKAXE = ITEMS.registerItem("mandible_pickaxe",
-            props -> new PickaxeItem(ModToolTiers.CHITIN,
-                    props.attributes(PickaxeItem.createAttributes(ModToolTiers.CHITIN, PICKAXE_BASE_DAMAGE, PICKAXE_ATTACK_SPEED))));
+    public static final DeferredItem<DiggerItem> MANDIBLE_PICKAXE = ITEMS.registerItem("mandible_pickaxe",
+            props -> new DiggerItem(ModToolTiers.CHITIN, ModBlockTags.MINEABLE_WITH_MANDIBLE_PICKAXE,
+                    props.attributes(DiggerItem.createAttributes(ModToolTiers.CHITIN, PICKAXE_BASE_DAMAGE, PICKAXE_ATTACK_SPEED))));
     public static final DeferredItem<SwordItem> PINCER_SWORD = ITEMS.registerItem("pincer_sword",
             props -> new SwordItem(ModToolTiers.CHITIN,
                     props.attributes(SwordItem.createAttributes(ModToolTiers.CHITIN, SWORD_BASE_DAMAGE, SWORD_ATTACK_SPEED))));
