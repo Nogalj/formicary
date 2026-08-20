@@ -546,6 +546,12 @@ public class WorldgenGameTests {
      * {@code COLONY_CORE_RADIUS} (its corners are 57 blocks out), so the field is a flat 1.0
      * across it and both bounds below are asserted against exactly the same numbers they
      * were before the field existed. Nothing was loosened.
+     *
+     * <p>Re-checked against play-test round 2's compaction, which cut
+     * {@code COLONY_CORE_RADIUS} from 100 to 80: the 57-block corner still sits inside it,
+     * with 23 blocks to spare, so the window is still wholly at {@code f = 1.0} and this test
+     * needed no retarget. Worth re-deriving rather than assuming -- the margin went from 43
+     * blocks to 23, and a core of 56 or less would silently start sampling the ring.
      */
     @PrefixGameTestTemplate(false)
     @GameTest(template = "platform")
@@ -555,8 +561,9 @@ public class WorldgenGameTests {
             ColonyNoise.Colony core = noise.nearestColony(0.0, 0.0);
             int coreX = (int) Math.round(core.centreX());
             int coreZ = (int) Math.round(core.centreZ());
-            // The whole window lies inside one 384-block colony cell (88 blocks from its
-            // centre at worst), so one neighbourhood resolves the field for all of it.
+            // The whole window lies inside one 320-block colony cell (48 of colony jitter
+            // plus the box's own 57-block corner = 105 from the cell centre at worst, against
+            // a 160-block half-cell), so one neighbourhood resolves the field for all of it.
             ColonyNoise.Colony[] colonies = noise.coloniesNear(coreX, coreZ);
             long inside = 0;
             long samples = 0;

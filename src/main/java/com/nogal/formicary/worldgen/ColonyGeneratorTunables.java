@@ -517,8 +517,17 @@ public final class ColonyGeneratorTunables {
     /**
      * One colony per this many blocks on each axis. Also the throne chamber's cell: since
      * Ep2 there is exactly one throne, and one queen, per colony by construction.
+     *
+     * <p><b>Round 2 compaction: 384 -&gt; 320.</b> The play-test asked for colonies that were
+     * less spread out and for chambers that were less rare, and the second is why the spacing
+     * moved rather than only the radii. Chambers sit on a fixed 96-block grid, so the number a
+     * colony can hold is {@code (eligible area) / 96^2} -- shrinking the radii alone cuts that
+     * hard (measured: 4.9 nurseries per colony down to 1.3). Pulling the spacing in at the
+     * same time raises the cells available per colony to {@code (320/96)^2} = 11.1, which is
+     * what pays for the smaller radii. {@link NoiseProbe}'s per-colony chamber census is the
+     * judge of the result, not this paragraph.
      */
-    public static final int COLONY_SPACING = 384;
+    public static final int COLONY_SPACING = 320;
 
     /**
      * Seed-jitter of a colony centre inside its cell, in blocks (TOTAL spread, so a centre
@@ -526,20 +535,42 @@ public final class ColonyGeneratorTunables {
      * {@link #SHAFT_JITTER} uses).
      *
      * <p><b>Bounded by an invariant, not by taste.</b> Two neighbouring centres are at least
-     * {@code COLONY_SPACING - COLONY_JITTER} = <b>288</b> blocks apart, and that minimum has
+     * {@code COLONY_SPACING - COLONY_JITTER} = <b>224</b> blocks apart, and that minimum has
      * to stay above {@code 2 *} {@code QueenAntEntity#BOSS_BAR_RADIUS_EXIT} (2 x 28 = 56):
      * a player can only ever be inside two queens' bar radii at once if two thrones are
-     * closer than that, so 288 > 56 is what makes two simultaneous boss bars impossible --
+     * closer than that, so 224 > 56 is what makes two simultaneous boss bars impossible --
      * the symptom play-test round 1 actually reported. {@link NoiseProbe}'s colony section
      * measures the real minimum separation across seeds rather than trusting this algebra.
+     *
+     * <p>Play-test round 2 pulled {@link #COLONY_SPACING} in from 384 to 320, which took this
+     * floor from 288 to 224. The jitter itself is unchanged, and the invariant keeps four
+     * times the headroom it needs -- the binding constraint on the spacing is findability and
+     * chamber density, never the boss bar.
      */
     public static final double COLONY_JITTER = 96.0;
 
-    /** Inside this radius of a colony centre the field is a flat 1.0 -- full density. */
-    public static final double COLONY_CORE_RADIUS = 100.0;
+    /**
+     * Inside this radius of a colony centre the field is a flat 1.0 -- full density.
+     *
+     * <p>Round 2 compaction: 100 -&gt; 80, alongside {@link #COLONY_SPACING} 384 -&gt; 320.
+     * The floor under it is the throne, which hangs off the ramp cell containing the colony
+     * centre and so lands at most {@code 24*sqrt(2) + SHAFT_JITTER/2 + THRONE_APPROACH_DISTANCE}
+     * = 76 blocks out (measured worst case across the probe's sweep: 62.4). A core smaller
+     * than that would put a queen's chamber outside her own colony's full-density zone, so
+     * 80 is the tightest round value that still contains every throne.
+     */
+    public static final double COLONY_CORE_RADIUS = 80.0;
 
-    /** By this radius the field has fallen to 0.0 -- wilds: worm tunnels and ramps only. */
-    public static final double COLONY_OUTER_RADIUS = 150.0;
+    /**
+     * By this radius the field has fallen to 0.0 -- wilds: worm tunnels and ramps only.
+     *
+     * <p>Round 2 compaction: 150 -&gt; 112, holding the ring's width at 40% of the core
+     * (150/100 = 1.5, 112/80 = 1.4) so the falloff keeps roughly the same shape rather than
+     * becoming a cliff. This is the hard outer bound on where any chamber can generate --
+     * {@link #CHAMBER_ELIGIBILITY_MIN_F} can only ever cut inside it -- and so it, not the
+     * gate, is what caps how many rooms a colony can hold.
+     */
+    public static final double COLONY_OUTER_RADIUS = 112.0;
 
     /**
      * Nursery, fungus garden and larder chambers generate only where the field at their own

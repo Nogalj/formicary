@@ -809,10 +809,16 @@ public final class NoiseProbe {
     /**
      * (4) From an arbitrary point, how far is the nearest colony?
      *
-     * <p>The bound is 340 blocks, which is the jittered grid's own worst case
-     * ({@code 192*sqrt(2) + 48} = 320) with a little air in it. The points are drawn from a
-     * fixed seed rather than a lattice on purpose: a lattice with any relationship to 384
-     * would sample the same phase of every cell and could miss the corner case entirely.
+     * <p>The bound is 290 blocks, which is the jittered grid's own worst case -- the far
+     * corner of a cell whose centre jittered away from you, {@code (COLONY_SPACING/2)*sqrt(2)
+     * + COLONY_JITTER/2} = {@code 160*sqrt(2) + 48} = 274 -- with a little air in it. The
+     * points are drawn from a fixed seed rather than a lattice on purpose: a lattice with any
+     * relationship to {@code COLONY_SPACING} would sample the same phase of every cell and
+     * could miss the corner case entirely.
+     *
+     * <p>Round 2 recomputed it from the new spacing rather than leaving the old 340 in place.
+     * A bound that no longer tracks its derivation is worse than no bound: it would have gone
+     * on passing while saying nothing, and this is the check that a colony is findable at all.
      */
     private static boolean colonyFindability(ColonyNoise noise) {
         RandomSource points = new XoroshiroRandomSource(20260818L);
@@ -832,7 +838,7 @@ public final class NoiseProbe {
                 worstZ = z;
             }
         }
-        double bound = 340.0;
+        double bound = 290.0;
         System.out.printf(Locale.ROOT,
                 "%n  findability over %d sample points in +-%d blocks: mean %.1f, worst %.1f (at %d, %d),"
                         + " bound %.0f%n",

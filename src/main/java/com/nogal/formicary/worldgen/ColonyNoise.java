@@ -233,8 +233,8 @@ public final class ColonyNoise {
      *
      * <p>One colony neighbourhood serves all nine axes. An axis sits at most
      * {@code SHAFT_SPACING + SHAFT_JITTER/2} = 56 blocks outside the chunk, and
-     * {@link #coloniesNear}'s own derivation leaves 528 blocks to the nearest excluded
-     * centre against an outer radius of 150, so 56 blocks of slack changes nothing.
+     * {@link #coloniesNear}'s own derivation leaves 432 blocks to the nearest excluded
+     * centre against an outer radius of 112, so 56 blocks of slack changes nothing.
      */
     public Shaft[] shaftsNear(int blockMinX, int blockMinZ) {
         int cellX = Math.floorDiv(blockMinX, SHAFT_SPACING);
@@ -403,8 +403,8 @@ public final class ColonyNoise {
      * <p>Identical construction to {@link #shaftForCell}: the cell centre plus a seeded
      * offset of up to {@code COLONY_JITTER / 2} on each axis. That bound is the whole point
      * -- it is what makes the minimum separation between two centres
-     * {@code COLONY_SPACING - COLONY_JITTER} = 288 blocks rather than "whatever the noise
-     * did", and 288 is the number the boss-bar invariant rests on.
+     * {@code COLONY_SPACING - COLONY_JITTER} = 224 blocks rather than "whatever the noise
+     * did", and 224 is the number the boss-bar invariant rests on.
      */
     public Colony colonyCenterForCell(int cellX, int cellZ) {
         // y = 5: a sixth independent stream, so this never draws the same numbers as
@@ -422,10 +422,10 @@ public final class ColonyNoise {
      * can reach it.
      *
      * <p>A centre lands within 48 blocks of its cell centre, so from any point in cell
-     * {@code C} the own-cell centre is at most {@code 192*sqrt(2) + 48} = 320 blocks away
-     * while a centre two cells out is at least {@code 2*384 - 192 - 48} = 528. The nearest
+     * {@code C} the own-cell centre is at most {@code 160*sqrt(2) + 48} = 274 blocks away
+     * while a centre two cells out is at least {@code 2*320 - 160 - 48} = 432. The nearest
      * centre is therefore always inside the ring, and since
-     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} is 150 no colony outside it can
+     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} is 112 no colony outside it can
      * contribute anything but zero.
      */
     public Colony[] coloniesNear(int blockX, int blockZ) {
@@ -607,9 +607,9 @@ public final class ColonyNoise {
      * <p>Each slot lands on a ring whose radius is drawn from
      * {@code [ENDER_SEED_INNER_RADIUS, ENDER_SEED_OUTER_RADIUS]} -- the distances at which
      * the field is {@code ENDER_SEED_MAX_F} and {@code ENDER_SEED_MIN_F}. The field there is
-     * that colony's own, not a neighbour's: the ring tops out at about 131 blocks from the
+     * that colony's own, not a neighbour's: the ring tops out at about 100 blocks from the
      * centre while the nearest other centre is at least {@code COLONY_SPACING -
-     * COLONY_JITTER} = 288 away, so no other colony can be closer than 157. The bearings are
+     * COLONY_JITTER} = 224 away, so no other colony can be closer than 124. The bearings are
      * spread evenly with a jitter inside each sector rather than drawn independently, so two
      * of three ants never land on top of each other.
      */
@@ -695,7 +695,10 @@ public final class ColonyNoise {
      * {@code 24*sqrt(2) + SHAFT_JITTER/2} = 41.9 blocks from the colony centre and the room
      * hangs {@code THRONE_APPROACH_DISTANCE} = 34 beyond it, so a throne centre is always
      * within 76 blocks of its colony centre -- inside
-     * {@link ColonyGeneratorTunables#COLONY_CORE_RADIUS} = 100, i.e. always at full density.
+     * {@link ColonyGeneratorTunables#COLONY_CORE_RADIUS} = 80, i.e. always at full density.
+     * Round 2 compaction cut the core from 100 to 80 and so cut that margin from 24 blocks to
+     * 4; the measured worst offset across the probe's sweep is 62.4, and 80 was chosen as the
+     * tightest round value that still clears the 76-block bound.
      * {@link NoiseProbe}'s colony section asserts exactly that rather than trusting it.
      *
      * <p>The ramp floor at bearing {@code t} is {@code MIN_Y + t / RAMP_RADIANS_PER_BLOCK}
@@ -707,7 +710,7 @@ public final class ColonyNoise {
      * because for a throne the gate is provably a tautology: this ramp's cell is the one
      * containing the COLONY CENTRE, so its axis lands within
      * {@code SHAFT_SPACING/2 * sqrt(2) + SHAFT_JITTER/2} = 41.9 blocks of a point where the
-     * field is 1.0 -- well inside {@link ColonyGeneratorTunables#COLONY_CORE_RADIUS} = 100,
+     * field is 1.0 -- well inside {@link ColonyGeneratorTunables#COLONY_CORE_RADIUS} = 80,
      * where the field is still exactly 1.0. Writing the test anyway would let "one throne per
      * colony" quietly become "one throne per colony, usually"; {@link NoiseProbe} asserts the
      * tautology instead, which is the honest place for it.
@@ -1260,7 +1263,7 @@ public final class ColonyNoise {
      * approximation.</b> A throne centre lands within 76 blocks of its own colony centre
      * ({@link #throneForCell} derives that bound), so a throne inside the 62.5-block clearance
      * of this point belongs to a colony centre at most 138.5 blocks away -- and colony centres
-     * are at least {@code COLONY_SPACING - COLONY_JITTER} = 288 apart, so no second colony can
+     * are at least {@code COLONY_SPACING - COLONY_JITTER} = 224 apart, so no second colony can
      * be that close. One candidate is all there is.
      *
      * <p>The 3x3 scan mirrors {@link #nearestColony}'s own derivation rather than calling it,
@@ -1348,10 +1351,10 @@ public final class ColonyNoise {
      * <p>Two, not the one that {@link #thronesNear} uses, because this is a different
      * question. That one asks "whose carve can touch this chunk", which the 3x3 ring
      * provably answers. "Whose centre is closest to this point" has to look further: a
-     * throne centre lands anywhere within 124 blocks of its 384-block cell centre, so the
-     * nearest of the 3x3 can be up to {@code 192*sqrt(2) + 124} = 396 blocks away while a
-     * chamber two cells out can sit as close as {@code 2*384 + 192 - 124 - 384} = 452 --
-     * close enough to matter. Two rings settle it in both directions.
+     * throne centre lands anywhere within 124 blocks of its 320-block cell centre, so the
+     * nearest of the 3x3 can be up to {@code 160*sqrt(2) + 124} = 350 blocks away while a
+     * chamber two cells out can sit as close as {@code 2*320 - 160 - 124} = 356 -- close
+     * enough to matter. Two rings settle it in both directions.
      */
     private static final int NEAREST_QUERY_CELL_RADIUS = 2;
 
@@ -1361,11 +1364,13 @@ public final class ColonyNoise {
      * eligibility before the answer means anything.
      *
      * <p>Six, and the number is derived rather than generous. From an arbitrary point the
-     * nearest colony centre is at most {@code 192*sqrt(2) + 48} = 320 blocks away, and a
-     * chamber inside that colony is eligible out to about 134 blocks from its centre
-     * (solving the falloff for {@link ColonyGeneratorTunables#CHAMBER_ELIGIBILITY_MIN_F}),
-     * so an eligible chamber always exists within {@code 320 + 134} = 454 blocks. Six rings
-     * of 96 reach 576, which covers it with margin. 169 cells of closed-form arithmetic is
+     * nearest colony centre is at most {@code 160*sqrt(2) + 48} = 274 blocks away, and a
+     * chamber inside that colony is eligible out to at most
+     * {@link ColonyGeneratorTunables#COLONY_OUTER_RADIUS} = 112 blocks from its centre
+     * (whatever {@link ColonyGeneratorTunables#CHAMBER_ELIGIBILITY_MIN_F} is set to -- the
+     * field is exactly zero beyond the outer radius), so an eligible chamber always exists
+     * within {@code 274 + 112} = 386 blocks. Six rings of 96 reach 576, which covers it with
+     * margin the round-2 compaction only widened. 169 cells of closed-form arithmetic is
      * nothing for a command that runs on demand.
      */
     private static final int NEAREST_ELIGIBLE_CELL_RADIUS = 6;
