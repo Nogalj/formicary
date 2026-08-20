@@ -545,11 +545,19 @@ def fungal_spore_crop_stage2():
 # ---------------------------------------------------------------------------
 
 def brood_comb():
+    """WP-S2 art rework (2026-08-20, round-3 play-test): Logan could not tell
+    the three combs apart in-game. Brood's old palette (line 134,96,26 /
+    cap 206,162,60) sat close to royal_comb's saturated gold at a glance --
+    same hue family, just a shade darker. This palette pushes brood toward
+    pale, desaturated wax/tan (lower saturation, higher value) instead of
+    darkening the same gold, which is what actually widens the visual gap:
+    royal now reads as rich saturated amber, brood reads as washed-out
+    beige-tan next to it, at small scale in a dim room."""
     return comb("brood_comb",
-                line=(134, 96, 26, 255),
-                hollow=(92, 62, 14, 255), hollow_lit=(178, 132, 40, 255),
-                cap=(206, 162, 60, 255), cap_rim=(236, 196, 98, 255),
-                cap_shade=(166, 124, 34, 255))
+                line=(150, 132, 96, 255),
+                hollow=(120, 104, 74, 255), hollow_lit=(196, 178, 140, 255),
+                cap=(214, 198, 160, 255), cap_rim=(236, 224, 192, 255),
+                cap_shade=(184, 166, 126, 255))
 
 
 def royal_comb():
@@ -561,17 +569,48 @@ def royal_comb():
 
 
 def provision_comb():
-    """Provision Comb (Ep2 D1): a straight recolor of brood_comb's own
-    palette (same `comb()` call shape, same cell size) -- deliberately a
-    placeholder, not hand-pixeled, per the task brief. Shifted toward a
-    duller burnt-orange/brown so it reads as "stored food" rather than
-    "brood" next to brood_comb's yellow and royal_comb's bright gold; an
-    art package refines this later."""
-    return comb("provision_comb",
-                line=(120, 78, 34, 255),
-                hollow=(84, 54, 20, 255), hollow_lit=(168, 118, 48, 255),
-                cap=(202, 142, 66, 255), cap_rim=(230, 178, 100, 255),
-                cap_shade=(158, 108, 40, 255))
+    """Provision Comb (WP-S2 art rework, 2026-08-20): superseded the Ep2 D1
+    placeholder, which was a straight recolor of brood_comb's own `comb()`
+    call -- same cell shape, same open/capped mix, different hue only. Logan
+    could not tell the three combs apart in-game and undercounted provision
+    combs partly for it: a hue-only difference does not survive small scale
+    in a dim room.
+
+    This is no longer a `comb()` call at all -- it paints its OWN silhouette,
+    not a recolored variant. `comb()`'s look (both brood and royal) is a
+    checkerboard of dark OPEN hollows next to light capped domes; that mix
+    of dark and light is the texture the eye locks onto. Provision comb has
+    no open cells at all -- every cell is capped, each stamped with a small
+    dark seal dot at its centre (the wax plug), which brood/royal's capped
+    cells never carry. The result reads as a near-uniform pale field of
+    stoppered jars -- a stocked pantry -- which is a different silhouette at
+    a glance, not just a different color, while the shared 4x4 offset hex
+    lattice (the grid line, the lit corner) keeps the family resemblance."""
+    img = blank()
+    px = img.load()
+    cell_w = cell_h = 4
+    line = (110, 84, 50, 255)
+    lid = (232, 210, 168, 255)
+    lid_hi = (250, 236, 206, 255)
+    lid_rim = (204, 178, 128, 255)
+    seal = (150, 104, 54, 255)
+    for y in range(SIZE):
+        row = y // cell_h
+        xo = (cell_w // 2) if row % 2 else 0
+        for x in range(SIZE):
+            cx = (x + xo) % cell_w
+            cy = y % cell_h
+            if cx == 0 or cy == 0:
+                px[x, y] = line
+            elif cx == 1 and cy == 1:
+                px[x, y] = lid_hi
+            elif cx == cell_w - 1 or cy == cell_h - 1:
+                px[x, y] = lid_rim
+            elif cx == 2 and cy == 2:
+                px[x, y] = seal
+            else:
+                px[x, y] = lid
+    return img
 
 
 def egg_cluster():
