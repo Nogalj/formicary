@@ -1,5 +1,6 @@
 package com.nogal.formicary.portal;
 
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ARRIVAL_CONNECTOR_MAX_REACH;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CEILING_BOTTOM;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_CARVE_HEIGHT;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_CARVE_PREFERRED_Y;
@@ -15,6 +16,8 @@ import javax.annotation.Nullable;
 
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.ModBlocks;
+import com.nogal.formicary.worldgen.ColonyChunkGenerator;
+import com.nogal.formicary.worldgen.ColonyNoise;
 import com.nogal.formicary.worldgen.ModWorldgen;
 
 import net.minecraft.core.BlockPos;
@@ -28,6 +31,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 /**
@@ -167,7 +171,71 @@ public final class AnthillPortal {
                 ? new BlockPos(x, natural, z)
                 : carveEntryPocket(colony, x, z);
         openMembraneColumn(colony, pocket);
+        carveArrivalConnector(colony, pocket);
         return pocket;
+    }
+
+    /**
+     * Opens the way from the pocket to the traversable network -- the round-3 no-softlock
+     * fix.
+     *
+     * <p>Before this, the pocket was joined to the world only where a worm tunnel happened
+     * to clip its 5x5 box: measured over 256 arbitrary arrival columns per seed, three
+     * arrivals in four were sealed in ({@code NoiseProbe#arrivals}, and see
+     * {@code ColonyGeneratorTunables}' arrival-connector section for the numbers). The route
+     * itself is {@link ColonyNoise#arrivalConnector}'s -- a pure function of the terrain, so
+     * the probe measures the same passage this method digs -- and everything here is the
+     * writing of it.
+     *
+     * <p>It obeys the same rule the pocket carve does, one notch stricter: it only
+     * <b>removes</b> solid blocks, never where the connectivity spine forces them solid (the
+     * route excludes those), and the only blocks it adds are the corridor's own walkway,
+     * which the route has already made disjoint from the air it clears.
+     *
+     * <p>The corridor can run into a neighbouring chunk, so each one it touches is loaded
+     * before it is written to -- the same reason {@link #enterColony} loads the pocket's own
+     * chunk before reading a column out of it.
+     */
+    private static void carveArrivalConnector(ServerLevel colony, BlockPos pocket) {
+        ChunkGenerator generator = colony.getChunkSource().getGenerator();
+        if (!(generator instanceof ColonyChunkGenerator colonyGenerator)) {
+            Formicary.LOGGER.warn("Formicary: {} is not using the colony generator ({}), so no arrival connector"
+                    + " was carved -- the arrival may be sealed in",
+                    ModWorldgen.FORMICARY_LEVEL.location(), generator.getClass().getName());
+            return;
+        }
+        ColonyNoise noise = colonyGenerator.noise(colony.getChunkSource().randomState());
+        ColonyNoise.ArrivalConnector connector =
+                noise.arrivalConnector(pocket.getX(), pocket.getY(), pocket.getZ());
+        if (!connector.joined()) {
+            Formicary.LOGGER.warn("Formicary: found no worm tunnel or ramp within {} blocks of the arrival at"
+                    + " {} {} {} -- nothing was carved", ARRIVAL_CONNECTOR_MAX_REACH,
+                    pocket.getX(), pocket.getY(), pocket.getZ());
+            return;
+        }
+
+        BlockState air = Blocks.AIR.defaultBlockState();
+        BlockState soil = ModBlocks.PACKED_SOIL.get().defaultBlockState();
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (ColonyNoise.PocketBlock block : connector.air()) {
+            cursor.set(block.x(), block.y(), block.z());
+            colony.getChunk(block.x() >> 4, block.z() >> 4);
+            if (!colony.getBlockState(cursor).isAir()) {
+                colony.setBlock(cursor.immutable(), air, Block.UPDATE_ALL);
+            }
+        }
+        for (ColonyNoise.PocketBlock block : connector.floor()) {
+            cursor.set(block.x(), block.y(), block.z());
+            colony.getChunk(block.x() >> 4, block.z() >> 4);
+            if (!colony.getBlockState(cursor).blocksMotion()) {
+                colony.setBlock(cursor.immutable(), soil, Block.UPDATE_ALL);
+            }
+        }
+        Formicary.LOGGER.info(
+                "Formicary: carved an arrival connector from {} {} {} to the network at {} {} {}"
+                        + " -- {} blocks cleared, {} laid, {} blocks of run",
+                pocket.getX(), pocket.getY(), pocket.getZ(), connector.targetX(), connector.targetY(),
+                connector.targetZ(), connector.air().length, connector.floor().length, connector.length());
     }
 
     /**

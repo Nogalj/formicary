@@ -2,7 +2,12 @@ package com.nogal.formicary.worldgen;
 
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ACCENT_XZ_SCALE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ACCENT_Y_SCALE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ARRIVAL_CONNECTOR_HEIGHT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ARRIVAL_CONNECTOR_MAX_CLIMB;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ARRIVAL_CONNECTOR_MAX_DESCENT;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ARRIVAL_CONNECTOR_MAX_REACH;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CEILING_BOTTOM;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.ENTRY_CARVE_RADIUS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_ELIGIBILITY_MIN_F;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_FLOOR_MIN_Y_BY_TIER;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.CHAMBER_SLOT_JITTER;
@@ -115,8 +120,12 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.colonyFalloff
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.tierIndex;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.PriorityQueue;
 
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
@@ -2000,6 +2009,443 @@ public final class ColonyNoise {
             // Royal Depths: Deep Loam shot through with Hardened Soil (above) and resin.
             default -> a < ROYAL_RESIN_THRESHOLD ? FABRIC_RESIN_BLOCK : FABRIC_DEEP_LOAM;
         };
+    }
+
+    // ------------------------------------------------------------------
+    // Arrival connector (play-test round 3, item 1) -- the no-softlock guarantee, carved
+    //
+    // A pearl thrown at an anthill lands the player at that anthill's XZ, which is
+    // uncorrelated with anything down here, and AnthillPortal then hollows a 5x5 pocket out
+    // of whatever fabric is there. Measured before the fix (NoiseProbe#arrivals, 256
+    // arbitrary arrival columns per seed): only 24.6% / 28.9% / 35.9% of them could walk
+    // out of that pocket to a worm tunnel or a ramp on seeds 1234567 / 42 / 987654321.
+    // Three quarters of all arrivals were sealed in, which is exactly the report round 3
+    // opened with.
+    //
+    // The route is computed HERE rather than in AnthillPortal for the reason every other
+    // shape in this class lives here: the probe has to be able to measure it without a
+    // level (see the "Not bootstrapped" rule in docs/gotchas/worldgen.md), and a second
+    // copy of the arithmetic living next to the block writes is a copy that can silently
+    // disagree with the terrain it is cutting through. AnthillPortal owns only the writes.
+    // ------------------------------------------------------------------
+
+    /**
+     * The passage from an arrival pocket to the traversable network.
+     *
+     * @param air     blocks to clear, in no particular order
+     * @param floor   blocks to make solid -- the corridor's own walkway, and disjoint from
+     *                {@code air} by construction (they come out of one map)
+     * @param route   the standing positions the walk passes through, pocket exclusive
+     * @param targetX the network block the route lands on
+     * @param length  how many steps that walk is
+     * @param joined  whether a network block was reachable at all
+     */
+    public record ArrivalConnector(PocketBlock[] air, PocketBlock[] floor, int[][] route,
+            int targetX, int targetY, int targetZ, int length, boolean joined) {
+    }
+
+    /**
+     * Routes a walkable passage from the arrival pocket at ({@code pocketX},
+     * {@code pocketFloorY}, {@code pocketZ}) to the nearest block of the traversable
+     * network, and returns the blocks that carving it costs.
+     *
+     * <p><b>What counts as the network</b> is the pair the design notes have always called
+     * the no-softlock guarantee: worm-tunnel air, which is ungated and therefore exists in
+     * the wilds as much as in a core, and ramp/landing air, which since round 2 exists only
+     * inside a colony. Chamber air deliberately does not count on its own -- a blob chamber
+     * can be a sealed bubble, and joining one would prove nothing.
+     *
+     * <p><b>It is a search over walkable space, not a straight line.</b> Three straight-line
+     * routers were written and measured first, and each one left a residue of arrivals whose
+     * own corridor they could not follow: 81 of 256 sampled columns when a fixed precedence
+     * resolved the clash between one step's walkway and the next step's air, 64 when the
+     * first step dug the floor out from under the player, and a stubborn 1 or 2 per seed
+     * where the corridor met the connectivity ramp's helicoid side-on or ran out of headroom
+     * against the ceiling cap. All three are the same shape of mistake -- proposing a route
+     * and then hoping the terrain along it cooperates. What is searched here is the graph the
+     * acceptance test actually walks: a node is <em>somewhere to stand</em>, an edge is a
+     * one-block step to an orthogonal neighbour, and the corridor is whatever the cheapest
+     * path through that graph turns out to be.
+     *
+     * <p><b>Cost is blocks changed</b>, which is what makes the passage look deliberate: a
+     * node whose feet, head and floor are already what they need to be is free, so the route
+     * runs down an existing tunnel wherever one is going the right way and only bores where
+     * it has to. It is Dijkstra rather than A* because the goal is not one point -- it is
+     * whichever network block is cheapest to reach.
+     *
+     * <p><b>Two blocks are never touched.</b> The connectivity spine's forced-solid floor is
+     * never removed and its walkway air is never filled, so no arrival can put a hole in the
+     * ramp a colony descends -- one rule stricter than the pocket carve next door. Nodes that
+     * would need either are simply not in the graph.
+     */
+    public ArrivalConnector arrivalConnector(int pocketX, int pocketFloorY, int pocketZ) {
+        ArrivalRegion region = new ArrivalRegion(pocketX, pocketFloorY, pocketZ);
+        int start = region.node(pocketX, pocketFloorY, pocketZ);
+        if (start < 0) {
+            return new ArrivalConnector(NO_POCKET_BLOCKS, NO_POCKET_BLOCKS, NO_ROUTE,
+                    pocketX, pocketFloorY, pocketZ, 0, false);
+        }
+
+        int[] dist = new int[region.nodes()];
+        int[] from = new int[region.nodes()];
+        Arrays.fill(dist, Integer.MAX_VALUE);
+        Arrays.fill(from, -1);
+        dist[start] = 0;
+        PriorityQueue<long[]> queue = new PriorityQueue<>((a, b) -> Long.compare(a[0], b[0]));
+        queue.add(new long[] {0L, start});
+        int goal = -1;
+
+        // At most one height per column: a corridor cannot cross over itself. Two nodes in
+        // one column three blocks apart want contradictory things of the block between them
+        // -- one wants it solid to stand on, the other wants it clear over its head -- and
+        // whichever claim is written second silently wins. Measured, that was the last 7 to
+        // 9 stranded columns per seed: a route perfect end to end except where it doubled
+        // back under itself. Settling the column at the cheapest height that reaches it
+        // removes the case from the graph rather than repairing it afterwards.
+        boolean[] settled = new boolean[region.columns()];
+
+        while (!queue.isEmpty()) {
+            long[] head = queue.poll();
+            int node = (int) head[1];
+            if (head[0] > dist[node]) {
+                continue;
+            }
+            if (settled[region.columnOf(node)]) {
+                continue;
+            }
+            settled[region.columnOf(node)] = true;
+            if (region.isGoal(node)) {
+                goal = node;
+                break;
+            }
+            for (int step = 0; step < ARRIVAL_STEPS.length; step++) {
+                int next = region.step(node, ARRIVAL_STEPS[step][0], ARRIVAL_STEPS[step][1],
+                        ARRIVAL_STEPS[step][2]);
+                if (next < 0) {
+                    continue;
+                }
+                int cost = dist[node] + region.carveCost(next);
+                if (cost < dist[next]) {
+                    dist[next] = cost;
+                    from[next] = node;
+                    queue.add(new long[] {cost, next});
+                }
+            }
+        }
+
+        if (goal < 0) {
+            return new ArrivalConnector(NO_POCKET_BLOCKS, NO_POCKET_BLOCKS, NO_ROUTE,
+                    pocketX, pocketFloorY, pocketZ, 0, false);
+        }
+
+        List<int[]> reversed = new ArrayList<>();
+        for (int node = goal; node != start && node >= 0; node = from[node]) {
+            reversed.add(region.position(node));
+        }
+        Collections.reverse(reversed);
+        int[][] route = reversed.toArray(new int[0][]);
+
+        // Feet, head and walkway for every step of the path first, so the widening pass
+        // below can see -- and refuse to undo -- every block the walk depends on.
+        Map<PocketBlock, Boolean> plan = new HashMap<>();
+        // The arrival's own footing is claimed alongside the path's, even though the pocket
+        // pass already dug it: the widening below reaches a block sideways into every
+        // neighbouring column, and the first step of the path is a neighbour of the pocket.
+        // Without the claim it cuts the floor out from under the player before they take a
+        // step -- measured at 139 of 256 sampled columns, every one of them a route that was
+        // otherwise walkable end to end.
+        region.claimStanding(plan, pocketX, pocketFloorY, pocketZ);
+        for (int[] point : route) {
+            region.claimStanding(plan, point[0], point[1], point[2]);
+        }
+        for (int[] point : route) {
+            region.widen(plan, point[0], point[1], point[2]);
+        }
+
+        List<PocketBlock> air = new ArrayList<>();
+        List<PocketBlock> floor = new ArrayList<>();
+        for (Map.Entry<PocketBlock, Boolean> entry : plan.entrySet()) {
+            (entry.getValue() ? air : floor).add(entry.getKey());
+        }
+        int[] target = region.position(goal);
+        return new ArrivalConnector(air.toArray(new PocketBlock[0]), floor.toArray(new PocketBlock[0]), route,
+                target[0], target[1], target[2], route.length, true);
+    }
+
+    /** The twelve moves out of a standing position: four compass steps, up, level or down. */
+    private static final int[][] ARRIVAL_STEPS = {
+        {1, 0, -1}, {1, 0, 0}, {1, 0, 1}, {-1, 0, -1}, {-1, 0, 0}, {-1, 0, 1},
+        {0, 1, -1}, {0, 1, 0}, {0, 1, 1}, {0, -1, -1}, {0, -1, 0}, {0, -1, 1},
+    };
+
+    /**
+     * The block of world the arrival search reasons over, and the graph it searches.
+     *
+     * <p>Everything the search asks about a position -- is it air, does the spine claim it,
+     * is it network -- is resolved once per column into three bit arrays covering the Y band,
+     * because a Dijkstra revisits a column many times and {@link #isAir} is not cheap. The
+     * arrays are filled lazily: a search that finds a tunnel four blocks away never touches
+     * the other four thousand columns.
+     */
+    private final class ArrivalRegion {
+        private final int pocketX;
+        private final int pocketFloorY;
+        private final int pocketZ;
+        private final int span;
+        private final int lowY;
+        private final int bandHeight;
+        private final boolean[] resolved;
+        private final boolean[] air;
+        private final boolean[] spineSolid;
+        private final boolean[] spineAir;
+        private final boolean[] network;
+        /** Private to one search, so two of them on the worker pool cannot share arrays. */
+        private final ColumnCache columns = new ColumnCache();
+
+        ArrivalRegion(int pocketX, int pocketFloorY, int pocketZ) {
+            this.pocketX = pocketX;
+            this.pocketFloorY = pocketFloorY;
+            this.pocketZ = pocketZ;
+            this.span = ARRIVAL_CONNECTOR_MAX_REACH * 2 + 1;
+            // One block of margin under the band and two over it: a node standing at the
+            // lowest Y still asks about its own floor, and one at the highest still asks
+            // about the block over its head.
+            this.lowY = Math.max(FLOOR_TOP + 1, pocketFloorY - ARRIVAL_CONNECTOR_MAX_DESCENT);
+            int highY = Math.min(CEILING_BOTTOM - 2, pocketFloorY + ARRIVAL_CONNECTOR_MAX_CLIMB);
+            this.bandHeight = Math.max(1, highY - this.lowY + 1);
+            this.resolved = new boolean[this.span * this.span];
+            int cells = this.span * this.span * (this.bandHeight + 3);
+            this.air = new boolean[cells];
+            this.spineSolid = new boolean[cells];
+            this.spineAir = new boolean[cells];
+            this.network = new boolean[cells];
+        }
+
+        int nodes() {
+            return this.span * this.span * this.bandHeight;
+        }
+
+        int columns() {
+            return this.span * this.span;
+        }
+
+        int columnOf(int node) {
+            return node / this.bandHeight;
+        }
+
+        /** The node index for a standing position, or -1 when it is outside or unusable. */
+        int node(int x, int y, int z) {
+            int ix = x - this.pocketX + ARRIVAL_CONNECTOR_MAX_REACH;
+            int iz = z - this.pocketZ + ARRIVAL_CONNECTOR_MAX_REACH;
+            int iy = y - this.lowY;
+            if (ix < 0 || iz < 0 || ix >= this.span || iz >= this.span || iy < 0 || iy >= this.bandHeight) {
+                return -1;
+            }
+            return (ix * this.span + iz) * this.bandHeight + iy;
+        }
+
+        int[] position(int node) {
+            int iy = node % this.bandHeight;
+            int iz = (node / this.bandHeight) % this.span;
+            int ix = node / (this.bandHeight * this.span);
+            return new int[] {ix - ARRIVAL_CONNECTOR_MAX_REACH + this.pocketX, iy + this.lowY,
+                iz - ARRIVAL_CONNECTOR_MAX_REACH + this.pocketZ};
+        }
+
+        /**
+         * The node reached by one step, or -1 when there is nothing to stand on there.
+         *
+         * <p>A position is standable-after-carving when neither the feet block nor the one
+         * over the head is spine floor (this carve will not remove those), and the block
+         * under the feet is not spine walkway (it will not fill those either).
+         */
+        int step(int node, int dx, int dz, int dy) {
+            int[] here = position(node);
+            int x = here[0] + dx;
+            int y = here[1] + dy;
+            int z = here[2] + dz;
+            int next = node(x, y, z);
+            if (next < 0 || this.spineSolid[cell(x, y, z)] || this.spineSolid[cell(x, y + 1, z)]
+                    || this.spineAir[cell(x, y - 1, z)]) {
+                return -1;
+            }
+            return next;
+        }
+
+        /** How many blocks standing at this node costs -- zero where the world already fits. */
+        int carveCost(int node) {
+            int[] here = position(node);
+            int cost = this.air[cell(here[0], here[1], here[2])] ? 0 : 1;
+            cost += this.air[cell(here[0], here[1] + 1, here[2])] ? 0 : 1;
+            return cost + (this.air[cell(here[0], here[1] - 1, here[2])] ? 1 : 0);
+        }
+
+        /**
+         * Whether a node is somewhere the player can be said to have left the pocket and
+         * joined the network: its feet are in worm-tunnel or ramp air, outside the footprint
+         * the pocket carve hollowed out. A tunnel block inside that footprint proves nothing,
+         * since the carve is what put it there.
+         */
+        boolean isGoal(int node) {
+            int[] here = position(node);
+            return this.network[cell(here[0], here[1], here[2])]
+                    && (Math.abs(here[0] - this.pocketX) > ENTRY_CARVE_RADIUS
+                            || Math.abs(here[2] - this.pocketZ) > ENTRY_CARVE_RADIUS);
+        }
+
+        /**
+         * Feet, head and walkway for one step of the path.
+         *
+         * <p>The walkway is claimed <b>even when it is already solid</b>, and that is the
+         * point rather than a redundancy: {@link #widen} runs afterwards and clears three
+         * blocks of air in every neighbouring column, which without a claim on it would
+         * happily cut the floor out from under the step next door whenever the path changes
+         * height. Measured, that alone dropped the walk from 100% to 33%. The write side
+         * treats a claim on an already-solid block as the no-op it is.
+         */
+        void claimStanding(Map<PocketBlock, Boolean> plan, int x, int y, int z) {
+            plan.put(new PocketBlock(x, y, z), Boolean.TRUE);
+            plan.put(new PocketBlock(x, y + 1, z), Boolean.TRUE);
+            // Never floor over the arrival's own standing room: the pocket was dug by a
+            // different pass, and a walkway laid at the player's feet would suffocate them
+            // on the tick they materialise.
+            if (!(x == this.pocketX && z == this.pocketZ && y - 1 >= this.pocketFloorY)) {
+                plan.put(new PocketBlock(x, y - 1, z), Boolean.FALSE);
+            }
+        }
+
+        /**
+         * Opens the corridor out to three blocks across and one over head height, so it reads
+         * like the worm tunnels it joins rather than like a one-block mine shaft.
+         *
+         * <p>Purely cosmetic, and deliberately unable to be anything else: it never claims a
+         * block another step of the path has already claimed as its walkway, and it never
+         * touches the spine. Every block it does claim is one the walk did not depend on.
+         */
+        void widen(Map<PocketBlock, Boolean> plan, int x, int y, int z) {
+            // Only where the route actually had to bore. A cost-free stretch is one that
+            // runs through a cavity the world already had, and widening that would be this
+            // pass reshaping terrain it did not dig -- the passage should read as a bore
+            // where it is one and as the tunnel it joined where it is that.
+            if (this.air[cell(x, y, z)] && this.air[cell(x, y + 1, z)]) {
+                return;
+            }
+            for (int[] offset : CONNECTOR_STAMP) {
+                int nx = x + offset[0];
+                int nz = z + offset[1];
+                for (int dy = 0; dy < ARRIVAL_CONNECTOR_HEIGHT + offset[2]; dy++) {
+                    int ny = y + dy;
+                    if (ny < FLOOR_TOP || ny >= CEILING_BOTTOM || node(nx, ny, nz) < 0
+                            || this.spineSolid[cell(nx, ny, nz)]) {
+                        continue;
+                    }
+                    PocketBlock block = new PocketBlock(nx, ny, nz);
+                    if (!plan.containsKey(block)) {
+                        plan.put(block, Boolean.TRUE);
+                    }
+                }
+            }
+        }
+
+        /** Index into the block arrays, resolving the column the first time it is asked for. */
+        private int cell(int x, int y, int z) {
+            int ix = x - this.pocketX + ARRIVAL_CONNECTOR_MAX_REACH;
+            int iz = z - this.pocketZ + ARRIVAL_CONNECTOR_MAX_REACH;
+            int column = ix * this.span + iz;
+            if (!this.resolved[column]) {
+                resolve(column, x, z);
+            }
+            return column * (this.bandHeight + 3) + (y - this.lowY + 1);
+        }
+
+        private void resolve(int column, int x, int z) {
+            this.resolved[column] = true;
+            Column resolvedColumn = this.columns.column(x, z);
+            int base = column * (this.bandHeight + 3);
+            for (int i = 0; i < this.bandHeight + 3; i++) {
+                int y = this.lowY - 1 + i;
+                if (y < FLOOR_TOP || y >= CEILING_BOTTOM) {
+                    continue;
+                }
+                boolean isAir = resolvedColumn.air(x, y, z);
+                this.air[base + i] = isAir;
+                int shaft = resolvedColumn.shafts().length == 0
+                        ? SHAFT_NONE : shaftState(resolvedColumn.shafts(), x, y, z);
+                this.spineSolid[base + i] = shaft == SHAFT_SOLID;
+                this.spineAir[base + i] = shaft == SHAFT_AIR;
+                this.network[base + i] = isAir && (shaft == SHAFT_AIR || isTunnelCarved(x, y, z));
+            }
+        }
+    }
+
+    /**
+     * The corridor's cross-section as (dx, dz, extra height) triples: a plus rather than a
+     * 3x3 box, with one extra block of headroom over the middle. Three blocks wide across
+     * either axis, and rounded rather than square, so it reads like the worm tunnels it
+     * joins.
+     */
+    private static final int[][] CONNECTOR_STAMP = {{0, 0, 1}, {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}};
+
+    private static final PocketBlock[] NO_POCKET_BLOCKS = new PocketBlock[0];
+
+    private static final int[][] NO_ROUTE = new int[0][];
+
+    /** One column's five feature arrays, resolved once and asked about many Y values. */
+    private final class Column {
+        private final double field;
+        private final Shaft[] shafts;
+        private final Throne[] thrones;
+        private final Nursery[] nurseries;
+        private final Garden[] gardens;
+        private final Larder[] larders;
+
+        Column(double field, Shaft[] shafts, Throne[] thrones, Nursery[] nurseries, Garden[] gardens,
+                Larder[] larders) {
+            this.field = field;
+            this.shafts = shafts;
+            this.thrones = thrones;
+            this.nurseries = nurseries;
+            this.gardens = gardens;
+            this.larders = larders;
+        }
+
+        Shaft[] shafts() {
+            return this.shafts;
+        }
+
+        boolean air(int x, int y, int z) {
+            return isAir(this.field, this.shafts, this.thrones, this.nurseries, this.gardens, this.larders, x, y, z);
+        }
+
+        /** Whether the connectivity spine claims this block as its walkway floor. */
+        boolean spineSolid(int x, int y, int z) {
+            return this.shafts.length > 0 && shaftState(this.shafts, x, y, z) == SHAFT_SOLID;
+        }
+    }
+
+    /**
+     * Per-chunk memoisation of the five {@code *Near} lookups behind {@link Column}.
+     *
+     * <p>The arrival search reads thousands of columns spread over about two dozen chunks,
+     * and the {@code *Near} arrays are a pure function of the chunk -- resolving them per
+     * column instead would be the same answer for roughly ninety times the seeded draws.
+     */
+    private final class ColumnCache {
+        private final Map<Long, Object[]> byChunk = new HashMap<>();
+
+        Column column(int x, int z) {
+            int chunkX = x - Math.floorMod(x, 16);
+            int chunkZ = z - Math.floorMod(z, 16);
+            Object[] near = this.byChunk.computeIfAbsent(((long) chunkX << 32) ^ (chunkZ & 0xFFFFFFFFL),
+                    key -> new Object[] {shaftsNear(chunkX, chunkZ), thronesNear(chunkX, chunkZ),
+                            nurseriesNear(chunkX, chunkZ), gardensNear(chunkX, chunkZ), lardersNear(chunkX, chunkZ)});
+            return new Column(colonyField(x, z),
+                    shaftsForColumn((Shaft[]) near[0], x, z),
+                    thronesForColumn((Throne[]) near[1], x, z),
+                    nurseriesForColumn((Nursery[]) near[2], x, z),
+                    gardensForColumn((Garden[]) near[3], x, z),
+                    lardersForColumn((Larder[]) near[4], x, z));
+        }
     }
 
     // ------------------------------------------------------------------

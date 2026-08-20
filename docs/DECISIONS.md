@@ -1688,3 +1688,63 @@ jittered 384-block grid, sparse wilds between them.
   behaviour behind them are unchanged, so nothing that reads the state had to move. "Guard
   Post" named the mechanism; "Staying" names what the player just told the ant to do, and it
   reads as the opposite of the worker's "Following".
+
+## Play-test round 3 -- the arrival softlock (2026-08-19)
+
+- **Three arrivals in four were sealed in, and the number came before the fix.** Logan
+  arrived in a colony's outskirts inside a box with no way out. `NoiseProbe#arrivals` was
+  written to reproduce it rather than to confirm it: 256 arbitrary arrival columns per seed,
+  spread across cores, rings and wilds, each one run through the portal's own pocket
+  placement and then flood-filled on foot. Measured reach to a worm tunnel or ramp:
+  **24.6% / 28.9% / 35.9%** on seeds 1234567 / 42 / 987654321 (core 36.2%, ring 30.3%, wilds
+  18.2% on the first). It was never a colony-outskirts bug; the outskirts are simply where he
+  happened to land.
+- **The mechanism is that the pocket is hollowed out of solid fabric and nothing joins it.**
+  `AnthillPortal#findOrCarveEntryPocket` stands the player on a natural floor when the scan
+  band has one and otherwise digs a 5x5x4 box; 205 of 256 columns took the second branch.
+  A dug pocket was connected only where a worm tunnel happened to clip it. The membrane
+  chimney punched above it is one block wide, which is a view of the way out, not a way out.
+- **What round 2 changed to expose it, measured rather than argued.** Ep2 pulled the arrival
+  band up against the ceiling cap -- `ENTRY_MAX_DROP_BELOW_CAP` = 12, so the scan is 11
+  blocks deep where it used to be the whole top tier. The probe reports both: a natural floor
+  exists somewhere in the top tier for 142 of 256 columns but inside the 12-block band for
+  only 51. Round 1's other half compounds it -- ramps became colony infrastructure, so out in
+  the wilds there is no spine for a pocket to break into either.
+- **The fix is a search over walkable space, not a corridor drawn between two points.** The
+  route lives in `ColonyNoise#arrivalConnector` (pure, so the probe measures the same passage
+  the portal digs) and `AnthillPortal` owns only the writes. A node is somewhere to stand, an
+  edge is a one-block step to an orthogonal neighbour, cost is blocks changed, and the goal is
+  whichever worm-tunnel or ramp block is cheapest to reach. Costing by blocks changed is what
+  makes it look deliberate: an existing tunnel going the right way is free, so the passage
+  uses it and only bores where it must.
+- **Three straight-line routers were built and measured first, and every one of them left a
+  residue.** They are worth recording because each failure was invisible to the algebra and
+  obvious to the probe. (1) Resolving the clash between one step's walkway and the next step's
+  air with a fixed precedence: 81 of 256 columns could not follow their own corridor, every
+  one a climb whose steps had been deleted. (2) After stamping in walking order: 64, all of
+  them routes whose first step dug the floor out from under the player -- the pocket is carved
+  by a different pass, so the router has to be told where the arrival is standing. (3) After
+  protecting the arrival's footing and stepping orthogonally rather than diagonally: 1 to 2
+  per seed, where the corridor met the ramp's helicoid side-on or ran out of headroom against
+  the cap. A candidate-retry loop and a descend-first height profile each moved that number
+  around without closing it, which is what settled the design: stop proposing routes and
+  search the graph the acceptance test walks.
+- **Two more bugs the search itself had, both found the same way.** The widening pass that
+  opens the bore to three blocks across cut the floor out from under the step next door
+  (100% -> 33%) until every path node claimed its walkway even where it was already solid,
+  and the arrival's own footing had to be claimed alongside the path's because the first step
+  is a neighbour of the pocket (139 of 256). And the path was allowed to cross over itself:
+  two nodes in one column three blocks apart want contradictory things of the block between
+  them, and whichever claim was written second silently won (7-9 per seed). Settling each
+  column at the cheapest height that reaches it removes that from the graph instead of
+  repairing it afterwards.
+- **The connector is one rule stricter than the pocket carve beside it.** It never removes a
+  block the connectivity spine forces solid and never fills the spine's walkway air, so no
+  arrival can put a hole in the ramp a colony descends. Nothing is lost by it -- a ramp floor
+  always carries `RAMP_AIR_HEIGHT` of air above it, so meeting one is a step onto the ramp
+  rather than a wall -- and it is what lets the whole passage be described as removal plus its
+  own walkway.
+- **The invariant is now permanent.** `NoiseProbe#arrivals` asserts that every sampled arrival
+  column joins the network on foot, and prints a step-by-step trace of the first one that does
+  not. Measured after: **256 of 256 on all three seeds**, 0 routes unfound, 0 unwalkable, mean
+  72-93 blocks carved per arrival, longest walk 39-66 steps.

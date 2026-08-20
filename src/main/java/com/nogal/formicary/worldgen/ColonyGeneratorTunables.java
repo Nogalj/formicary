@@ -493,6 +493,55 @@ public final class ColonyGeneratorTunables {
     public static final int ENTRY_CARVE_HEIGHT = 4;
 
     // ------------------------------------------------------------------
+    // Arrival connector (play-test round 3, item 1) -- the passage out of the pocket
+    //
+    // The pocket above is hollowed out of whatever fabric happens to be at the anthill's
+    // XZ, and until round 3 nothing joined it to anything: it was connected only where a
+    // worm tunnel happened to clip the 5x5 box. Measured over 256 arbitrary arrival columns
+    // per seed, that was 24.6% / 28.9% / 35.9% on seeds 1234567 / 42 / 987654321 -- i.e.
+    // three arrivals in four were sealed in, which is the bug round 3 opened with.
+    //
+    // ColonyNoise#arrivalConnector now routes a walkable passage from the pocket to the
+    // nearest worm tunnel or ramp, and NoiseProbe#arrivals asserts that every sampled
+    // column reaches one. The constants below bound that search.
+    // ------------------------------------------------------------------
+
+    /**
+     * How far, as a Chebyshev radius, the connector will look for a network block -- and so
+     * how big the block of world its search reasons over is.
+     *
+     * <p>Sized against the measurement rather than guessed; see {@code NoiseProbe#arrivals}
+     * for the run lengths it actually produces. The search is lazy in this radius: columns
+     * are resolved the first time the walk reaches them, so a pocket that opens onto a
+     * tunnel four blocks away pays for a handful of columns, not for 4225 of them.
+     */
+    public static final int ARRIVAL_CONNECTOR_MAX_REACH = 32;
+
+    /**
+     * How far below the pocket floor a network block may sit and still be routed to. The
+     * corridor descends at most one block per block walked, so this also has to be within
+     * {@link #ARRIVAL_CONNECTOR_MAX_REACH} for the grade to work out; the search enforces
+     * that per candidate ({@code |dy| <= ring}).
+     */
+    public static final int ARRIVAL_CONNECTOR_MAX_DESCENT = 24;
+
+    /**
+     * How far above the pocket floor a network block may sit. Small on purpose: the pocket
+     * band already sits within {@link #ENTRY_MAX_DROP_BELOW_CAP} of the ceiling cap, so
+     * there is very little world left above it to walk up into.
+     */
+    public static final int ARRIVAL_CONNECTOR_MAX_CLIMB = 6;
+
+    /**
+     * Air blocks carved above the connector's own floor -- the same
+     * {@link #RAMP_AIR_HEIGHT} the connectivity ramp gives its walkway, so the passage
+     * out of an arrival reads as part of the same dimension rather than as a crawlspace.
+     */
+    public static final int ARRIVAL_CONNECTOR_HEIGHT = RAMP_AIR_HEIGHT;
+
+
+
+    // ------------------------------------------------------------------
     // The colony field (Ep2 D1) -- the layer that sits ABOVE everything below it
     //
     // Before this, the dimension was one continuous mega-nest: every tunable below was a

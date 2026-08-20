@@ -14,8 +14,10 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.levelgen.XoroshiroRandomSource;
@@ -64,6 +66,7 @@ public final class NoiseProbe {
             palette(noise);
             membranes(noise);
             connectivity(noise);
+            arrivals(noise);
             shafts(noise);
             colonies(noise);
             thrones(noise);
@@ -80,6 +83,9 @@ public final class NoiseProbe {
         }
         if (what.equals("membrane")) {
             membranes(noise);
+        }
+        if (what.equals("arrival")) {
+            arrivals(noise);
         }
         if (what.equals("throne")) {
             thrones(noise);
@@ -426,6 +432,403 @@ public final class NoiseProbe {
         System.out.println(MIN_Y + deepest < tierMaxY(0)
                 ? "  PASS: the Royal Depths are reachable on foot from the top tier (and back, edges are symmetric)."
                 : "  FAIL: cannot walk from the top tier into the Royal Depths.");
+    }
+
+    // ------------------------------------------------------------------
+    // Arrival columns (play-test round 3, item 1) -- the softlock check
+    // ------------------------------------------------------------------
+
+    /** Arrival columns sampled per axis; the section walks {@code N*N} of them. */
+    private static final int ARRIVAL_SAMPLE_GRID = 16;
+
+    /**
+     * Stride between sampled arrival columns, in blocks. Deliberately coprime to all four
+     * grids in the dimension (colony 320, chamber 96, ramp 48, chunk 16) so a 16x16 sweep
+     * cannot land on the same phase of any of them twice.
+     */
+    private static final int ARRIVAL_SAMPLE_STRIDE = 41;
+
+    /** Horizontal half-span of the walk box built around each sampled arrival pocket. */
+    private static final int ARRIVAL_WALK_RADIUS = 24;
+
+    /** How far below the pocket floor the walk box reaches. */
+    private static final int ARRIVAL_WALK_DROP = 32;
+
+    /**
+     * <b>The softlock check.</b> A pearl thrown at an anthill lands the player at that
+     * anthill's XZ, which is uncorrelated with anything in this dimension --
+     * {@code AnthillPortal#findOrCarveEntryPocket} then stands them on a natural floor if
+     * the band under the cap has one, and otherwise hollows a 5x5 pocket out of solid
+     * fabric. This section asks the only question that matters about that: <em>can they
+     * walk out of it</em>.
+     *
+     * <p>Play-test round 3 opened with Logan arriving in a sealed box in a colony's
+     * outskirts with no way out, so the measurement came before the fix: sample arbitrary
+     * arrival columns across cores, rings and wilds alike, run the pocket placement, and
+     * flood-fill on foot from where the player's feet land. "The network" is worm-tunnel
+     * air or ramp/landing air <em>outside the pocket's own footprint</em> -- reaching a
+     * tunnel block inside the 5x5 carve proves nothing, since the carve put it there.
+     *
+     * <p>The walk is the same symmetric one-block-step graph {@link #connectivity} and
+     * {@link #chamberWalk} use, so a reach here is reversible by construction.
+     */
+    private static void arrivals(ColonyNoise noise) {
+        ColonyNoise.Colony anchor = anchor(noise);
+        int anchorX = (int) Math.round(anchor.centreX());
+        int anchorZ = (int) Math.round(anchor.centreZ());
+        int half = ARRIVAL_SAMPLE_GRID / 2;
+
+        System.out.printf(Locale.ROOT,
+                "%narrival columns (%dx%d sampled at stride %d around the colony at (%d, %d);"
+                        + " pocket band y[%d,%d], carve %dx%d):%n",
+                ARRIVAL_SAMPLE_GRID, ARRIVAL_SAMPLE_GRID, ARRIVAL_SAMPLE_STRIDE, anchorX, anchorZ,
+                ColonyGeneratorTunables.ENTRY_SCAN_BOTTOM, ColonyGeneratorTunables.ENTRY_SCAN_TOP,
+                ColonyGeneratorTunables.ENTRY_CARVE_RADIUS * 2 + 1, ColonyGeneratorTunables.ENTRY_CARVE_HEIGHT);
+
+        // [0] = colony core (f = 1), [1] = ring, [2] = wilds (f = 0).
+        int[] sampled = new int[3];
+        int[] reached = new int[3];
+        int[] carvedPockets = new int[3];
+        int totalSampled = 0;
+        int totalReached = 0;
+        int totalCarved = 0;
+        int wideBandFloors = 0;
+        int unrouted = 0;
+        int unwalkable = 0;
+        long connectorBlocks = 0;
+        int longestConnector = 0;
+        int worstX = 0;
+        int worstZ = 0;
+        boolean haveWorst = false;
+
+        for (int gx = 0; gx < ARRIVAL_SAMPLE_GRID; gx++) {
+            for (int gz = 0; gz < ARRIVAL_SAMPLE_GRID; gz++) {
+                int x = anchorX + (gx - half) * ARRIVAL_SAMPLE_STRIDE;
+                int z = anchorZ + (gz - half) * ARRIVAL_SAMPLE_STRIDE;
+                double field = noise.colonyField(x, z);
+                int band = field >= 0.999 ? 0 : field > 0.0 ? 1 : 2;
+
+                ArrivalWalk walk = walkFromArrival(noise, x, z, false);
+                sampled[band]++;
+                totalSampled++;
+                if (walk.carved()) {
+                    carvedPockets[band]++;
+                    totalCarved++;
+                }
+                if (walk.wideBandFloor()) {
+                    wideBandFloors++;
+                }
+                if (!walk.routed()) {
+                    unrouted++;
+                }
+                if (walk.routed() && !walk.targetReached()) {
+                    unwalkable++;
+                }
+                connectorBlocks += walk.connectorBlocks();
+                longestConnector = Math.max(longestConnector, walk.connectorLength());
+                if (walk.joined()) {
+                    reached[band]++;
+                    totalReached++;
+                } else if (!haveWorst) {
+                    haveWorst = true;
+                    worstX = x;
+                    worstZ = z;
+                }
+            }
+        }
+
+        System.out.println("  band          sampled   pocket carved   reaches the network on foot");
+        String[] names = {"colony core", "colony ring", "wilds"};
+        for (int band = 0; band < 3; band++) {
+            System.out.printf(Locale.ROOT, "  %-12s  %7d   %13d   %6d (%5.1f%%)%n",
+                    names[band], sampled[band], carvedPockets[band], reached[band],
+                    sampled[band] == 0 ? 100.0 : 100.0 * reached[band] / sampled[band]);
+        }
+        System.out.printf(Locale.ROOT,
+                "  total: %d columns, %d carved a pocket, %d reach a worm tunnel or ramp on foot (%.1f%%)%n",
+                totalSampled, totalCarved, totalReached, 100.0 * totalReached / totalSampled);
+        System.out.printf(Locale.ROOT,
+                "  natural floor somewhere in the top tier: %d of %d columns"
+                        + " -- the %d-block scan band finds one in %d%n",
+                wideBandFloors, totalSampled, ColonyGeneratorTunables.ENTRY_MAX_DROP_BELOW_CAP,
+                totalSampled - totalCarved);
+        System.out.printf(Locale.ROOT,
+                "  connector: %d blocks carved over %d columns (mean %.1f), longest run %d blocks"
+                        + " (search reach %d)%n",
+                connectorBlocks, totalSampled, (double) connectorBlocks / totalSampled, longestConnector,
+                ColonyGeneratorTunables.ARRIVAL_CONNECTOR_MAX_REACH);
+        System.out.printf(Locale.ROOT,
+                "  routes: %d found no network block within reach, %d carved one the walk could not follow%n",
+                unrouted, unwalkable);
+        if (haveWorst) {
+            System.out.printf(Locale.ROOT, "  first stranded arrival column: (%d, %d)%n", worstX, worstZ);
+            walkFromArrival(noise, worstX, worstZ, true);
+        }
+        System.out.println(totalReached == totalSampled
+                ? "  PASS: every sampled arrival column joins the tunnel/ramp network on foot."
+                : "  FAIL: " + (totalSampled - totalReached) + " of " + totalSampled
+                        + " sampled arrival column(s) are sealed in -- that is the round-3 softlock.");
+    }
+
+    /**
+     * What {@link #walkFromArrival} found out about one sampled arrival column.
+     *
+     * @param wideBandFloor whether the column has a natural floor anywhere in the top tier,
+     *                      as opposed to inside the {@link
+     *                      ColonyGeneratorTunables#ENTRY_MAX_DROP_BELOW_CAP}-block band the
+     *                      scan actually uses. The gap between the two is the round-2
+     *                      geometry change that exposed this bug, measured rather than
+     *                      argued: pulling the band up against the cap is what turned most
+     *                      arrivals from "stand on a tunnel floor" into "hollow a box".
+     */
+    private record ArrivalWalk(boolean carved, boolean wideBandFloor, boolean joined,
+            int connectorLength, int connectorBlocks, boolean routed, boolean targetReached) {
+    }
+
+    /**
+     * Places the arrival pocket at ({@code x}, {@code z}) exactly as {@link
+     * com.nogal.formicary.portal.AnthillPortal} would, carves the connector the same way
+     * the portal does, and walks out of it.
+     *
+     * <p>The pocket placement is re-derived here rather than called, because the portal's
+     * copy reads a {@code ServerLevel} and this tool must not load one (see the class
+     * javadoc and the "Not bootstrapped" rule in {@code docs/gotchas/worldgen.md}). The two
+     * agree on a freshly generated chunk by construction: {@link ColonyNoise#isAir} is the
+     * only thing that decides solidity there, and every decoration the generator adds on
+     * top of it either replaces one solid block with another or stands in air that was
+     * already air.
+     */
+    private static ArrivalWalk walkFromArrival(ColonyNoise noise, int x, int z, boolean trace) {
+        ChunkCols cols = new ChunkCols();
+        int natural = naturalArrivalFloor(noise, cols, x, z,
+                ColonyGeneratorTunables.ENTRY_SCAN_BOTTOM, ColonyGeneratorTunables.ENTRY_SCAN_TOP);
+        boolean carved = natural == Integer.MIN_VALUE;
+        int floorY = carved ? carveArrivalFloor(noise, cols, x, z) : natural;
+        boolean wideBandFloor = !carved || naturalArrivalFloor(noise, cols, x, z,
+                tierMinY(TIER_COUNT - 1) + 1, ColonyGeneratorTunables.ENTRY_SCAN_TOP) != Integer.MIN_VALUE;
+
+        // The connector first, because how far it reaches is what the walk box has to hold.
+        // Sizing the box to the route rather than to ARRIVAL_CONNECTOR_MAX_REACH keeps the
+        // common case -- a pocket that opens onto a tunnel a few blocks away -- cheap.
+        ColonyNoise.ArrivalConnector connector = noise.arrivalConnector(x, floorY, z);
+        int reach = 0;
+        for (int[] point : connector.route()) {
+            reach = Math.max(reach, Math.max(Math.abs(point[0] - x), Math.abs(point[2] - z)));
+        }
+        int radius = Math.max(ARRIVAL_WALK_RADIUS, reach + 4);
+        int span = radius * 2 + 1;
+        int bottom = Math.max(FLOOR_TOP, floorY - ARRIVAL_WALK_DROP);
+        int height = CEILING_BOTTOM - bottom;
+        boolean[] air = new boolean[span * span * height];
+        boolean[] network = new boolean[air.length];
+        for (int ix = 0; ix < span; ix++) {
+            int bx = x + ix - radius;
+            for (int iz = 0; iz < span; iz++) {
+                int bz = z + iz - radius;
+                Col col = cols.col(noise, bx, bz);
+                for (int y = bottom; y < CEILING_BOTTOM; y++) {
+                    int i = (ix * height + (y - bottom)) * span + iz;
+                    air[i] = air(noise, col, bx, y, bz);
+                    if (!air[i]) {
+                        continue;
+                    }
+                    boolean outsidePocket = Math.abs(bx - x) > ColonyGeneratorTunables.ENTRY_CARVE_RADIUS
+                            || Math.abs(bz - z) > ColonyGeneratorTunables.ENTRY_CARVE_RADIUS;
+                    network[i] = outsidePocket
+                            && (noise.isTunnelCarved(bx, y, bz)
+                                    || (col.shafts().length > 0
+                                            && noise.shaftState(col.shafts(), bx, y, bz) == ColonyNoise.SHAFT_AIR));
+                }
+            }
+        }
+
+        // The portal's own runtime writes, in the order it makes them: the pocket (only
+        // when the scan found no natural floor), then the membrane chimney above it.
+        if (carved) {
+            for (int dx = -ColonyGeneratorTunables.ENTRY_CARVE_RADIUS;
+                    dx <= ColonyGeneratorTunables.ENTRY_CARVE_RADIUS; dx++) {
+                for (int dz = -ColonyGeneratorTunables.ENTRY_CARVE_RADIUS;
+                        dz <= ColonyGeneratorTunables.ENTRY_CARVE_RADIUS; dz++) {
+                    setLocal(air, span, height, bottom, radius, dx, floorY - 1, dz, false);
+                    for (int dy = 0; dy < ColonyGeneratorTunables.ENTRY_CARVE_HEIGHT; dy++) {
+                        setLocal(air, span, height, bottom, radius, dx, floorY + dy, dz, true);
+                    }
+                }
+            }
+        }
+        for (int y = floorY + 2; y < CEILING_BOTTOM; y++) {
+            setLocal(air, span, height, bottom, radius, 0, y, 0, true);
+        }
+
+        // ...and then the round-3 connector, from the same pure route the portal carves.
+        for (ColonyNoise.PocketBlock block : connector.air()) {
+            setLocal(air, span, height, bottom, radius, block.x() - x, block.y(), block.z() - z, true);
+        }
+        for (ColonyNoise.PocketBlock block : connector.floor()) {
+            setLocal(air, span, height, bottom, radius, block.x() - x, block.y(), block.z() - z, false);
+        }
+        int connectorLength = connector.length();
+        int connectorBlocks = connector.air().length + connector.floor().length;
+
+        boolean[] standable = new boolean[air.length];
+        for (int ix = 0; ix < span; ix++) {
+            for (int iz = 0; iz < span; iz++) {
+                for (int y = 1; y < height - 1; y++) {
+                    int i = (ix * height + y) * span + iz;
+                    standable[i] = air[i] && air[i + span] && !air[i - span];
+                }
+            }
+        }
+
+        boolean[] seen = new boolean[air.length];
+        Deque<Integer> queue = new ArrayDeque<>();
+        int start = (radius * height + (floorY - bottom)) * span + radius;
+        boolean joined = false;
+        if (standable[start]) {
+            seen[start] = true;
+            queue.add(start);
+        }
+        while (!queue.isEmpty()) {
+            int cur = queue.poll();
+            int iz = cur % span;
+            int y = (cur / span) % height;
+            int ix = cur / (span * height);
+            if (network[cur]) {
+                joined = true;
+            }
+            arrivalStep(queue, seen, standable, span, height, ix + 1, y, iz);
+            arrivalStep(queue, seen, standable, span, height, ix - 1, y, iz);
+            arrivalStep(queue, seen, standable, span, height, ix, y, iz + 1);
+            arrivalStep(queue, seen, standable, span, height, ix, y, iz - 1);
+        }
+        int targetIndex = ((connector.targetX() - x + radius) * height + (connector.targetY() - bottom)) * span
+                + (connector.targetZ() - z + radius);
+        boolean targetReached = targetIndex >= 0 && targetIndex < seen.length && seen[targetIndex];
+        if (trace) {
+            System.out.printf(Locale.ROOT,
+                    "  trace (%d, %d): pocket floor y=%d (%s), target (%d, %d, %d), run %d%n",
+                    x, z, floorY, carved ? "carved" : "natural", connector.targetX(), connector.targetY(),
+                    connector.targetZ(), connector.length());
+            for (int i = 0; i <= connector.route().length; i++) {
+                int[] point = i == 0 ? new int[] {x, floorY, z} : connector.route()[i - 1];
+                int cx = point[0];
+                int cy = point[1];
+                int cz = point[2];
+                int ix = cx - x + radius;
+                int iz = cz - z + radius;
+                int iy = cy - bottom;
+                int i3 = (ix * height + iy) * span + iz;
+                StringBuilder levels = new StringBuilder();
+                for (int dy = -3; dy <= 3; dy++) {
+                    int probe = i3 + dy * span;
+                    if (iy + dy < 1 || iy + dy >= height - 1) {
+                        continue;
+                    }
+                    if (standable[probe]) {
+                        levels.append(' ').append(cy + dy).append(seen[probe] ? "*" : "");
+                    }
+                }
+                System.out.printf(Locale.ROOT,
+                        "    step %2d at (%d, %d, %d): floor %s  feet %s  head %s  standable levels%s%n",
+                        i, cx, cy, cz, air[i3 - span] ? "AIR" : "solid", air[i3] ? "air" : "SOLID",
+                        air[i3 + span] ? "air" : "SOLID",
+                        levels.length() == 0 ? " none" : levels.toString());
+            }
+        }
+        return new ArrivalWalk(carved, wideBandFloor, joined, connectorLength, connectorBlocks,
+                connector.joined(), targetReached);
+    }
+
+    /** {@link #throneStep}'s edge rule, over a walk box with its own Y band. */
+    private static void arrivalStep(Deque<Integer> queue, boolean[] seen, boolean[] standable, int span,
+            int height, int ix, int y, int iz) {
+        if (ix < 0 || iz < 0 || ix >= span) {
+            return;
+        }
+        for (int dy = -1; dy <= 1; dy++) {
+            int ny = y + dy;
+            if (ny < 1 || ny >= height - 1) {
+                continue;
+            }
+            int i = (ix * height + ny) * span + iz;
+            if (standable[i] && !seen[i]) {
+                seen[i] = true;
+                queue.add(i);
+            }
+        }
+    }
+
+    /** Writes one block into a walk box addressed by offsets from the pocket column. */
+    private static void setLocal(boolean[] air, int span, int height, int bottom, int radius,
+            int dx, int y, int dz, boolean value) {
+        int ix = dx + radius;
+        int iz = dz + radius;
+        int iy = y - bottom;
+        if (ix < 0 || iz < 0 || ix >= span || iy < 0 || iy >= height) {
+            return;
+        }
+        air[(ix * height + iy) * span + iz] = value;
+    }
+
+    /** {@code AnthillPortal#findFloorInBand} over the generator's own carve. */
+    private static int naturalArrivalFloor(ColonyNoise noise, ChunkCols cols, int x, int z,
+            int bandBottom, int bandTop) {
+        Col col = cols.col(noise, x, z);
+        for (int y = bandTop; y >= bandBottom; y--) {
+            if (air(noise, col, x, y, z) && air(noise, col, x, y + 1, z) && !air(noise, col, x, y - 1, z)) {
+                return y;
+            }
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    /** {@code AnthillPortal#chooseCarveFloor} over the generator's own carve. */
+    private static int carveArrivalFloor(ColonyNoise noise, ChunkCols cols, int x, int z) {
+        Col col = cols.col(noise, x, z);
+        int highest = ColonyGeneratorTunables.ENTRY_SCAN_TOP - ColonyGeneratorTunables.ENTRY_CARVE_HEIGHT + 1;
+        int start = Math.min(ColonyGeneratorTunables.ENTRY_CARVE_PREFERRED_Y, highest);
+        for (int y = start; y >= ColonyGeneratorTunables.ENTRY_SCAN_BOTTOM; y--) {
+            if (!air(noise, col, x, y - 1, z)) {
+                return y;
+            }
+        }
+        for (int y = start + 1; y <= highest; y++) {
+            if (!air(noise, col, x, y - 1, z)) {
+                return y;
+            }
+        }
+        return start;
+    }
+
+    /**
+     * A per-chunk cache of the five feature arrays {@link Col} needs.
+     *
+     * <p>{@link #col} resolves them per <em>column</em>, which is fine for a section that
+     * visits a column once; the arrival walk visits 2401 columns per sample across only 25
+     * chunks, and the arrays are a pure function of the chunk. Same answers, ~90x fewer
+     * seeded draws.
+     */
+    private static final class ChunkCols {
+        private record Near(ColonyNoise.Shaft[] shafts, ColonyNoise.Throne[] thrones,
+                ColonyNoise.Nursery[] nurseries, ColonyNoise.Garden[] gardens, ColonyNoise.Larder[] larders) {
+        }
+
+        private final Map<Long, Near> byChunk = new HashMap<>();
+
+        Col col(ColonyNoise noise, int x, int z) {
+            int chunkX = x - Math.floorMod(x, 16);
+            int chunkZ = z - Math.floorMod(z, 16);
+            Near near = this.byChunk.computeIfAbsent(((long) chunkX << 32) ^ (chunkZ & 0xFFFFFFFFL),
+                    key -> new Near(noise.shaftsNear(chunkX, chunkZ), noise.thronesNear(chunkX, chunkZ),
+                            noise.nurseriesNear(chunkX, chunkZ), noise.gardensNear(chunkX, chunkZ),
+                            noise.lardersNear(chunkX, chunkZ)));
+            return new Col(noise.colonyField(x, z),
+                    noise.shaftsForColumn(near.shafts(), x, z),
+                    noise.thronesForColumn(near.thrones(), x, z),
+                    noise.nurseriesForColumn(near.nurseries(), x, z),
+                    noise.gardensForColumn(near.gardens(), x, z),
+                    noise.lardersForColumn(near.larders(), x, z));
+        }
     }
 
     /** Cell rings swept by {@link #shafts}: 25x25 shaft cells around the anchor colony. */
