@@ -2002,3 +2002,86 @@ jittered 384-block grid, sparse wilds between them.
     conventional block tag is referenced by its literal `c:crops` location, added
     optionally (an absent tag must never break tag-file loading) alongside the two
     vanilla additions.
+
+## Play-test round 5 (2026-08-21)
+
+Logan's fifth play-test list, five items, with a screenshot: a loaded tamed worker wedged
+high on an overworld tree trunk under the leaf canopy. Recorded here in the plan's own
+item order.
+
+1. **Climb gate (commit `d9f9285`).** A tamed worker or soldier now raises its climbing
+   flag only when the active path's `getTarget()` -- not `getEndNode()` -- sits at least
+   two blocks above its own foot level. `getTarget()` is where the errand is actually
+   aimed; `getEndNode()` only reports how high the walkable route managed to get, which
+   answers "flat" for exactly the genuine ascent the gate has to permit. Wild ants are
+   unchanged (unconditional Spider-style climbing -- the colony's vertical interior is
+   their habitat, not an errand a player is waiting on). A side effect worth stating
+   outright: an already-wedged ant's flag now drops too, since it sits *above* its own
+   target once wedged, so it comes back down instead of staying pinned.
+2. **Delivery recall (commit `a8c8241`).** When `DepositToChestGoal` exhausts
+   `APPROACH_TIMEOUT_TICKS` on a loaded trip and the bound chest is still out of reach,
+   the worker now teleports to a safe stand beside the chest (the `FollowOwnerGoal`
+   safe-spot-search precedent) and deposits there. Delivery is therefore guaranteed no
+   matter what terrain did to the walk, same-dimension only (bound chests always are).
+   Cooldown semantics are unchanged from round 4 -- the recall only ever fires on an
+   already-timed-out trip, it does not add a new cooldown of its own.
+3. **Bloom-jump root cause (commit `d6af55e`) -- not a block property.** A three-arm
+   headless experiment proved `FungalBloomBlock` and `FUNGAL_CARPET` both path clean:
+   `PathType.WALKABLE`, zero airborne ticks walking straight through either. The actual
+   jumper was wild `WorkerAntEntity`'s `IdleAtFungusGoal`: `MoveToBlockGoal` is written
+   for blocks a mob stands *on* (it paths to `y+1` and targets `blockPos.above()`), so
+   aimed at a walk-*through* fungus it targets a block of air one cell too high, never
+   satisfies its own `acceptedDistance`, and `WallClimberNavigation`'s "no path -> push
+   the mob at the target with the move control" fallback plus `MoveControl`'s jump
+   condition (`wantedY` delta of 1.0 against a 0.6 step height, horizontal distance
+   squared 0.5 against its own 1.0 threshold) fires a real jump on the navigation's
+   40-tick repath cadence. The fix re-aims both halves of `MoveToBlockGoal` at
+   `blockPos` itself rather than `blockPos.above()`. The plan's suggested fallback --
+   "prefer a block-side path hint" -- was inapplicable: no block property was ever at
+   fault, so there was nothing on the block side to hint.
+4. **Seam upscale (commit `a263714`).** The round-3 patches were measured by block count,
+   not by the footprint (distinct XZ columns) Logan actually sees -- so a 3.5x block
+   budget only produced a 2.8x footprint (the extra budget was stacking vertically into
+   already-owned columns instead of spreading outward). Reaching a genuine 3.4x
+   footprint cost 4.5x the blocks (20-60 -> 90-270 per seam, radius 7 -> 13).
+   `NoiseProbe` gained a footprint metric alongside the existing block-count one, with
+   coverage bands set at roughly 3 sigma so a halving or doubling of either still trips
+   the gate.
+5. **Speckle density (commit `aba3d92`).** 48 cluster seeds per chunk per tier (about
+   0.85% of that band's fabric) -- a deliberate ~5x over the plan's own 6-10 sketch. The
+   plan's number would have put roughly 14 blocks per chunk on the ground, ~0.15%
+   coverage -- exactly the density the round-3 seams were told, twice, was too small.
+   0.85% lands at a tenth of the existing Hardened Soil accent, which reads as
+   "frequent" without competing with it. Packed Soil speckles into the tier-2 (Amber
+   Earth) fabric, Amber Earth speckles into tier-1 (Deep Loam) fabric, Royal Depths
+   stays clean. Both draw from one shared chunk-keyed RNG stream with the first draw
+   burned, per the banked y-key first-draw-correlation rule.
+6. **Tillable colony soils + the spore's light-free growth (this work package).**
+   - **Tilling**: a hoe right-click now turns Packed Soil, Amber Earth and Deep Loam
+     into vanilla `minecraft:farmland`, via `BlockEvent.BlockToolModificationEvent`
+     (`TillingEvents`, on the game bus, following `PortalEvents`' `@EventBusSubscriber`
+     pattern) delegating to a pure static seam (`SoilTilling.tilledState`) that mirrors
+     vanilla's live `HOE_TILL` check exactly: convert only when the space above is air.
+     Hardened Soil is deliberately excluded -- it is the dimension's stone-equivalent,
+     not its dirt -- and so are the brick/tile/resin building-block families (a build a
+     player made, not colony fabric). **Accepted as-is**: vanilla farmland reverts to
+     plain dirt when trampled (or through its own moisture/light upkeep), which puts a
+     vanilla dirt block into the colony's fabric -- not fought, since dirt has been a
+     worldgen material down there since round 2 already.
+   - **Fungal Spore in the dark**: `FungalSporeCropBlock` drops `CropBlock`'s light gate
+     from both `canSurvive` (which normally requires `hasSufficientLight`) and the
+     random-tick growth roll (which normally requires `getRawBrightness(pos, 0) >= 9`
+     before ever attempting a growth tick) -- reimplemented rather than overridden,
+     since this class's `super` can only reach `CropBlock`'s own light-gated copies, not
+     `BushBlock`'s ungated one underneath. Applies everywhere, overworld included --
+     it's a cave fungus, one rule, thematically the right one, not a colony-only carve
+     out.
+   - **No code needed for vanilla crops**: farmland plus a Fungal Bloom's light-10 glow
+     already clears wheat's own `>= 8` survival requirement, so ordinary wheat (and any
+     other vanilla farmland crop) already grows in the colony once a Fungal Bloom is
+     nearby -- ambient interaction between round 5's tilling and the mod's own
+     pre-existing light source, not a feature that needed writing.
+7. **WP-beta's gravel/sand note.** Larger seams (item 4 above) mean more gravity blocks
+   sit adjacent to carved-out air than before. Left as vanilla cave-gravel behaviour --
+   placed with `update=false`, so it does not fall on its own the instant it generates --
+   and accepted as-is rather than patched around.
