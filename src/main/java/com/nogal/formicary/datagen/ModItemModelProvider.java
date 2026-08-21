@@ -80,6 +80,10 @@ public class ModItemModelProvider extends ItemModelProvider {
         withExistingParent("larva_spawn_egg", "item/template_spawn_egg");
         // Play-test round 1, spec item 5.
         withExistingParent("queen_ant_spawn_egg", "item/template_spawn_egg");
+        // Round-4 play-test revision, item 5: reverses ENDER_ANT's own "deliberately no
+        // spawn egg" call -- see ModEntities.ENDER_ANT_SPAWN_EGG. Same template, no
+        // texture of our own, same as the four eggs above.
+        withExistingParent("ender_ant_spawn_egg", "item/template_spawn_egg");
 
         // Ep2 task H3: decorative families. Base blocks, stairs and slabs all parent
         // the block model at their own name (blockItem() -- the stairs/slab "bottom"

@@ -72,6 +72,9 @@ public class ModCreativeModeTabs {
                         output.accept(ModEntities.SOLDIER_ANT_SPAWN_EGG.get());
                         output.accept(ModEntities.LARVA_SPAWN_EGG.get());
                         output.accept(ModEntities.QUEEN_ANT_SPAWN_EGG.get());
+                        // Round-4 play-test revision, item 5: end of the tab, alongside the
+                        // other three castes' eggs above.
+                        output.accept(ModEntities.ENDER_ANT_SPAWN_EGG.get());
                     })
                     .build());
 

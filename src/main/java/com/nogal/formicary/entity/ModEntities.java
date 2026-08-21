@@ -113,10 +113,10 @@ public class ModEntities {
      * spec) -- the same "keep the hitbox tracking the art" rule {@link #SOLDIER_ANT}'s size
      * follows.
      *
-     * <p>Deliberately <b>no spawn egg</b>. The three castes above have one because they are
-     * the colony's furniture and a creative build wants to place them; an ender ant is an
-     * encounter, and where it may appear is the whole point of its {@code SpawnPlacements}
-     * predicate below.
+     * <p>Round-4 play-test revision (item 5) reverses this class's original "deliberately
+     * no spawn egg" call -- Logan asked for one directly, the same kind of explicit
+     * reversal {@link #QUEEN_ANT_SPAWN_EGG}'s own javadoc already records for the queen's
+     * M7-era "no egg" call. See {@link #ENDER_ANT_SPAWN_EGG}.
      */
     public static final DeferredHolder<EntityType<?>, EntityType<EnderAntEntity>> ENDER_ANT =
             ENTITY_TYPES.register("ender_ant",
@@ -172,6 +172,23 @@ public class ModEntities {
     public static final DeferredItem<DeferredSpawnEggItem> QUEEN_ANT_SPAWN_EGG =
             ModItems.ITEMS.registerItem("queen_ant_spawn_egg",
                     props -> new DeferredSpawnEggItem(QUEEN_ANT, 0x461C30, 0xF4CA68, props));
+
+    // --- Round-4 play-test revision, item 5: the Ender Ant spawn egg. Registered with the
+    // identical DeferredItem<DeferredSpawnEggItem> + DeferredSpawnEggItem(type, background,
+    // highlight, props) shape the four eggs above already use -- DeferredSpawnEggItem
+    // handles the dispenser behaviour and the item-colour tint handler itself (see the
+    // decompiled net.neoforged.neoforge.common.DeferredSpawnEggItem in reference/: its own
+    // CommonHandler registers the dispense behaviour and its ColorRegisterHandler registers
+    // the colour handler for every instance in MOD_EGGS), so no per-item extra is needed
+    // here. ---
+
+    /**
+     * Dark teal-black shell, ender-purple speckle highlight -- this caste's own palette,
+     * distinct from every other egg's colour pair.
+     */
+    public static final DeferredItem<DeferredSpawnEggItem> ENDER_ANT_SPAWN_EGG =
+            ModItems.ITEMS.registerItem("ender_ant_spawn_egg",
+                    props -> new DeferredSpawnEggItem(ENDER_ANT, 0x1A2E2A, 0xB08FD8, props));
 
     @EventBusSubscriber(modid = Formicary.MODID, bus = EventBusSubscriber.Bus.MOD)
     public static class ModBusEvents {

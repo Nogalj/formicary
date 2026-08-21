@@ -109,8 +109,10 @@ public class ModLanguageProvider extends LanguageProvider {
         // Play-test round 1, spec item 5: reverses the M7-era "no spawn egg" call.
         addItem(ModEntities.QUEEN_ANT_SPAWN_EGG, "Queen Ant Spawn Egg");
 
-        // Ep2, spec section 5. No spawn egg on purpose -- see ModEntities.ENDER_ANT.
         addEntityType(ModEntities.ENDER_ANT, "Ender Ant");
+        // Round-4 play-test revision, item 5: reverses the Ep2-era "no spawn egg on
+        // purpose" call -- see ModEntities.ENDER_ANT_SPAWN_EGG.
+        addItem(ModEntities.ENDER_ANT_SPAWN_EGG, "Ender Ant Spawn Egg");
 
         // Ep2, task F2. A projectile has a name because a death message can quote one.
         addEntityType(ModEntities.ACID_SPIT, "Acid Spit");
