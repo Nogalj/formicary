@@ -1,11 +1,11 @@
 {
   "parent": "minecraft:recipes/root",
   "criteria": {
-    "has_chitin": {
+    "has_queens_crest": {
       "conditions": {
         "items": [
           {
-            "items": "formicary:chitin"
+            "items": "formicary:queens_crest"
           }
         ]
       },
@@ -21,7 +21,7 @@
   "requirements": [
     [
       "has_the_recipe",
-      "has_chitin"
+      "has_queens_crest"
     ]
   ],
   "rewards": {

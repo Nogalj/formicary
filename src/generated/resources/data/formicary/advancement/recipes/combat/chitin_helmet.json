@@ -1,11 +1,11 @@
 {
   "parent": "minecraft:recipes/root",
   "criteria": {
-    "has_chitin": {
+    "has_chitin_plate": {
       "conditions": {
         "items": [
           {
-            "items": "formicary:chitin"
+            "items": "formicary:chitin_plate"
           }
         ]
       },
@@ -21,7 +21,7 @@
   "requirements": [
     [
       "has_the_recipe",
-      "has_chitin"
+      "has_chitin_plate"
     ]
   ],
   "rewards": {

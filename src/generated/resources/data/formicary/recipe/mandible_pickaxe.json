@@ -2,15 +2,18 @@
   "type": "minecraft:crafting_shaped",
   "category": "equipment",
   "key": {
+    "C": {
+      "item": "formicary:queens_crest"
+    },
     "X": {
-      "item": "formicary:chitin"
+      "item": "formicary:chitin_plate"
     },
     "Y": {
       "item": "minecraft:stick"
     }
   },
   "pattern": [
-    "XXX",
+    "XCX",
     " Y ",
     " Y "
   ],
