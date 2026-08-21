@@ -1424,9 +1424,28 @@ public final class ColonyGeneratorTunables {
     // per tier rather than global, so the material is a fact about where you are: sand in
     // the Fungal Gardens up top, gravel in the Nurseries and the Royal Depths, dirt in all
     // three.
+    //
+    // ROUND 5 SCALED THE AREA AGAIN, and only the area. "Much larger patches of sand, dirt
+    // and gravel" is the SECOND time the same ask has come back, so this pass multiplies the
+    // one quantity the ask is about -- the FOOTPRINT, the distinct XZ columns a seam covers
+    // -- by ~3.4x and leaves the shape, the palette, the flatness and the per-chunk count
+    // exactly where round 3 put them.
+    //
+    // Area is measured, not inferred, and that mattered: NoiseProbe now reports the
+    // footprint directly, and a first attempt that took the block count to a clean 3.5x
+    // (70-210) delivered only 2.8x the footprint, because a longer walk in the same 2-3
+    // layers spends part of the extra budget stacking a second block in a column it already
+    // owns rather than claiming a new one. Blocks per column ran 1.30 at round 3 and 1.68
+    // here. Getting 3.4x of the thing the ask is about therefore costs 4.5x the block count
+    // -- measured mean 181 blocks / 14.8 wide / 2.5 layers / 108 columns, against round 3's
+    // 40.3 / 8.3 / 2.2 / 31.1, on all three standard seeds.
     // ------------------------------------------------------------------
 
-    /** Patches rolled per chunk, inclusive range. */
+    /**
+     * Patches rolled per chunk, inclusive range. Unchanged by round 5 on purpose: the ask
+     * was for bigger seams, not for more of them, and round 3's whole finding was that
+     * "fewer and bigger" is what turns a lump into something worth digging at.
+     */
     public static final int SOIL_PATCHES_MIN_PER_CHUNK = 1;
     public static final int SOIL_PATCHES_MAX_PER_CHUNK = 2;
 
@@ -1434,26 +1453,42 @@ public final class ColonyGeneratorTunables {
      * Blocks a patch's random walk targets, inclusive range. A patch may end smaller than
      * this if the walk runs out of eligible fabric before reaching it -- the same way a
      * vanilla ore vein terminates early against a cave wall, rather than a guarantee.
+     *
+     * <p>Round 5: 20-60 -&gt; 90-270, 4.5x, which buys <b>3.4x the footprint</b> -- the
+     * quantity the play-test ask is actually about. The two factors differ because the extra
+     * budget is spent partly on stacking inside columns the walk already owns; see the block
+     * comment above, and {@link NoiseProbe}'s footprint line, which is what settled the
+     * number rather than the arithmetic.
      */
-    public static final int SOIL_PATCH_MIN_SIZE = 20;
-    public static final int SOIL_PATCH_MAX_SIZE = 60;
+    public static final int SOIL_PATCH_MIN_SIZE = 90;
+    public static final int SOIL_PATCH_MAX_SIZE = 270;
 
     /**
      * Layers of Y a patch may occupy, inclusive range. Two or three is what makes it read as
-     * a seam rather than as a lump: 20-60 blocks spread over two layers is 10-30 per layer,
-     * which is a broad ragged sheet, where the same count in a ball would be four blocks
-     * across in every direction.
+     * a seam rather than as a lump: 90-270 blocks spread over two layers is 45-135 per layer,
+     * which is a broad ragged sheet, where the same count in a ball would be seven blocks
+     * across in every direction. Unchanged by round 5 -- growing the layer count instead of
+     * the footprint would have spent the whole increase on making the seam thicker, which is
+     * the one direction round 3 deliberately took it away from.
      */
     public static final int SOIL_PATCH_MIN_LAYERS = 2;
     public static final int SOIL_PATCH_MAX_LAYERS = 3;
 
     /**
      * How far from its seed column a patch may wander on each horizontal axis, so the widest
-     * a patch can be is {@code 2 * this + 1} = 15 blocks. Round 3 asked for 6-14 wide; the
-     * cap is the outer bound, and the size and layer counts above are what actually set the
-     * typical spread.
+     * a patch can be is {@code 2 * this + 1} = 27 blocks. Round 5 took it 7 -&gt; 13 so the
+     * cap keeps the same headroom over the typical width it had in round 3 (15 against a
+     * measured mean of 8.3, widest 13) rather than becoming the thing that shapes the patch:
+     * measured mean width is now 14.8 and the widest seam over 2,400 sampled patches is 23,
+     * still four short of the cap.
+     *
+     * <p><b>13 is also what keeps {@link ColonyNoise#soilPatchesNear}'s 3x3 chunk ring
+     * provable.</b> A chunk two out starts 32 blocks away, so its nearest possible seed
+     * column reaches this chunk only once {@code this >= 17}; any value up to 16 leaves the
+     * ring exactly sufficient, and 13 keeps three blocks of margin on that bound. A future
+     * pass that wants a wider seam has to widen the ring in the same commit.
      */
-    public static final int SOIL_PATCH_MAX_RADIUS = 7;
+    public static final int SOIL_PATCH_MAX_RADIUS = 13;
 
     /**
      * How much more often the walk steps sideways than up or down. Six to one, which is what

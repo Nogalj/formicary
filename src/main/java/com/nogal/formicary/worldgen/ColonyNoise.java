@@ -128,9 +128,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.Set;
 
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
@@ -2534,8 +2536,9 @@ public final class ColonyNoise {
     }
 
     // ------------------------------------------------------------------
-    // Soil patches (play-test round 2 item 8, re-specced in round 3) -- vanilla dirt,
-    // gravel and sand through ordinary fabric. A pure function of chunk position, like
+    // Soil patches (play-test round 2 item 8, re-specced in round 3, scaled again in round
+    // 5) -- vanilla dirt, gravel and sand through ordinary fabric. A pure function of chunk
+    // position, like
     // everything else in this class: the block WRITES only happen in ColonyChunkGenerator
     // (only it can touch a ChunkAccess), but which positions a patch claims and what
     // material fills it are decided here, which is what lets NoiseProbe measure them
@@ -2633,13 +2636,14 @@ public final class ColonyNoise {
      * including the ones seeded by its eight neighbours.
      *
      * <p>The 3x3 neighbourhood is what lets a patch cross a chunk boundary, which round 3's
-     * much larger patches need: a seam up to 15 blocks across confined to the chunk that
+     * much larger patches need: a seam up to 27 blocks across confined to the chunk that
      * seeded it would be a seam with straight edges every 16 blocks. A patch wanders at most
-     * {@link ColonyGeneratorTunables#SOIL_PATCH_MAX_RADIUS} = 7 from its seed column, so a
-     * chunk one further out cannot reach this one and the ring is provably enough. Each
-     * chunk writes only the blocks that land inside itself, and both chunks derive the same
-     * patch because it is a pure function of the seed chunk -- the same discipline every
-     * other cross-chunk feature in this class uses.
+     * {@link ColonyGeneratorTunables#SOIL_PATCH_MAX_RADIUS} = 13 from its seed column, and a
+     * chunk two out starts 32 blocks away so its nearest seed column would need a radius of
+     * 17 to reach here -- the ring is provably enough for any radius up to 16. Each chunk
+     * writes only the blocks that land inside itself, and both chunks derive the same patch
+     * because it is a pure function of the seed chunk -- the same discipline every other
+     * cross-chunk feature in this class uses.
      */
     public SoilPatch[] soilPatchesNear(int minX, int minZ) {
         ColumnCache cache = new ColumnCache();
@@ -2706,7 +2710,9 @@ public final class ColonyNoise {
             }
 
             List<int[]> claimed = new ArrayList<>(targetSize);
+            Set<Long> claimedKeys = new HashSet<>();
             claimed.add(new int[] {seedX, seedY, seedZ});
+            claimedKeys.add(positionKey(seedX, seedY, seedZ));
             int attempts = 0;
             int maxAttempts = targetSize * 8;
             while (claimed.size() < targetSize && attempts < maxAttempts) {
@@ -2718,19 +2724,14 @@ public final class ColonyNoise {
                 int nz = from[2] + offset[2];
                 if (Math.abs(nx - seedX) > SOIL_PATCH_MAX_RADIUS || Math.abs(nz - seedZ) > SOIL_PATCH_MAX_RADIUS
                         || ny < baseY || ny >= baseY + layers
-                        || containsPosition(claimed, nx, ny, nz)
+                        || !claimedKeys.add(positionKey(nx, ny, nz))
                         || !isPatchEligible(cache, nx, ny, nz)) {
                     continue;
                 }
                 claimed.add(new int[] {nx, ny, nz});
             }
 
-            PocketBlock[] blocks = new PocketBlock[claimed.size()];
-            for (int b = 0; b < claimed.size(); b++) {
-                int[] pos = claimed.get(b);
-                blocks[b] = new PocketBlock(pos[0], pos[1], pos[2]);
-            }
-            patches.add(new SoilPatch(blocks, material, tier));
+            patches.add(new SoilPatch(toBlocks(claimed), material, tier));
         }
         return patches.toArray(new SoilPatch[0]);
     }
@@ -2747,12 +2748,28 @@ public final class ColonyNoise {
         return column.plainFabric(x, y, z) && !column.air(x, y, z);
     }
 
-    private static boolean containsPosition(List<int[]> positions, int x, int y, int z) {
-        for (int[] pos : positions) {
-            if (pos[0] == x && pos[1] == y && pos[2] == z) {
-                return true;
-            }
+    /**
+     * A walk's already-claimed set key. Exact rather than a hash: y is inside
+     * {@code [0, HEIGHT)} so eight bits hold it, and 26 bits each cover x and z out to
+     * +-33,554,432, past the 30,000,000 world border. Nothing in a patch is more than
+     * {@link ColonyGeneratorTunables#SOIL_PATCH_MAX_RADIUS} blocks from its seed anyway, so
+     * two claimed positions cannot alias even in principle.
+     *
+     * <p>Replaced a linear scan of the claimed list when round 5 took a seam to 270 blocks
+     * and 2160 walk attempts -- that scan was quadratic in the target size, and the target
+     * size had just gone up 4.5x. Consumes no randomness and rejects exactly the same
+     * positions, so the terrain is bit-identical to what the scan produced.
+     */
+    private static long positionKey(int x, int y, int z) {
+        return (((long) x & 0x3FFFFFFL) << 34) | (((long) z & 0x3FFFFFFL) << 8) | (y & 0xFFL);
+    }
+
+    private static PocketBlock[] toBlocks(List<int[]> claimed) {
+        PocketBlock[] blocks = new PocketBlock[claimed.size()];
+        for (int b = 0; b < claimed.size(); b++) {
+            int[] pos = claimed.get(b);
+            blocks[b] = new PocketBlock(pos[0], pos[1], pos[2]);
         }
-        return false;
+        return blocks;
     }
 }

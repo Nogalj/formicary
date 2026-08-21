@@ -15,9 +15,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.levelgen.XoroshiroRandomSource;
@@ -2894,9 +2896,9 @@ public final class NoiseProbe {
     }
 
     /**
-     * Soil patches (play-test round 2 item 8, re-specced in round 3): are they there, are
-     * they the broad flat seams the re-spec asked for, is the palette right for the tier, and
-     * does every claimed block stay out of a chamber's own interior?
+     * Soil patches (play-test round 2 item 8, re-specced in round 3, scaled again in round
+     * 5): are they there, are they the broad flat seams the re-spec asked for, is the palette
+     * right for the tier, and does every claimed block stay out of a chamber's own interior?
      *
      * <p>Sampled over a plain grid of chunks around the origin rather than anchored on a
      * colony the way {@link #nurseries}/{@link #gardens}/{@link #larders}/{@link
@@ -2935,6 +2937,13 @@ public final class NoiseProbe {
         long widthSum = 0;
         long layerSum = 0;
         int widestPatch = 0;
+        // Distinct XZ columns a patch claims. Round 5's ask was about AREA, and the block
+        // count is not it: a walk that spends part of its budget on a third layer grows the
+        // count without growing the footprint. This is the number the ask is measured in,
+        // and measuring it is what moved round 5's size from 70-210 (2.8x the round-3
+        // footprint, short of the 3-4x asked for) to 90-270 (3.4x).
+        long footprintSum = 0;
+        int largestFootprint = 0;
 
         for (int cx = -chunkRadius; cx <= chunkRadius; cx++) {
             for (int cz = -chunkRadius; cz <= chunkRadius; cz++) {
@@ -2967,7 +2976,9 @@ public final class NoiseProbe {
                     int maxBlockZ = Integer.MIN_VALUE;
                     int minBlockY = Integer.MAX_VALUE;
                     int maxBlockY = Integer.MIN_VALUE;
+                    Set<Long> columns = new HashSet<>();
                     for (ColonyNoise.PocketBlock block : patch.blocks()) {
+                        columns.add(((long) block.x() << 32) ^ (block.z() & 0xFFFFFFFFL));
                         blocksFound++;
                         blocksByTier[patch.tier()]++;
                         minBlockX = Math.min(minBlockX, block.x());
@@ -2991,6 +3002,8 @@ public final class NoiseProbe {
                     widthSum += width;
                     layerSum += maxBlockY - minBlockY + 1;
                     widestPatch = Math.max(widestPatch, width);
+                    footprintSum += columns.size();
+                    largestFootprint = Math.max(largestFootprint, columns.size());
                 }
                 if (seededHere == 0) {
                     emptyChunks++;
@@ -3005,6 +3018,8 @@ public final class NoiseProbe {
                 patchesFound == 0 ? 0.0 : (double) blocksFound / patchesFound,
                 patchesFound == 0 ? 0.0 : (double) widthSum / patchesFound,
                 patchesFound == 0 ? 0.0 : (double) layerSum / patchesFound, widestPatch);
+        System.out.printf(Locale.ROOT, "  footprint (distinct XZ columns): mean %.1f, largest %d%n",
+                patchesFound == 0 ? 0.0 : (double) footprintSum / patchesFound, largestFootprint);
         System.out.println("  tier              patches   blocks     dirt  gravel    sand");
         int barrenTiers = 0;
         for (int tier = TIER_COUNT - 1; tier >= 0; tier--) {
