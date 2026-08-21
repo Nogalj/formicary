@@ -157,6 +157,34 @@ public class LootXpGameTests {
         });
     }
 
+    // ------------------------------------------------------------- anthill core --
+
+    /**
+     * Play-test round 4: the Anthill Core drops nothing on a normal break -- it is the
+     * portal anchor, and with no recipe and no creative-tab entry, the old self-drop was
+     * the only survival route to a core in hand (a portable colony portal, since {@code
+     * AnthillPortal#findCoreNear} matches the block wherever it sits). Broken with {@code
+     * level.destroyBlock(pos, true)} like the egg-cluster test above, for the same reason:
+     * the helper's shortcut hardcodes {@code dropBlock=false} and would skip the loot
+     * pipeline entirely, making a no-drop assertion pass for the wrong reason. The
+     * block-gone assertion pins the other half of the design: the core is still
+     * breakable (an anthill can be levelled), it just yields nothing.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void anthill_core_break_drops_nothing(GameTestHelper helper) {
+        BlockPos pos = new BlockPos(2, STAND_Y, 2);
+        helper.setBlock(pos, ModBlocks.ANTHILL_CORE.get());
+
+        helper.getLevel().destroyBlock(helper.absolutePos(pos), true);
+
+        helper.runAfterDelay(10, () -> {
+            helper.assertBlockNotPresent(ModBlocks.ANTHILL_CORE.get(), pos);
+            helper.assertEntityNotPresent(EntityType.ITEM);
+            helper.succeed();
+        });
+    }
+
     // ----------------------------------------------------------------- provision comb --
 
     /**

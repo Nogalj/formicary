@@ -108,7 +108,11 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
         // the end. Blocks.BEDROCK carries no loot-table datagen entry either, for the same
         // reason.
         dropSelf(ModBlocks.ANTHILL_SOIL.get());
-        dropSelf(ModBlocks.ANTHILL_CORE.get());
+        // No entry for ANTHILL_CORE (play-test round 4): it went noLootTable() -- see the
+        // block's javadoc for why it must never reach a player's inventory, and the
+        // DAYLIGHT_MEMBRANE comment above for why a noLootTable() block cannot carry a
+        // datagen entry here (dropSelf would register a builder under the shared EMPTY
+        // key and fail generate()'s completeness check).
         dropSelf(ModBlocks.QUEENS_CREST.get());
 
         dropWhenSilkTouch(ModBlocks.AMBER_GLASS.get());

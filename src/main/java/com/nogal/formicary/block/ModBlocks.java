@@ -203,13 +203,23 @@ public class ModBlocks {
                     .sound(SoundType.ROOTED_DIRT)
                     .strength(0.5F));
 
+    /**
+     * The portal anchor: {@code PortalEvents} sends a pearl-thrower into the colony when
+     * the pearl lands within {@code AnthillPortal.CORE_SEARCH_RADIUS} of one of these --
+     * of ANY of these, wherever it sits, since {@code findCoreNear} matches the block
+     * itself, not the generated structure. Play-test round 4: {@code noLootTable()},
+     * because the block has no recipe and no creative-tab entry, so the old self-drop was
+     * the one survival route to a core in hand -- i.e. to placing portable colony portals
+     * anywhere. Still breakable (an anthill can be levelled); it just yields nothing.
+     */
     public static final DeferredBlock<Block> ANTHILL_CORE = BLOCKS.registerSimpleBlock(
             "anthill_core",
             BlockBehaviour.Properties.of()
                     .mapColor(MapColor.TERRACOTTA_BLACK)
                     .sound(SoundType.STONE)
                     .strength(1.5F, 6.0F)
-                    .lightLevel(state -> 7));
+                    .lightLevel(state -> 7)
+                    .noLootTable());
 
     // --- Trophy ---
 
