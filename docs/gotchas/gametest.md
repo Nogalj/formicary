@@ -38,9 +38,17 @@ NORMAL difficulty (Monsters safe).
   `absolutePos` of a position you wrote. (`verified: 2026-08-13`)
 - **`@GameTest(skyAccess = ...)` defaults to FALSE, which roofs the arena in BARRIER
   blocks** (`GameTestInfo.prepareTestStructure` -> `StructureUtils.encaseStructure(bounds,
-  level, !skyAccess)`; the side walls are placed either way). Any assertion that depends on
-  sky light -- `CropBlock#canSurvive` calls `hasSufficientLight`, so planting a crop is one
-  -- fails silently under the default. (`verified: 2026-08-13`)
+  level, !skyAccess)`; the side walls are placed either way). **CORRECTED 2026-08-21: the
+  barrier roof does NOT block light** -- `BarrierBlock.propagatesSkylightDown` returns
+  `true` unconditionally and the block is `noOcclusion()` (read in the decompiled source),
+  and a probe measured light 15 under the default encasement. Two consequences: (a) a
+  light-dependent assert failing under the default roof is NOT explained by the roof --
+  the 2026-08-13 planting failure this entry originally recorded had some other,
+  unconfirmed cause, so diagnose it fresh if it recurs; (b) barriers cannot give a test
+  DARKNESS either -- a light-0 assert needs a hand-built solid opaque box around the cell
+  (stone on all faces; `PlantingGameTests.fungal_spore_crop_survives_and_grows_at_zero_light`
+  is the precedent, including the 4-tick light-engine settle before reading brightness).
+  (`verified: 2026-08-21`)
 - **Vanilla crop loot is not uniformly self-seeding.** Read out of
   `data/minecraft/loot_table/blocks/*.json` in the client-extra jar: `carrots` and `potatoes`
   have an unconditional first pool (always >=1, and that item is the seed), while `wheat`'s
