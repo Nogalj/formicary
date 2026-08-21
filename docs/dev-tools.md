@@ -174,6 +174,27 @@ Command output from a `command` field lands in the same file: `/formicary dev`'s
 sent with logging enabled, so with the default `logAdminCommands` gamerule the integrated
 server writes them there too.
 
+### The two-pass photography recipe (used for every Ep2 verification shoot)
+
+Worldgen changes only exist in fresh chunks, so a shoot starts by forcing regeneration:
+delete the scratch save's `dimensions/formicary` folder (overworld + player data survive;
+the whole ant dimension regenerates under the current generator on next load). If no
+scratch save exists, clone a real one — never shoot into a save Logan plays.
+
+Then two autopilot passes, because framing needs coordinates that only exist after
+generation:
+1. **Scout pass** — entries all at one XZ, each running a `formicary dev locate ...`
+   command (`seed`, `locate colony/throne/nursery/garden/larder` from a few offset
+   points to find chambers at different tiers). The screenshots are throwaway; the
+   PAYLOAD is `run/logs/latest.log`, where every locate reply lands.
+2. **Framed pass** — cameras placed from the scout's coordinates, INSIDE each chamber
+   (offset from the centre by less than the room radius; a camera outside the shell is
+   a frame of solid soil), yaw/pitch aimed at the centre, `waitTicks` 100+ for chunk
+   load and seeded mobs.
+
+Both passes: spectator first entry, `--quickPlaySingleplayer <save>` via the patched
+launch-script copy (recipe above). (`verified: 2026-08-20`, third shoot of the pattern)
+
 ## Scripting the dedicated server (headless probes)
 
 - **`gradlew runServer` does not forward piped stdin to the game JVM** -- the server is a
