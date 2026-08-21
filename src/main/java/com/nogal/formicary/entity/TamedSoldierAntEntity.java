@@ -137,12 +137,16 @@ public class TamedSoldierAntEntity extends TamableAnimal implements TamedAnt {
         builder.define(DATA_CLIMBING, false);
     }
 
-    /** @see AntClimbing */
+    /**
+     * Round 5, item 1: gated rather than bare {@code horizontalCollision}, exactly as on the
+     * tamed worker -- an escorting soldier that brushes a wall should not walk up it.
+     * @see AntClimbing#tamedClimbFlag
+     */
     @Override
     public void tick() {
         super.tick();
         if (!this.level().isClientSide) {
-            this.entityData.set(DATA_CLIMBING, this.horizontalCollision);
+            this.entityData.set(DATA_CLIMBING, AntClimbing.tamedClimbFlag(this));
         }
     }
 

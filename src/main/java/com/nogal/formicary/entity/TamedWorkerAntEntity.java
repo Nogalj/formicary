@@ -138,12 +138,16 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
         return AntClimbing.navigation(this, level);
     }
 
-    /** @see AntClimbing */
+    /**
+     * Round 5, item 1: gated rather than bare {@code horizontalCollision} -- a tamed worker
+     * climbs only when its errand is actually going up, so brushing a tree on a flat farm
+     * run no longer starts an ascent. @see AntClimbing#tamedClimbFlag
+     */
     @Override
     public void tick() {
         super.tick();
         if (!this.level().isClientSide) {
-            this.entityData.set(DATA_CLIMBING, this.horizontalCollision);
+            this.entityData.set(DATA_CLIMBING, AntClimbing.tamedClimbFlag(this));
         }
     }
 

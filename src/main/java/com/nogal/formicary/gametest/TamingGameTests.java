@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.nogal.formicary.Formicary;
+import com.nogal.formicary.entity.AntClimbing;
 import com.nogal.formicary.entity.CollectDroppedItemsGoal;
 import com.nogal.formicary.entity.CropHarvest;
 import com.nogal.formicary.entity.CropScanner;
@@ -42,6 +43,8 @@ import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.StemBlock;
 import net.minecraft.world.level.block.entity.HopperBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.pathfinder.Node;
+import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -136,6 +139,21 @@ public class TamingGameTests {
      * seven-block one).
      */
     private static final double IDLE_RADIUS_TOLERANCE = 1.0;
+
+    /**
+     * How long {@link #a_tamed_worker_on_a_flat_errand_never_climbs} watches a boxed worker
+     * shove at its wall. Generous on purpose: the pre-gate failure appears within a handful of
+     * ticks (the flag follows {@code horizontalCollision} with a one-tick lag), so the length
+     * buys confidence that nothing raises the flag later, not a chance for the bug to appear.
+     */
+    private static final int CLIMB_WATCH_TICKS = 120;
+
+    /**
+     * How far above its own floor a non-climbing ant is still allowed to be. Covers the
+     * step-up slack of anything it might legitimately stand on; a climb is 0.2 per tick and
+     * clears this within two ticks of starting.
+     */
+    private static final double CLIMB_SLACK = 0.2;
 
     // ------------------------------------------------------- the diet fork --
 
@@ -1323,7 +1341,156 @@ public class TamingGameTests {
         helper.succeed();
     }
 
+    // ------------------------------------------- round 5: climbing + recall --
+
+    /**
+     * <b>Play-test round 5, item 1, first half</b>: "ant gets stuck after climbing and is not
+     * able to deliver its harvest back at the chest" -- with a screenshot of a loaded worker
+     * pinned high on an overworld tree trunk under the leaf canopy.
+     *
+     * <p>The mechanism was never in doubt (it is banked in {@code docs/gotchas/gametest.md}
+     * and reproduced deliberately by
+     * {@link #a_bound_worker_gives_up_on_an_unreachable_crop_and_harvests_a_reachable_one}):
+     * a tamed ant raised its climbing flag off bare {@code horizontalCollision}, so brushing
+     * <em>anything</em> on a flat errand started an ascent. This test pins that down as an
+     * invariant rather than an anecdote: a worker sealed in a barrier box, with a bound chest
+     * four blocks away at its own floor level, shoves at the box every tick for the whole
+     * window -- the purest possible "walked into something while running a flat errand".
+     *
+     * <p>Two assertions, and both matter. {@code onClimbable()} is the flag itself, so it
+     * fails on the exact seam the gate changed; the Y high-water mark is the consequence a
+     * player actually sees, and it would still catch a climb arriving by some other route.
+     * Pre-gate this test fails within a handful of ticks (the flag goes true on the first
+     * tick the ant reaches the wall, and it then rises 0.2/tick); post-gate the ant stays on
+     * the floor for the whole window because its errand's path target is level with it.
+     *
+     * <p>The box is sealed <em>above</em> as well, which is not belt-and-braces: it means the
+     * assertion cannot be satisfied by the ant simply failing to reach a wall.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "farm_platform", timeoutTicks = CLIMB_WATCH_TICKS + 40)
+    public static void a_tamed_worker_on_a_flat_errand_never_climbs(GameTestHelper helper) {
+        BlockPos chest = new BlockPos(2, STAND_Y, 4);
+        BlockPos cell = new BlockPos(6, STAND_Y, 4);
+
+        helper.setBlock(chest, Blocks.CHEST);
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(), cell);
+        worker.tame(keeper);
+        worker.bindTo(helper.absolutePos(chest));
+        isolateFromForeignCrops(worker);
+        worker.getPack().addItem(new ItemStack(Items.BEETROOT));
+        sealInBox(helper, cell);
+
+        double[] highWater = { worker.getY() };
+        boolean[] everClimbed = { false };
+        helper.onEachTick(() -> {
+            highWater[0] = Math.max(highWater[0], worker.getY());
+            everClimbed[0] |= worker.onClimbable();
+        });
+        helper.runAtTickTime(CLIMB_WATCH_TICKS, () -> {
+            helper.assertFalse(everClimbed[0],
+                    "a tamed worker running a flat errand must never raise its climbing flag;"
+                            + " it did, and rose to " + String.format("%.3f", highWater[0])
+                            + " from a floor at " + helper.absolutePos(cell).getY());
+            helper.assertTrue(highWater[0] <= helper.absolutePos(cell).getY() + CLIMB_SLACK,
+                    "a tamed worker running a flat errand must stay on the floor; its high-water"
+                            + " mark was " + String.format("%.3f", highWater[0]) + " against a floor at "
+                            + helper.absolutePos(cell).getY());
+            helper.succeed();
+        });
+    }
+
+    /**
+     * The other side of the round-5 climb gate, asserted as arithmetic rather than as a walk:
+     * the flag follows the <em>errand</em>, so an ant whose path is aimed well overhead still
+     * climbs when it hits something.
+     *
+     * <p>The three inputs {@link AntClimbing#tamedClimbFlag} reads -- the collision, the
+     * presence of a path, and how high that path is aimed -- are set directly. A synthetic
+     * {@code Path} is a legitimate one: {@code PathNavigation.moveTo(Path, double)} is the
+     * same entry point the pathfinder's own answer goes through, and both {@code Path} and
+     * {@code Node} are public with public constructors (checked in {@code reference/}). Doing
+     * it this way keeps the test from depending on whether some particular arena geometry
+     * happens to make the pathfinder answer with an upward route, which is not what is under
+     * test and is exactly the kind of coupling that turns into a flake.
+     *
+     * <p>Four cases, which between them are the whole rule: collision with an upward errand
+     * (climb), collision with a flat one (do not), an upward errand without a collision (do
+     * not -- the flag is a collision flag first), and a collision with no errand at all, which
+     * is the {@code WallClimberNavigation} push-fallback case the tree wedge arrived through.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void the_climb_gate_follows_the_errand_not_the_wall(GameTestHelper helper) {
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(2, STAND_Y, 2));
+        worker.tame(keeper);
+        BlockPos foot = worker.blockPosition();
+
+        worker.horizontalCollision = true;
+        aimAt(worker, foot.above(AntClimbing.CLIMB_TRIGGER_HEIGHT + 1));
+        helper.assertTrue(AntClimbing.tamedClimbFlag(worker),
+                "an ant walking into something while its errand is aimed "
+                        + (AntClimbing.CLIMB_TRIGGER_HEIGHT + 1) + " blocks up should climb");
+
+        aimAt(worker, foot.east(4));
+        helper.assertFalse(AntClimbing.tamedClimbFlag(worker),
+                "an ant walking into something while its errand is level with it must not climb"
+                        + " -- this is the tree trunk on the way to the farm");
+
+        aimAt(worker, foot.above(AntClimbing.CLIMB_TRIGGER_HEIGHT + 1));
+        worker.horizontalCollision = false;
+        helper.assertFalse(AntClimbing.tamedClimbFlag(worker),
+                "an ant that has not walked into anything must not climb whatever it is aiming at");
+
+        worker.horizontalCollision = true;
+        worker.getNavigation().stop();
+        helper.assertFalse(AntClimbing.tamedClimbFlag(worker),
+                "an ant with no path at all must not climb -- that is the push fallback, which"
+                        + " shoves straight through the wall it is already pinned against");
+        helper.succeed();
+    }
+
     // ------------------------------------------------------------ helpers --
+
+    /**
+     * Puts {@code ant} on a two-node path aimed at {@code target}, without asking the
+     * pathfinder whether such a route exists. See
+     * {@link #the_climb_gate_follows_the_errand_not_the_wall} for why that is the point.
+     */
+    private static void aimAt(TamedWorkerAntEntity ant, BlockPos target) {
+        BlockPos foot = ant.blockPosition();
+        Path path = new Path(List.of(new Node(foot.getX(), foot.getY(), foot.getZ()),
+                new Node(target.getX(), target.getY(), target.getZ())), target, false);
+        ant.getNavigation().moveTo(path, 1.0);
+    }
+
+    /**
+     * Seals the single cell {@code cell} in barrier: all eight horizontal neighbours from
+     * {@link #STAND_Y} up through rel y 5, plus a lid directly over the cell itself.
+     *
+     * <p>Stronger than {@link #encaseInBarrier}, and for a different job. That one walls a
+     * crop off at radius 2 so a goal's own 2-block reach cannot cheat through it; this one
+     * boxes an <em>ant</em> so that no route out of the cell exists by any means -- walking,
+     * climbing, or stepping. A test whose subject is "the walk cannot succeed" has to make
+     * that true rather than merely likely.
+     */
+    private static void sealInBox(GameTestHelper helper, BlockPos cell) {
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
+                for (int y = STAND_Y; y <= STAND_Y + 3; y++) {
+                    helper.setBlock(new BlockPos(cell.getX() + dx, y, cell.getZ() + dz), Blocks.BARRIER);
+                }
+            }
+        }
+        helper.setBlock(cell.above(), Blocks.BARRIER);
+    }
 
     /**
      * Lifts {@code entity} {@link #ISOLATION_LIFT} blocks into open air above its arena.
