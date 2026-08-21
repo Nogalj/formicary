@@ -159,9 +159,13 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
         this.goalSelector.addGoal(0, new FloatGoal(this));
         // Deposit outranks harvest and pickup: whatever is in the pack has to be emptied
         // before more is cut or collected. Play-test round 2 -- the ordering alone was not
-        // enough, because this goal spends most of its life on its retry cooldown and
-        // nothing outranked the harvest during that window; the binding half of the rule
-        // lives in HarvestCropsGoal.canUse (an empty pack, not a not-full one).
+        // enough, because back then this goal sat out its retry cooldown after every single
+        // delivery and nothing outranked the harvest during that window; the binding half of
+        // the rule lives in HarvestCropsGoal.canUse (an empty pack, not a not-full one).
+        // Round 4 (item 8) then removed the window itself: the cooldown is failure backoff
+        // now, so a successful delivery arms nothing and the next trip starts at once. The
+        // round-2 rule is kept regardless -- it is what makes the shuttle one crop per trip,
+        // rather than merely what closed that particular window.
         this.goalSelector.addGoal(1, new DepositToChestGoal(this, 1.0));
         this.goalSelector.addGoal(2, new HarvestCropsGoal(this, 1.0));
         // Play-test round 1, spec item 2: ground pickup ranks below the crop harvest

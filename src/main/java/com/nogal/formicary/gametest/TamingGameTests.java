@@ -84,6 +84,27 @@ public class TamingGameTests {
      */
     private static final int ZERO_ROLL_ATTEMPTS = 64;
 
+    /**
+     * Play-test round 4, item 8: the wall-clock budget two complete one-crop shuttle trips have
+     * to fit inside, in ticks. See
+     * {@link #two_shuttle_trips_finish_without_standing_around} -- the number sits between what
+     * the shipped code measures and what the pre-fix per-trip retry cooldown (~200 ticks of
+     * standing still per delivery) forces.
+     *
+     * <p>Measured on this arena 2026-08-20: <b>59 ticks</b> with the fix, <b>276 without</b>
+     * it (the pre-fix run banks the first crop on schedule and then stands still for the
+     * cooldown before delivering the second). 150 is about 2.5x the former and 0.54x the
+     * latter, so neither side of the number is close.
+     */
+    private static final int TWO_TRIP_BUDGET_TICKS = 150;
+
+    /**
+     * How long that test is allowed to keep watching after its budget expires. Deliberately far
+     * longer than {@link #TWO_TRIP_BUDGET_TICKS}: a run that blows the budget should report
+     * <em>when</em> it did finish rather than time out silently.
+     */
+    private static final int TWO_TRIP_TIMEOUT_TICKS = 800;
+
     // ------------------------------------------------------- the diet fork --
 
     /**
@@ -659,6 +680,75 @@ public class TamingGameTests {
                             + worker.getPack().countItem(Items.BEETROOT) + " worker at rel "
                             + worker.blockPosition().subtract(helper.absolutePos(BlockPos.ZERO))
                             + " inBounds=" + helper.getBounds().contains(worker.position()));
+        });
+    }
+
+    /**
+     * <b>Play-test round 4, item 8</b>: "after they harvest a crop they stand around or wander
+     * for a while before dropping it off at the chest."
+     *
+     * <p>The cause was {@code DepositToChestGoal}'s {@code RETRY_COOLDOWN_TICKS}, armed on
+     * <em>every</em> trip end rather than only on a failed one -- 100 {@code canUse} calls,
+     * which is about 200 real ticks because {@code Mob.serverAiStep} polls a non-running goal
+     * every other tick. Every single-crop shuttle cycle therefore carried a ~10 s stand-around
+     * with a loaded pack, and the ant looked broken rather than slow.
+     *
+     * <p>So this is a <b>wall-clock</b> assertion, which is unusual here and deliberate: the
+     * defect is not a wrong state at any tick -- the worker does eventually deliver both crops
+     * either way -- it is only visible as elapsed time. Two ripe crops within a couple of blocks
+     * of the chest are two complete shuttle cycles; pre-fix the second cycle alone cannot start
+     * its delivery for ~200 ticks after the first one ends, so the pair cannot fit inside
+     * {@link #TWO_TRIP_BUDGET_TICKS} however fast the walking goes. Post-fix the cooldown is
+     * never armed at all (both deposits empty the pack), and the whole thing is travel time.
+     *
+     * <p>The banked tick is recorded and reported in the failure message rather than left to a
+     * bare timeout, for the reason {@code docs/gotchas/gametest.md} gives: a GameTest timeout is
+     * mute by itself, and "banked at tick 275, budget 180" separates "the fix regressed" from
+     * "the worker never got there at all" (reported as -1) on the first failing run.
+     *
+     * <p>Beetroot rather than carrot, and lit from a glowstone in the floor rather than by
+     * {@code skyAccess}, for the two reasons
+     * {@link #a_bound_worker_never_carries_two_crops_at_once} already spells out: beetroot's
+     * produce and seed are separate items so {@code countItem(BEETROOT)} is an exact count of
+     * crops delivered, and an open-topped arena lets a climbing ant walk out over the wall.
+     * Both crops sit ~2.2 blocks from this arena's own chest, which beats anything a
+     * neighbouring arena on the shared grid could offer the scanner (nearest possible foreign
+     * block is 8 blocks out; see {@link #isolateFromForeignCrops}'s javadoc for the geometry).
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "farm_platform", timeoutTicks = TWO_TRIP_TIMEOUT_TICKS)
+    public static void two_shuttle_trips_finish_without_standing_around(GameTestHelper helper) {
+        BlockPos chest = new BlockPos(2, STAND_Y, 4);
+        helper.setBlock(chest, Blocks.CHEST);
+        // Sunk into the floor between the two crops so the replant's light check passes
+        // without opening the arena roof.
+        helper.setBlock(new BlockPos(5, FLOOR_Y, 4), Blocks.GLOWSTONE);
+        // 4.47 blocks out from the chest, which is past HarvestCropsGoal's own 2-block reach
+        // in both directions: each trip is a real walk out and a real walk back, so the budget
+        // is measuring a shuttle rather than two goals firing on the spot.
+        plantRipeBeetroot(helper, new BlockPos(6, STAND_Y, 2));
+        plantRipeBeetroot(helper, new BlockPos(6, STAND_Y, 6));
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(3, STAND_Y, 4));
+        worker.tame(keeper);
+        BlockPos absoluteChest = helper.absolutePos(chest);
+        worker.bindTo(absoluteChest);
+
+        long[] bankedAt = {-1};
+        helper.succeedWhen(() -> {
+            Container container = HopperBlockEntity.getContainerAt(helper.getLevel(), absoluteChest);
+            helper.assertTrue(container != null, "the bound chest should still be a container");
+            if (bankedAt[0] < 0 && container.countItem(Items.BEETROOT) >= 2) {
+                bankedAt[0] = helper.getTick();
+            }
+            helper.assertTrue(bankedAt[0] >= 0 && bankedAt[0] <= TWO_TRIP_BUDGET_TICKS,
+                    "two one-crop shuttle trips must finish inside " + TWO_TRIP_BUDGET_TICKS
+                            + " ticks; both crops were banked at tick " + bankedAt[0]
+                            + " (-1 means never), chest holds "
+                            + container.countItem(Items.BEETROOT) + " and the pack holds "
+                            + worker.getPack().countItem(Items.BEETROOT));
         });
     }
 

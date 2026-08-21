@@ -104,12 +104,21 @@ public class HarvestCropsGoal extends Goal {
      * (empty this before cutting more, and outrank the harvest so the trip preempts it) and
      * left this goal gated on {@code isPackFull} -- nine slots' worth of slack. In play the
      * worker still swept the whole field, and the window it did it in was the deposit goal's
-     * own {@code RETRY_COOLDOWN_TICKS}: after every delivery {@code DepositToChestGoal} sits
+     * own {@code RETRY_COOLDOWN_TICKS}: after every delivery {@code DepositToChestGoal} sat
      * out 100 {@code canUse} calls, which is about 200 ticks, because {@code
      * Mob.serverAiStep} only runs {@code goalSelector.tick()} on alternating ticks. Nothing
      * outranked the harvest during that window, so it cut, and cut, and cut. Reproduced by
      * {@code a_bound_worker_never_carries_two_crops_at_once}, which caught the pack holding
      * three crops at once.
+     *
+     * <p><b>Round 4 (item 8) closed that window from the other end</b>, and the history above
+     * is kept rather than rewritten because it is what this gate exists for. The cooldown is
+     * now armed only when the pack is still non-empty after a trip -- failure backoff, as its
+     * name always claimed -- so there is no longer a routine 200-tick stretch in which nothing
+     * outranks the harvest. That does <em>not</em> make this gate redundant: the window can
+     * still open on a genuinely failed delivery (chest full, chest broken, approach timed
+     * out), and the one-crop-per-trip rule is a rule about what the worker carries, not about
+     * how long the deposit goal happens to be asleep.
      *
      * <p>Deliberately {@code isEmpty} rather than a relaxed "no produce" test: a load picked
      * up off the ground ({@link CollectDroppedItemsGoal}) is a load to deliver too, and the

@@ -37,7 +37,17 @@ public class DepositToChestGoal extends Goal {
     /** Ticks between path recalculations while walking to the chest. */
     private static final int REPATH_INTERVAL_TICKS = 10;
 
-    /** How long to wait before retrying after a failed trip (chest gone, chest full). */
+    /**
+     * How long to wait before retrying after a <b>failed</b> trip (chest gone, chest full,
+     * approach timed out), counted in {@code canUse} calls rather than ticks -- and
+     * {@code Mob.serverAiStep} only polls a non-running goal on alternating ticks, so 100 of
+     * these is about 200 real ticks.
+     *
+     * <p>Failure backoff only, and play-test round 4 (item 8) is what made that stop being a
+     * documentation detail: arming this on a <em>successful</em> delivery too parked the
+     * worker for ~10 s after every single crop, which read as "they stand around before
+     * dropping it off".
+     */
     private static final int RETRY_COOLDOWN_TICKS = 100;
 
     private final TamedWorkerAntEntity ant;
@@ -108,8 +118,13 @@ public class DepositToChestGoal extends Goal {
                 }
             }
             // Whatever is left over (full chest, chest gone) stays in the pack: back off
-            // and try again later rather than dumping it on the floor.
-            this.cooldown = RETRY_COOLDOWN_TICKS;
+            // and try again later rather than dumping it on the floor. Play-test round 4,
+            // item 8 -- the backoff is armed ONLY when something is actually left over.
+            // Arming it on every arrival, success included, is what made the worker stand
+            // around for ~10 s with an empty pack after each delivery: 100 canUse calls is
+            // about 200 real ticks, because Mob.serverAiStep polls a non-running goal on
+            // alternating ticks. An emptied pack is a finished trip, not a failed one.
+            this.cooldown = this.ant.getPack().isEmpty() ? 0 : RETRY_COOLDOWN_TICKS;
             this.approachTicks = APPROACH_TIMEOUT_TICKS;
             this.ant.getNavigation().stop();
             return;
@@ -121,10 +136,20 @@ public class DepositToChestGoal extends Goal {
         }
     }
 
+    /**
+     * The backstop for every way this goal can end that {@link #tick()}'s arrival branch does
+     * not cover -- the approach timing out, the chest being broken mid-trip, the ant being
+     * unbound. All of those leave the load undelivered, which is exactly when the retry
+     * cooldown is the right answer.
+     *
+     * <p>Play-test round 4, item 8: an <em>empty</em> pack arms nothing. A trip that ended
+     * because there is nothing left to carry has already succeeded, and the next harvest
+     * should be free to start on the very next tick.
+     */
     @Override
     public void stop() {
         this.ant.getNavigation().stop();
-        if (this.cooldown <= 0) {
+        if (this.cooldown <= 0 && !this.ant.getPack().isEmpty()) {
             this.cooldown = RETRY_COOLDOWN_TICKS;
         }
     }
