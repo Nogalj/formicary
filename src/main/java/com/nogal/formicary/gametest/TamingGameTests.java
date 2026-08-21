@@ -155,6 +155,13 @@ public class TamingGameTests {
      */
     private static final double CLIMB_SLACK = 0.2;
 
+    /**
+     * Budget for {@link #a_caged_worker_still_delivers_its_pack}. The recall fires on the
+     * goal's {@code APPROACH_TIMEOUT_TICKS} (300) and deposits on that same tick, so this is
+     * that plus room for the goal to start and for the harness's own polling cadence.
+     */
+    private static final int RECALL_TIMEOUT_TICKS = 400;
+
     // ------------------------------------------------------- the diet fork --
 
     /**
@@ -1452,6 +1459,52 @@ public class TamingGameTests {
                 "an ant with no path at all must not climb -- that is the push fallback, which"
                         + " shoves straight through the wall it is already pinned against");
         helper.succeed();
+    }
+
+    /**
+     * <b>Play-test round 5, item 1, second half</b>: the delivery recall. A bound worker with
+     * a loaded pack, sealed in a barrier box it cannot walk out of, still gets its harvest
+     * into the chest -- because {@link DepositToChestGoal}'s approach timeout stopped being a
+     * give-up and became a teleport home.
+     *
+     * <p>Deterministic by construction, which is why the box is sealed rather than merely
+     * awkward: there is no path at all, so the approach cannot succeed by luck, the timeout
+     * always fires on exactly tick {@code APPROACH_TIMEOUT_TICKS} of the goal, and the deposit
+     * lands on that same tick. Pre-recall the run simply times out with the item still in the
+     * pack; post-recall it succeeds a little over 300 ticks in.
+     *
+     * <p>Beetroot rather than carrot for the reason
+     * {@link #a_bound_worker_never_carries_two_crops_at_once} gives -- produce and seed are
+     * separate items, so {@code countItem} is an exact count -- and
+     * {@link #isolateFromForeignCrops} because this arena plants nothing of its own and a
+     * neighbour's ripe crop is otherwise a perfectly ordinary find on the shared grid.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "farm_platform", timeoutTicks = RECALL_TIMEOUT_TICKS)
+    public static void a_caged_worker_still_delivers_its_pack(GameTestHelper helper) {
+        BlockPos chest = new BlockPos(2, STAND_Y, 4);
+        BlockPos cell = new BlockPos(6, STAND_Y, 4);
+
+        helper.setBlock(chest, Blocks.CHEST);
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(), cell);
+        worker.tame(keeper);
+        worker.bindTo(helper.absolutePos(chest));
+        isolateFromForeignCrops(worker);
+        worker.getPack().addItem(new ItemStack(Items.BEETROOT));
+        sealInBox(helper, cell);
+
+        helper.succeedWhen(() -> {
+            Container container = HopperBlockEntity.getContainerAt(helper.getLevel(),
+                    helper.absolutePos(chest));
+            helper.assertTrue(container != null, "the bound chest should still be a container");
+            helper.assertTrue(container.countItem(Items.BEETROOT) > 0,
+                    "a caged worker should have been recalled to its chest and delivered; pack="
+                            + worker.getPack().countItem(Items.BEETROOT) + " worker at rel "
+                            + worker.blockPosition().subtract(helper.absolutePos(BlockPos.ZERO))
+                            + " chest=" + container.countItem(Items.BEETROOT));
+        });
     }
 
     // ------------------------------------------------------------ helpers --
