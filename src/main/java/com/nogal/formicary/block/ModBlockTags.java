@@ -42,6 +42,14 @@ public final class ModBlockTags {
      * {@code age} property whose maximum means "ripe", drops a {@code BlockItem} of itself
      * as the seed, and can be re-placed at its default state, the harvester needs no code
      * change at all.
+     *
+     * <p>Play-test round 4 (item 6) widened both ends of that. The tag now also includes the
+     * NeoForge convention tag {@code c:crops} (optionally -- an absent tag must never break
+     * loading), so a modded crop that already tags itself conventionally needs no opt-in
+     * either; and an <em>ageless</em> member is read as ripe by existence and harvested
+     * without a replant, which is how Pumpkin and Melon joined. Stems are excluded in code
+     * rather than by omission from this tag, since the convention tag's contents are not
+     * ours to control -- see {@code entity.CropHarvest#isStem}.
      */
     public static final TagKey<Block> HARVESTABLE_CROPS = create("harvestable_crops");
 

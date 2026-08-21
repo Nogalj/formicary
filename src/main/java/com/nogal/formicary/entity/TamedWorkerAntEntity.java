@@ -362,6 +362,15 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
      * silently loses one plant in eleven is a farm that decays, which is exactly the
      * failure a player cannot see happening until the field is gone.
      *
+     * <p>Play-test round 4, item 6: <b>all of the paragraph above is the age-crop branch</b>,
+     * and it is byte-for-byte what it was. An ageless harvest -- pumpkin, melon, any modded
+     * fruit shaped the same way -- takes neither half of it: no replant, because the stem is
+     * still standing and will grow another one, and no seed taken out of the drops, because
+     * for a block that drops itself "the seed" <em>is</em> the harvest and taking it would
+     * leave the worker carrying nothing home. The fork is
+     * {@link CropHarvest#isReplantable(BlockState)}, one branch rather than scattered
+     * {@code instanceof} checks, precisely so the age-crop path stays untouched.
+     *
      * @return {@code true} if something was actually harvested
      */
     public boolean harvest(ServerLevel level, BlockPos pos) {
@@ -373,14 +382,16 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
         List<ItemStack> drops = new ArrayList<>(Block.getDrops(state, level, pos, null));
         level.destroyBlock(pos, false);
 
-        ItemStack seed = CropHarvest.takeSeed(drops, state.getBlock());
-        BlockState replant = CropHarvest.replantState(state);
-        if (level.getBlockState(pos).isAir() && replant.canSurvive(level, pos)) {
-            level.setBlock(pos, replant, Block.UPDATE_ALL);
-            level.playSound(null, pos, SoundEvents.CROP_PLANTED, SoundSource.BLOCKS, 0.7F, 1.0F);
-        } else if (!seed.isEmpty()) {
-            // Nowhere to put it back -- carry the seed home rather than lose it.
-            drops.add(seed);
+        if (CropHarvest.isReplantable(state)) {
+            ItemStack seed = CropHarvest.takeSeed(drops, state.getBlock());
+            BlockState replant = CropHarvest.replantState(state);
+            if (level.getBlockState(pos).isAir() && replant.canSurvive(level, pos)) {
+                level.setBlock(pos, replant, Block.UPDATE_ALL);
+                level.playSound(null, pos, SoundEvents.CROP_PLANTED, SoundSource.BLOCKS, 0.7F, 1.0F);
+            } else if (!seed.isEmpty()) {
+                // Nowhere to put it back -- carry the seed home rather than lose it.
+                drops.add(seed);
+            }
         }
 
         for (ItemStack stack : drops) {

@@ -5,6 +5,12 @@
     "minecraft:potatoes",
     "minecraft:beetroots",
     "minecraft:nether_wart",
-    "formicary:fungal_spore_crop"
+    "minecraft:pumpkin",
+    "minecraft:melon",
+    "formicary:fungal_spore_crop",
+    {
+      "id": "#c:crops",
+      "required": false
+    }
   ]
 }

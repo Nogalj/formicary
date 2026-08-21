@@ -8,6 +8,7 @@ import com.nogal.formicary.block.ModBlocks;
 
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.common.data.BlockTagsProvider;
@@ -22,6 +23,13 @@ import net.neoforged.neoforge.common.data.ExistingFileHelper;
  * and the fungus blocks are harvestable without provoking the colony.
  */
 public class ModBlockTagsProvider extends BlockTagsProvider {
+    /**
+     * The NeoForge convention tag for crops, {@code c:crops} -- the cross-mod agreement that
+     * lets {@link ModBlockTags#HARVESTABLE_CROPS} pick up modded crops without naming them.
+     */
+    private static final ResourceLocation CONVENTION_CROPS =
+            ResourceLocation.fromNamespaceAndPath("c", "crops");
+
     public ModBlockTagsProvider(PackOutput output,
             CompletableFuture<HolderLookup.Provider> lookupProvider,
             ExistingFileHelper existingFileHelper) {
@@ -47,13 +55,38 @@ public class ModBlockTagsProvider extends BlockTagsProvider {
         // the wild fungal_bloom BUSH block deliberately stays out (it has no age property
         // and is foraging, not farming; see ModBlockLootSubProvider), but the crop it
         // grows into is exactly the kind of thing a bound worker should tend.
+        //
+        // Ep2 play-test revision, round 4 (item 6): pumpkin and melon join as the first
+        // AGELESS members -- they have no age property, so CropHarvest.isMature reads them
+        // as ripe by existence and CropHarvest.isReplantable keeps the harvest to
+        // break-and-bank (the stem regrows the fruit; see those javadocs). Their stems are
+        // NOT listed and could not be harvested if they were: CropHarvest.isHarvestable
+        // guards StemBlock/AttachedStemBlock in code, ahead of the tag.
         tag(ModBlockTags.HARVESTABLE_CROPS).add(
                 Blocks.WHEAT,
                 Blocks.CARROTS,
                 Blocks.POTATOES,
                 Blocks.BEETROOTS,
                 Blocks.NETHER_WART,
-                ModBlocks.FUNGAL_SPORE_CROP.get());
+                Blocks.PUMPKIN,
+                Blocks.MELON,
+                ModBlocks.FUNGAL_SPORE_CROP.get())
+                // ...and the same round's "crops added by other mods" half: any modded crop
+                // that already tags itself with the NeoForge convention tag is farmed with no
+                // opt-in at all, since ripeness is generic code rather than a per-block list.
+                //
+                // Written as a literal ResourceLocation rather than a Tags constant on
+                // purpose. NeoForge 21.0.167 has CROPS only under Tags.Items -- Tags.Blocks
+                // carries no CROPS at all (verified by reading the whole Blocks inner class
+                // in reference/net/neoforged/neoforge/common/Tags.java, not from memory) --
+                // and addOptionalTag takes a ResourceLocation regardless, so borrowing the
+                // item tag's location would be a longer way of writing the same string while
+                // implying a block/item relationship that does not exist.
+                //
+                // addOptionalTag, not addTag: an OPTIONAL reference is skipped when nothing
+                // defines the tag, where a hard reference makes loading fail. On a vanilla
+                // install with no other mod present, nothing defines c:crops.
+                .addOptionalTag(CONVENTION_CROPS);
 
         tag(ModBlockTags.WORKER_DEPOSITS).add(
                 Blocks.CHEST,

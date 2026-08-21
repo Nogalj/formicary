@@ -39,6 +39,7 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.BeetrootBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CropBlock;
+import net.minecraft.world.level.block.StemBlock;
 import net.minecraft.world.level.block.entity.HopperBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -1067,6 +1068,150 @@ public class TamingGameTests {
                 "age-0 nether wart is not ripe");
         helper.assertFalse(CropHarvest.isMature(Blocks.CARROTS.defaultBlockState()),
                 "an age-0 carrot is not ripe");
+        helper.succeed();
+    }
+
+    // ------------------------------------------------- pumpkins and melons --
+
+    /**
+     * <b>Play-test round 4, item 6</b>: "tamed worker ants should be able to harvest pumpkins
+     * and melons."
+     *
+     * <p>They could not, and the reason was structural rather than a missing entry:
+     * {@code CropHarvest.isMature} read ripeness off an integer {@code age} property, and a
+     * pumpkin has none -- the stem grows the fruit whole, in one tick -- so a pumpkin was
+     * permanently unripe however it was tagged. The rule added for it is about the shape of
+     * the block, not about pumpkins: <em>a tagged block with no age property is ripe by
+     * existence</em>, which is also true of any modded fruit that grows the same way.
+     *
+     * <p>Three assertions, and the second and third are the interesting ones. The pumpkin
+     * reaches the pack; the block is <b>gone</b>; and nothing was replanted in its place. That
+     * last one is the whole of {@code CropHarvest.isReplantable}: putting the block back would
+     * hand a worker an infinite pumpkin farm out of a single fruit, because the stem that grew
+     * it is still standing and will grow another. (The mirror-image bug is just as bad and is
+     * covered by the pack count -- {@code takeSeed} identifies a seed as a {@code BlockItem}
+     * placing this very block, and a pumpkin drops itself, so a replant would spend the entire
+     * harvest and the worker would carry nothing home.)
+     *
+     * <p>Driven through {@code worker.harvest} rather than by watching a bound worker walk to
+     * it, because what is under test is the harvest rule, not the pathing that has its own
+     * coverage above -- and because a radius search on the shared arena grid is the trap
+     * {@link #isolateFromForeignCrops} exists for. No farmland and no light: a pumpkin needs
+     * neither, which is itself part of the point.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void a_worker_harvests_a_pumpkin_and_leaves_no_replant(GameTestHelper helper) {
+        BlockPos pumpkin = new BlockPos(2, STAND_Y, 2);
+        helper.setBlock(pumpkin, Blocks.PUMPKIN);
+
+        helper.assertTrue(CropHarvest.isHarvestable(helper.getBlockState(pumpkin)),
+                "a placed pumpkin must be harvestable: it is in the tag and ripe by existence");
+        helper.assertFalse(CropHarvest.isReplantable(helper.getBlockState(pumpkin)),
+                "an ageless fruit must not be replanted -- the stem regrows it");
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(1, STAND_Y, 1));
+        worker.tame(keeper);
+
+        helper.assertTrue(worker.harvest(helper.getLevel(), helper.absolutePos(pumpkin)),
+                "the worker should have cut the pumpkin");
+
+        helper.assertValueEqual(worker.getPack().countItem(Items.PUMPKIN), 1,
+                "pumpkins in the worker's pack after the harvest");
+        helper.assertBlockState(pumpkin, BlockState::isAir,
+                () -> "the harvested pumpkin block must be gone, found "
+                        + helper.getBlockState(pumpkin));
+        helper.assertTrue(
+                helper.getLevel().getEntitiesOfClass(ItemEntity.class, helper.getBounds()).isEmpty(),
+                "the harvest banks the loot roll directly -- no item entity should ever exist");
+        helper.succeed();
+    }
+
+    /** The melon half of the same rule: a different loot table, the same ageless shape. */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void a_worker_harvests_a_melon_and_leaves_no_replant(GameTestHelper helper) {
+        BlockPos melon = new BlockPos(2, STAND_Y, 2);
+        helper.setBlock(melon, Blocks.MELON);
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(1, STAND_Y, 1));
+        worker.tame(keeper);
+
+        helper.assertTrue(worker.harvest(helper.getLevel(), helper.absolutePos(melon)),
+                "the worker should have cut the melon");
+
+        // Melon's loot table rolls 3-7 slices, so the assertion is on "some, and it is
+        // slices" rather than on an exact count.
+        helper.assertTrue(worker.getPack().countItem(Items.MELON_SLICE) >= 3,
+                "the worker should be carrying the melon's slices, found "
+                        + worker.getPack().countItem(Items.MELON_SLICE));
+        helper.assertBlockState(melon, BlockState::isAir,
+                () -> "the harvested melon block must be gone, found " + helper.getBlockState(melon));
+        helper.succeed();
+    }
+
+    /**
+     * <b>The stem guard</b> (play-test round 4, item 6): a pumpkin or melon stem is never
+     * harvestable, at any age, whatever tag it carries.
+     *
+     * <p>This is the guard that pays for opening candidacy up to {@code c:crops}. That tag
+     * belongs to the NeoForge conventions, not to this mod, so its contents can change under
+     * us -- and a stem tagged into it would have every bound worker in the world cutting down
+     * the vines that grow the fruit, which is the exact opposite of the harvest-and-replant
+     * contract. Hence a code guard ahead of the tag check rather than trust in a list.
+     *
+     * <p><b>Asserted through {@code isStem} as well as through {@code isHarvestable}</b>, and
+     * that is the point of the test rather than a detail. Nothing tags vanilla's stems today,
+     * so {@code isHarvestable(stem)} answers {@code false} at the tag check alone: delete the
+     * guard entirely and that assertion still passes. The {@code isStem} assertions exercise
+     * the guard itself.
+     *
+     * <p>Both stem blocks are covered because they fail differently. A growing
+     * {@code StemBlock} has an {@code age} property, so it would qualify as ripe at age 7; an
+     * {@code AttachedStemBlock} -- the state a stem takes once it has grown a fruit -- has no
+     * age property at all, and so would be read as <em>permanently</em> ripe by the very
+     * ageless rule that lets pumpkins be harvested. Neither is a {@code CropBlock}: both
+     * extend {@code BushBlock} (verified in {@code reference/}).
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "platform")
+    public static void a_stem_is_never_harvestable(GameTestHelper helper) {
+        BlockState grownStem = Blocks.PUMPKIN_STEM.defaultBlockState()
+                .setValue(StemBlock.AGE, StemBlock.MAX_AGE);
+        BlockState attachedStem = Blocks.ATTACHED_PUMPKIN_STEM.defaultBlockState();
+        BlockState melonStem = Blocks.MELON_STEM.defaultBlockState()
+                .setValue(StemBlock.AGE, StemBlock.MAX_AGE);
+
+        // The guard itself, which is what a deleted guard would stop satisfying.
+        helper.assertTrue(CropHarvest.isStem(grownStem), "a fully grown pumpkin stem is a stem");
+        helper.assertTrue(CropHarvest.isStem(attachedStem), "an attached pumpkin stem is a stem");
+        helper.assertTrue(CropHarvest.isStem(melonStem), "a fully grown melon stem is a stem");
+        helper.assertFalse(CropHarvest.isStem(Blocks.PUMPKIN.defaultBlockState()),
+                "the fruit itself is not a stem");
+
+        // Why the guard is needed at all: both stem states pass the ripeness test on their
+        // own, the attached one through the very rule that admits pumpkins.
+        helper.assertTrue(CropHarvest.isMature(grownStem),
+                "setup: an age-max stem reads as ripe, which is exactly why the guard exists");
+        helper.assertTrue(CropHarvest.isMature(attachedStem),
+                "setup: an attached stem has no age property, so the ageless rule reads it as ripe");
+
+        // And the rule that uses it.
+        helper.assertFalse(CropHarvest.isHarvestable(grownStem), "a grown stem must not be harvestable");
+        helper.assertFalse(CropHarvest.isHarvestable(attachedStem),
+                "an attached stem must not be harvestable");
+        helper.assertFalse(CropHarvest.isHarvestable(melonStem), "a melon stem must not be harvestable");
+
+        // The tag really does carry the fruit, so the false answers above are the guard and
+        // the ripeness rule talking rather than an empty tag.
+        helper.assertTrue(CropHarvest.isHarvestable(Blocks.PUMPKIN.defaultBlockState()),
+                "setup: a pumpkin is tagged and ripe");
+        helper.assertTrue(CropHarvest.isHarvestable(Blocks.MELON.defaultBlockState()),
+                "setup: a melon is tagged and ripe");
         helper.succeed();
     }
 
