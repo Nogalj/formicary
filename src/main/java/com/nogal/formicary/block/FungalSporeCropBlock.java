@@ -4,11 +4,13 @@ import com.mojang.serialization.MapCodec;
 import com.nogal.formicary.item.ModItems;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.ItemLike;
+import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.FarmBlock;
@@ -17,6 +19,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.IntegerProperty;
+import net.neoforged.neoforge.common.CommonHooks;
+import net.neoforged.neoforge.common.util.TriState;
 
 /**
  * The Fungal Spore crop (spec section 5 / M8): spores plant in the overworld as a
@@ -55,6 +59,34 @@ import net.minecraft.world.level.block.state.properties.IntegerProperty;
  *       getAgeProperty()} -- caught by {@code runData} failing registration with "Cannot
  *       get property ... does not exist in Block". {@code BeetrootBlock} re-overrides this
  *       too, for the identical reason.</li>
+ * </ul>
+ *
+ * <h2>Play-test round 5, item 5: this is a cave fungus -- it needs no light, anywhere</h2>
+ *
+ * <p>{@link #canSurvive} and {@link #randomTick} both drop the light gate {@link CropBlock}
+ * bakes in, so placement, survival and growth all work at light 0. This applies in the
+ * overworld too, not just the colony -- one rule, and thematically the right one for a
+ * fungus. Both had to be reimplemented rather than overridden, each verified against the
+ * decompiled 1.21 sources:
+ * <ul>
+ *   <li>{@link #canSurvive} -- the light requirement is not in {@code BushBlock}'s own
+ *       {@code canSurvive} (soil-{@code TriState} short-circuit, then {@code
+ *       this.mayPlaceOn}); {@code CropBlock.canSurvive} adds {@code hasSufficientLight(...)
+ *       &amp;&amp;} on top of a {@code super.canSurvive(...)} call to that {@code
+ *       BushBlock} version. Since this class's superclass is {@code CropBlock}, {@code
+ *       super.canSurvive(...)} can only reach {@code CropBlock}'s own light-gated copy --
+ *       Java has no way to call an ancestor two levels up -- so dropping the gate means
+ *       reimplementing {@code BushBlock.canSurvive}'s body here directly (still routed
+ *       through {@link #mayPlaceOn}, so the widened dirt-or-farmland placement above is
+ *       untouched).</li>
+ *   <li>{@link #randomTick} -- same shape of problem: {@code CropBlock.randomTick} gates
+ *       the whole growth attempt behind {@code getRawBrightness(pos, 0) >= 9} before ever
+ *       reaching {@code getGrowthSpeed}. This reimplements that method's body verbatim
+ *       (loaded-area check, age/max-age, the {@code static} {@code getGrowthSpeed} --
+ *       unaffected either way, since it is a soil-fertility bonus with no light term of
+ *       its own -- and the same {@code CommonHooks} grow-event pair) minus the brightness
+ *       check, with the existing 50% coin flip (see above, "roughly half wheat's") kept
+ *       exactly as it was.</li>
  * </ul>
  */
 public class FungalSporeCropBlock extends CropBlock {
@@ -112,11 +144,45 @@ public class FungalSporeCropBlock extends CropBlock {
         return state.is(BlockTags.DIRT) || state.getBlock() instanceof FarmBlock;
     }
 
-    /** Halves the growth roll rather than trying to override the static getGrowthSpeed. */
+    /**
+     * {@code BushBlock.canSurvive}'s own body (soil {@code TriState} short-circuit, then
+     * {@link #mayPlaceOn}), reimplemented here rather than reached via {@code super} --
+     * see the class javadoc's "cave fungus" section for why {@code super.canSurvive(...)}
+     * cannot be used to drop {@code CropBlock}'s added light gate.
+     */
+    @Override
+    protected boolean canSurvive(BlockState state, LevelReader level, BlockPos pos) {
+        BlockPos below = pos.below();
+        BlockState belowState = level.getBlockState(below);
+        TriState soilDecision = belowState.canSustainPlant(level, below, Direction.UP, state);
+        if (!soilDecision.isDefault()) {
+            return soilDecision.isTrue();
+        }
+        return this.mayPlaceOn(belowState, level, below);
+    }
+
+    /**
+     * {@code CropBlock.randomTick}'s own body, reimplemented with the {@code
+     * getRawBrightness(pos, 0) >= 9} gate removed -- see the class javadoc's "cave fungus"
+     * section. The 50% coin flip (roughly halving wheat's growth rate, per the class
+     * javadoc above) still gates the whole attempt exactly as it did before.
+     */
     @Override
     protected void randomTick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
-        if (random.nextInt(2) == 0) {
-            super.randomTick(state, level, pos, random);
+        if (random.nextInt(2) != 0) {
+            return;
+        }
+        if (!level.isAreaLoaded(pos, 1)) {
+            return;
+        }
+        int age = this.getAge(state);
+        if (age >= this.getMaxAge()) {
+            return;
+        }
+        float growthSpeed = getGrowthSpeed(state, level, pos);
+        if (CommonHooks.canCropGrow(level, pos, state, random.nextInt((int) (25.0F / growthSpeed) + 1) == 0)) {
+            level.setBlock(pos, this.getStateForAge(age + 1), 2);
+            CommonHooks.fireCropGrowPost(level, pos, state);
         }
     }
 
