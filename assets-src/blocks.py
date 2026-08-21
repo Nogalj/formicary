@@ -1638,16 +1638,22 @@ def _paint_diagonal_shaft(px, t_min, t_max, s_values, colour_fn):
 # crossguard, 25% grip, measured along the diagonal. Ours has 22 diagonal
 # steps of raw box (t in -11..11) where vanilla has 30 of full canvas.
 SWORD_BLADE_T_MIN = -3      # perpendicular cut where blade meets crossguard
-# Four lines thick: a dark separator against the blade, two lines of lit
-# guard body, and a shaded underside. Three lines (one of them body) rendered
-# as a smudge rather than a bar -- a crossguard only reads if the light
-# actually falls on it.
-SWORD_GUARD_T_MIN = -7
+# Three lines thick: a dark separator against the blade, one line of lit
+# body, and a shaded underside -- and GOLD, not chitin. The first round-4
+# pass painted the guard in the blade's own reds and it disappeared into it
+# as one club-shaped mass; a hue break is what makes a crossguard read at
+# 16px, and royal gold is the material the recipe actually spends (a Queen's
+# Crest sits in the guard slot of the crafting shape). Palette borrowed from
+# the horn's mouthpiece golds.
+SWORD_GUARD_T_MIN = -6
 SWORD_GUARD_T_MAX = -4
 SWORD_GUARD_HALF_S = 4      # how far the guard reaches to either side
 SWORD_GRIP_T_MIN = -11      # the pommel end (the (2,13) raw corner)
-SWORD_GRIP_T_MAX = -8       # everything above this belongs to the guard
-SWORD_GRIP_S = (-1, 0, 1)   # three columns, matching iron_sword's grip
+SWORD_GRIP_T_MAX = -7       # everything above this belongs to the guard
+SWORD_GRIP_S = (0, 1)       # two staggered columns -- the first pass used
+                            # three (+outline = five visual), nearly as wide
+                            # as the blade, which is half of why it read as a
+                            # club rather than a sword
 SWORD_POMMEL_T = -10        # at/below this the grip caps off as a pommel
 SWORD_TAPER_T = 5           # blade holds full width to here, then tapers
 SWORD_HALF_WIDE = 2.5       # -> a five-column band: two lit columns, the
@@ -1655,21 +1661,44 @@ SWORD_HALF_WIDE = 2.5       # -> a five-column band: two lit columns, the
                             #    light or the icon reads as one bright edge
                             #    with a shadow rather than as a pair
 SWORD_BAND_CENTRE = 0.0
-SWORD_HALF_TIP = 0.6
-SWORD_TIP_T = 11            # t of the raw tip pixel, (TOOL_MAX, TOOL_MIN)
+SWORD_TIP_T = 11            # t of the raw corner pixel, (TOOL_MAX, TOOL_MIN)
+                            # -- filled, so the blade ends in a real point.
+                            # A forked "pincer mouth" tip was tried here
+                            # (leave t == 11 empty, let the two t == 10
+                            # pixels stand as prong points): it does not
+                            # survive outline(), which floods the one-cell
+                            # notch with the same dark it rings the whole
+                            # sprite with, so the fork just reads as a blunt
+                            # end. The pincer identity lives in the seam; the
+                            # tip's job is to look sharp.
 # Three pale specular pixels marching up the blade's lit edge (s == -2, so t
 # must be odd for the pixel to exist at all -- see _tool_frame).
 SWORD_SPECULAR_T = (-1, 1, 3)
 
 
+# Hand-tuned, not linear, because of the parity trade the frame forces: a
+# raster row holds only every OTHER s (see _tool_frame), so a linear taper
+# either keeps the +-2 columns too long (t == 10 then paints s == +-1 and the
+# tip ends in a flat two-pixel pair beside the point -- the blunt end of this
+# icon's second round-4 pass) or narrows too early (a lone dark pixel
+# mid-blade where only s == 0 survives an odd row). The table threads it:
+# full five columns through t == 7, the +-1 pair at t == 8, single pixels at
+# t == 9 and 11 with t == 10 skipped entirely -- which on SCREEN is a clean
+# one-pixel staircase to the corner, exactly how vanilla's diagonal blades
+# end, because consecutive odd-t s == 0 cells are diagonal neighbours.
+SWORD_TIP_HALVES = {8: 1.6, 9: 1.3, 10: 0.8, 11: 0.4}
+SWORD_SHOULDER_HALF = 2.1   # t == 6..7, between full width and the tip run:
+                            # keeps the +-2 columns alive through t == 7 so
+                            # the five-column band hands off to the taper
+                            # without a one-row pinch
+
+
 def _sword_blade_half(t):
-    """Half-width of the blade band at t: flat until SWORD_TAPER_T, then a
-    straight run down to a real point one step past the tip, so the blade
-    ends in a single pixel instead of a flat edge cropped by the canvas."""
+    """Half-width of the blade band at t: flat until SWORD_TAPER_T, then the
+    hand-tuned SWORD_TIP_HALVES run down to a single-pixel point."""
     if t <= SWORD_TAPER_T:
         return SWORD_HALF_WIDE
-    k = (t - SWORD_TAPER_T) / float(SWORD_TIP_T + 1 - SWORD_TAPER_T)
-    return SWORD_HALF_WIDE + (SWORD_HALF_TIP - SWORD_HALF_WIDE) * k
+    return SWORD_TIP_HALVES.get(t, SWORD_SHOULDER_HALF)
 
 
 def pincer_sword_item():
@@ -1686,16 +1715,21 @@ def pincer_sword_item():
     parallel prong masses either side of one dark column read as a pincer,
     where a single mass of the same width just reads as a wider blade -- and
     BOTH flanking columns have to be lit, or the dark column reads as shading
-    on one blade instead of the gap between two. It drops out near the tip
-    (where the band is no longer wide enough to hold two prongs and a gap),
-    which is what makes the prongs appear to MEET there rather than run past
-    each other."""
+    on one blade instead of the gap between two. The taper runs the last odd
+    rows down through +-1 pairs to a single-pixel point in the raw corner
+    (see SWORD_TIP_T on the forked tip that was tried and rejected). The
+    crossguard and pommel are royal gold (the crest the recipe spends), the
+    one hue break on the icon, which is what stops guard, grip and blade
+    merging into a single club-shaped chitin mass -- the failure of this
+    icon's first round-4 pass."""
     img = blank()
     px = img.load()
 
     def grip_colour(s, t):
         if t <= SWORD_POMMEL_T:
-            return CHITIN_RIM
+            # gold cap, matching the guard -- the two gold masses bracketing
+            # the dark wrap are what make the hilt read as one fitting
+            return HORN_MOUTH
         # alternating wrap bands, one diagonal step apart
         return TOOL_STICK_LIGHT if t % 2 else TOOL_STICK_DARK
 
@@ -1711,20 +1745,19 @@ def pincer_sword_item():
             if SWORD_GUARD_T_MIN <= t <= SWORD_GUARD_T_MAX:
                 if abs(s) > SWORD_GUARD_HALF_S:
                     continue
-                # The guard's own dark top edge: without it the guard and the
-                # blade are one continuous chitin mass and the crossguard
-                # simply does not read, which is what the first round-4 pass
-                # of this icon looked like.
-                if t == SWORD_GUARD_T_MAX:
-                    px[x, y] = CHITIN_OUTLINE
+                # Gold, in three lines: dark separator facing the blade, lit
+                # body, shaded underside -- with only the outermost cell of
+                # each arm darkened (darkening two per side shrank the lit
+                # bar to a blob in the second round-4 pass). See the geometry
+                # comment above on why the hue break is the whole point.
+                if abs(s) >= SWORD_GUARD_HALF_S:
+                    px[x, y] = HORN_MOUTH_DARK
+                elif t == SWORD_GUARD_T_MAX:
+                    px[x, y] = HORN_MOUTH_DARK
                 elif t == SWORD_GUARD_T_MIN:
-                    px[x, y] = CHITIN_DARK
-                elif s <= -2:
-                    px[x, y] = CHITIN_RIM
-                elif s >= 2:
-                    px[x, y] = CHITIN_BASE
+                    px[x, y] = HORN_MOUTH
                 else:
-                    px[x, y] = CHITIN_MID
+                    px[x, y] = HORN_MOUTH_LIT
                 continue
 
             if t < SWORD_BLADE_T_MIN:
@@ -1732,17 +1765,22 @@ def pincer_sword_item():
             half = _sword_blade_half(t)
             if abs(s - SWORD_BAND_CENTRE) >= half:
                 continue
-            # A seam only where the band is wide enough for two prongs to sit
-            # either side of it; nearer the tip the prongs merge.
-            seam = half >= SWORD_HALF_WIDE - 0.2
+            # The seam column only darkens where a lit prong flanks it on the
+            # SAME raster row (parity puts s == +-2 on the wide odd-t rows);
+            # on the narrow rows near the tip where s == 0 stands alone it
+            # brightens to RIM instead, so the taper never pinches down to a
+            # single dark pixel that reads as the blade snapping.
             if s <= -2:
                 px[x, y] = CHITIN_PALE if t in SWORD_SPECULAR_T else CHITIN_SPARK
             elif s == -1:
-                px[x, y] = CHITIN_RIM
+                # the upper prong stays lit all the way out to its fork point
+                px[x, y] = CHITIN_SPARK if t >= 7 else CHITIN_RIM
             elif s == 0:
-                # much darker than BOTH neighbours, or the groove reads as
-                # shading on one wide blade instead of a gap between two
-                px[x, y] = CHITIN_DARK if seam else CHITIN_RIM
+                # CHITIN_BASE, not CHITIN_DARK: near-black seam pixels on
+                # alternating rows read as rivet holes down a sausage; one
+                # shade darker than the prongs reads as the groove between
+                # them
+                px[x, y] = CHITIN_BASE if half >= 2.0 else CHITIN_RIM
             elif s == 1:
                 px[x, y] = CHITIN_RIM
             else:
