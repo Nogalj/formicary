@@ -1506,6 +1506,57 @@ public final class ColonyGeneratorTunables {
     public static final int SOIL_PATCH_AGGREGATE_WEIGHT = 3;
 
     // ------------------------------------------------------------------
+    // Soil micro-patches (play-test round 5 item 3) -- the mod's own tier soils used as
+    // speckle through the two upper bands. Packed Soil through the Fungal Gardens' Amber
+    // Earth, Amber Earth through the Nurseries' Deep Loam; the Royal Depths are left alone.
+    // Which soil goes in which band is ColonyNoise#SOIL_SPECKLE_MATERIAL_BY_TIER, placement
+    // is ColonyNoise#soilSpecklesForChunk, and the safety predicate is the seams' own
+    // ColonyNoise#isPlainFabric.
+    //
+    // The opposite shape from the seams above, in the same round and on purpose: the seams
+    // grew 3.5x so they read as something to dig at, these exist to break up the flat fabric
+    // between them.
+    // ------------------------------------------------------------------
+
+    /**
+     * Cluster seeds rolled per chunk in each speckled tier. An attempt that lands on air or
+     * on load-bearing solid is dropped, so realized clusters come in below this.
+     *
+     * <p><b>Chosen against the mottling already in the band, not out of the air.</b> The
+     * fabric of the two speckled tiers is 91.4% Amber Earth / 8.6% Hardened Soil and 88.7%
+     * Deep Loam / 11.3% Hardened Soil (NoiseProbe's palette section), so the player's
+     * existing sense of "how often a second material interrupts this wall" is set by that
+     * 9-11% accent. A speckle rate an order of magnitude under it would be a curiosity, not
+     * the "very frequent" the ask asked for twice.
+     *
+     * <p>The arithmetic, and then what it actually came out as. 48 attempts x a mean cluster
+     * of 2 blocks = 96 blocks per chunk per tier before the eligibility loss; NoiseProbe's
+     * composition sweep measures <b>41.7-43.6 realized clusters and 83.7-87.2 blocks per
+     * chunk per tier</b> over the three standard seeds, which is <b>0.78%-0.90% of the
+     * band's plain fabric</b> -- about a tenth of the Hardened Soil accent it is scattered
+     * through. Comparable total material per chunk to the soil seams above, but delivered as
+     * forty-odd separate finds instead of one or two, which is the difference the ask is
+     * about. That section gates the figure inside a band, so it is the number to retune
+     * against; this constant is the only dial that moves it.
+     *
+     * <p><b>Why 48 and not single digits.</b> Eight cluster seeds per chunk per tier would be
+     * about 14 blocks -- 0.15% of the band, which is exactly the coverage round 3's soil
+     * patches had, and round 3's patches are the thing this same play-test round was told
+     * twice were too small to register. Broken into 1-3 block dots that same budget would be
+     * strictly less noticeable than the seams were, so it could not have delivered "very
+     * frequent" whatever it did to the block count.
+     */
+    public static final int SOIL_SPECKLE_CLUSTERS_PER_CHUNK_PER_TIER = 48;
+
+    /**
+     * Blocks a micro-patch's walk targets, inclusive range -- Logan's "small 1~3 block sized
+     * patches" verbatim. A cluster may end smaller if the walk runs out of eligible fabric,
+     * the same way a seam does.
+     */
+    public static final int SOIL_SPECKLE_MIN_SIZE = 1;
+    public static final int SOIL_SPECKLE_MAX_SIZE = 3;
+
+    // ------------------------------------------------------------------
     // Mob spawning at chunk generation (see ColonyChunkGenerator#spawnOriginalMobs)
     //
     // Play-test round 1: "the colony felt too empty". Two changes, one cause each.

@@ -78,6 +78,7 @@ public final class NoiseProbe {
             larders(noise);
             combPatches(noise);
             soilPatches(noise);
+            soilComposition(noise);
             spawnDensity(noise);
         }
         if (what.equals("colony")) {
@@ -109,6 +110,9 @@ public final class NoiseProbe {
         }
         if (what.equals("patches")) {
             soilPatches(noise);
+        }
+        if (what.equals("composition")) {
+            soilComposition(noise);
         }
         if (what.equals("spawns")) {
             spawnDensity(noise);
@@ -3050,6 +3054,238 @@ public final class NoiseProbe {
                 : "  FAIL: " + interiorViolations + " patch block(s) intruded on a chamber's interior.");
     }
 
+
+    // ------------------------------------------------------------------
+    // Round-5 composition invariants (soilComposition, below)
+    // ------------------------------------------------------------------
+
+    /** Chunks each way the composition sweep covers, so 17x17 chunks around the origin. */
+    private static final int COMPOSITION_CHUNK_RADIUS = 8;
+
+    /**
+     * Every Nth column, on both axes, sampled for the plain-fabric denominator -- 16 of a
+     * chunk's 256 columns. The denominator is a smooth aggregate over 289 chunks, so a
+     * quarter-stride costs it nothing and keeps the section's cost well under the two
+     * substitution sweeps it divides.
+     */
+    private static final int COMPOSITION_COLUMN_STRIDE = 4;
+
+    /**
+     * The band per-tier seam coverage has to land in, in blocks written per chunk per tier.
+     *
+     * <p>Round 5 measured, over the nine tier-by-seed cells of this sweep, a spread of
+     * <b>69.6 to 93.1</b> blocks per chunk per tier (0.72%-0.89% of each band's plain
+     * fabric). The band is {@code [45, 145]}, which sits 0.65x under the lowest measurement
+     * and 1.56x over the highest: <b>chosen to catch a doubling or a halving, not to hug the
+     * number.</b> A halving of the lowest cell lands at 34.8 and a doubling of the highest at
+     * 186.2, both outside; the spread across the nine cells is about one standard deviation
+     * of 8, so each edge is roughly three of those away and an ordinary new seed cannot trip
+     * it. What it is really guarding is the direction Logan has now pushed twice -- round 3's
+     * seams covered about 18 blocks per chunk per tier, far under the floor, so a retune of
+     * the walk, the layer count or the eligibility predicate cannot quietly undo the 4.5x.
+     */
+    private static final double SEAM_COVERAGE_MIN_PER_CHUNK = 45.0;
+    private static final double SEAM_COVERAGE_MAX_PER_CHUNK = 145.0;
+
+    /**
+     * The band a speckled tier's micro-patch coverage has to land in, in blocks written per
+     * chunk per tier. Measured <b>83.7 to 87.2</b> over the six speckled tier-by-seed cells
+     * (0.78%-0.90% of the band's plain fabric); band {@code [52, 140]}, the same
+     * halving-or-doubling shape and for the same reason -- 41.9 and 174.4 both fall outside.
+     * The spread is far tighter than the seams' because 48 cluster seeds per chunk is a large
+     * enough sample to average, where one or two seams per chunk is not.
+     *
+     * <p>A tier {@link ColonyNoise#SOIL_SPECKLE_MATERIAL_BY_TIER} names no material for is
+     * asserted at exactly zero instead, which is an invariant rather than a band.
+     */
+    private static final double SPECKLE_COVERAGE_MIN_PER_CHUNK = 52.0;
+    private static final double SPECKLE_COVERAGE_MAX_PER_CHUNK = 140.0;
+
+    /**
+     * What the two fabric-substitution passes actually put in each band, and whether the
+     * round-5 micro-patches are the thing that was asked for.
+     *
+     * <p>Everything here is <b>composition</b>: {@link #soilPatches} above measures a seam's
+     * shape one patch at a time, this measures what fraction of a band's fabric the passes
+     * replace between them, which is the quantity a play-test note like "much larger patches"
+     * or "very frequent" is actually about. Coverage is counted as blocks <i>written into</i>
+     * a chunk rather than blocks seeded by it -- the same filter
+     * {@link ColonyChunkGenerator#fill} applies -- so the number is what a player standing in
+     * that chunk sees, and a patch that crosses a boundary contributes to both halves.
+     *
+     * <p>The denominator is plain fabric, not solid: {@link ColonyNoise#isPlainFabric} is
+     * exactly the set of blocks a substitution pass is allowed to touch, so a percentage
+     * against it says what share of the eligible material was actually replaced, and does not
+     * move when a retune changes how much of the band is chamber shell.
+     *
+     * <p>The per-block invariants are the safety rule the whole feature rests on, restated as
+     * measurement: a speckle never lands on air, never inside a chamber, never outside its own
+     * tier, and never on fabric of its own kind -- that last one is the CONTRAST the ask is
+     * for, and it is checked against {@link ColonyNoise#fabricKind} rather than against the
+     * paragraph in {@link ColonyNoise#SOIL_SPECKLE_MATERIAL_BY_TIER} that argues for it.
+     */
+    private static void soilComposition(ColonyNoise noise) {
+        System.out.printf(Locale.ROOT,
+                "%nsoil composition over %dx%d chunks (seams %d-%d per chunk of %d-%d blocks;"
+                        + " speckle %d cluster seeds per chunk per tier of %d-%d blocks):%n",
+                COMPOSITION_CHUNK_RADIUS * 2 + 1, COMPOSITION_CHUNK_RADIUS * 2 + 1,
+                ColonyGeneratorTunables.SOIL_PATCHES_MIN_PER_CHUNK, ColonyGeneratorTunables.SOIL_PATCHES_MAX_PER_CHUNK,
+                ColonyGeneratorTunables.SOIL_PATCH_MIN_SIZE, ColonyGeneratorTunables.SOIL_PATCH_MAX_SIZE,
+                ColonyGeneratorTunables.SOIL_SPECKLE_CLUSTERS_PER_CHUNK_PER_TIER,
+                ColonyGeneratorTunables.SOIL_SPECKLE_MIN_SIZE, ColonyGeneratorTunables.SOIL_SPECKLE_MAX_SIZE);
+
+        long[] seamBlocks = new long[TIER_COUNT];
+        long[] speckleBlocks = new long[TIER_COUNT];
+        long[] speckleClusters = new long[TIER_COUNT];
+        long[] plainFabric = new long[TIER_COUNT];
+        int[] clusterSizeHistogram = new int[ColonyGeneratorTunables.SOIL_SPECKLE_MAX_SIZE + 2];
+        int sizeViolations = 0;
+        int materialViolations = 0;
+        int speckleTierViolations = 0;
+        int contrastViolations = 0;
+        int interiorViolations = 0;
+        int airViolations = 0;
+        int chunksSampled = 0;
+
+        for (int cx = -COMPOSITION_CHUNK_RADIUS; cx <= COMPOSITION_CHUNK_RADIUS; cx++) {
+            for (int cz = -COMPOSITION_CHUNK_RADIUS; cz <= COMPOSITION_CHUNK_RADIUS; cz++) {
+                int minX = cx * 16;
+                int minZ = cz * 16;
+                chunksSampled++;
+
+                for (ColonyNoise.SoilPatch patch : noise.soilPatchesNear(minX, minZ)) {
+                    for (ColonyNoise.PocketBlock block : patch.blocks()) {
+                        if (inChunk(block, minX, minZ)) {
+                            seamBlocks[patch.tier()]++;
+                        }
+                    }
+                }
+
+                for (ColonyNoise.SoilPatch speckle : noise.soilSpecklesNear(minX, minZ)) {
+                    ColonyNoise.PocketBlock first = speckle.blocks()[0];
+                    if (inChunk(first, minX, minZ)) {
+                        // Counted once per cluster across the sweep: the first block is the
+                        // seed, so the chunk it falls in is the chunk that rolled the cluster.
+                        speckleClusters[speckle.tier()]++;
+                        int size = speckle.blocks().length;
+                        clusterSizeHistogram[Math.min(size, clusterSizeHistogram.length - 1)]++;
+                        if (size < ColonyGeneratorTunables.SOIL_SPECKLE_MIN_SIZE
+                                || size > ColonyGeneratorTunables.SOIL_SPECKLE_MAX_SIZE) {
+                            sizeViolations++;
+                        }
+                        if (speckle.material() != ColonyNoise.SOIL_SPECKLE_MATERIAL_BY_TIER[speckle.tier()]) {
+                            materialViolations++;
+                        }
+                    }
+                    int ownFabric = speckle.material() == ColonyNoise.SOIL_MATERIAL_PACKED_SOIL
+                            ? ColonyNoise.FABRIC_PACKED_SOIL : ColonyNoise.FABRIC_AMBER_EARTH;
+                    for (ColonyNoise.PocketBlock block : speckle.blocks()) {
+                        if (!inChunk(block, minX, minZ)) {
+                            continue;
+                        }
+                        speckleBlocks[speckle.tier()]++;
+                        if (tierIndex(block.y()) != speckle.tier()) {
+                            speckleTierViolations++;
+                        }
+                        if (noise.fabricKind(block.x(), block.y(), block.z()) == ownFabric) {
+                            contrastViolations++;
+                        }
+                        Col col = col(noise, block.x(), block.z());
+                        if (air(noise, col, block.x(), block.y(), block.z())) {
+                            airViolations++;
+                        }
+                        if (noise.isInThroneRoom(col.thrones(), block.x(), block.y(), block.z())
+                                || noise.isInNurseryRoom(col.nurseries(), block.x(), block.y(), block.z())
+                                || noise.isInGardenRoom(col.gardens(), block.x(), block.y(), block.z())
+                                || noise.isInLarderRoom(col.larders(), block.x(), block.y(), block.z())) {
+                            interiorViolations++;
+                        }
+                    }
+                }
+
+                for (int localX = 0; localX < 16; localX += COMPOSITION_COLUMN_STRIDE) {
+                    for (int localZ = 0; localZ < 16; localZ += COMPOSITION_COLUMN_STRIDE) {
+                        int x = minX + localX;
+                        int z = minZ + localZ;
+                        Col col = col(noise, x, z);
+                        for (int y = FLOOR_TOP; y < CEILING_BOTTOM; y++) {
+                            if (!air(noise, col, x, y, z) && noise.isPlainFabric(col.shafts(), col.thrones(),
+                                    col.nurseries(), col.gardens(), col.larders(), x, y, z)) {
+                                plainFabric[tierIndex(y)]++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        int columnScale = COMPOSITION_COLUMN_STRIDE * COMPOSITION_COLUMN_STRIDE;
+        System.out.println(
+                "  tier              plainFabric/chunk   seam/chunk    seam%   speckle/chunk  speckle%  clusters/chunk");
+        int seamBandMisses = 0;
+        int speckleBandMisses = 0;
+        int speckleStrays = 0;
+        for (int tier = TIER_COUNT - 1; tier >= 0; tier--) {
+            double fabricPerChunk = (double) plainFabric[tier] * columnScale / chunksSampled;
+            double seamPerChunk = (double) seamBlocks[tier] / chunksSampled;
+            double specklePerChunk = (double) speckleBlocks[tier] / chunksSampled;
+            System.out.printf(Locale.ROOT, "  %d %-15s %13.1f %12.1f %7.2f%% %15.1f %8.2f%% %15.1f%n",
+                    tier, tierName(tier), fabricPerChunk, seamPerChunk,
+                    fabricPerChunk == 0.0 ? 0.0 : 100.0 * seamPerChunk / fabricPerChunk, specklePerChunk,
+                    fabricPerChunk == 0.0 ? 0.0 : 100.0 * specklePerChunk / fabricPerChunk,
+                    (double) speckleClusters[tier] / chunksSampled);
+            if (seamPerChunk < SEAM_COVERAGE_MIN_PER_CHUNK || seamPerChunk > SEAM_COVERAGE_MAX_PER_CHUNK) {
+                seamBandMisses++;
+            }
+            if (ColonyNoise.SOIL_SPECKLE_MATERIAL_BY_TIER[tier] == ColonyNoise.SOIL_MATERIAL_NONE) {
+                if (speckleBlocks[tier] > 0) {
+                    speckleStrays++;
+                }
+            } else if (specklePerChunk < SPECKLE_COVERAGE_MIN_PER_CHUNK
+                    || specklePerChunk > SPECKLE_COVERAGE_MAX_PER_CHUNK) {
+                speckleBandMisses++;
+            }
+        }
+        StringBuilder sizes = new StringBuilder("  micro-patch cluster sizes:");
+        for (int size = 1; size <= ColonyGeneratorTunables.SOIL_SPECKLE_MAX_SIZE; size++) {
+            sizes.append(size == 1 ? " " : ", ").append(size).append(" -> ").append(clusterSizeHistogram[size]);
+        }
+        sizes.append(", oversize -> ").append(clusterSizeHistogram[clusterSizeHistogram.length - 1]);
+        System.out.println(sizes);
+
+        System.out.printf(Locale.ROOT, "  seam coverage band [%.0f, %.0f] blocks/chunk/tier: %d tier(s) outside%n",
+                SEAM_COVERAGE_MIN_PER_CHUNK, SEAM_COVERAGE_MAX_PER_CHUNK, seamBandMisses);
+        System.out.println(seamBandMisses == 0
+                ? "  PASS: every tier's soil seams cover their share of the band's fabric."
+                : "  FAIL: " + seamBandMisses + " tier(s) fell outside the seam coverage band.");
+        System.out.printf(Locale.ROOT,
+                "  micro-patch coverage band [%.0f, %.0f] blocks/chunk/tier: %d speckled tier(s) outside,"
+                        + " %d stray tier(s)%n",
+                SPECKLE_COVERAGE_MIN_PER_CHUNK, SPECKLE_COVERAGE_MAX_PER_CHUNK, speckleBandMisses, speckleStrays);
+        System.out.println(speckleBandMisses == 0 && speckleStrays == 0
+                ? "  PASS: Packed Soil speckles the top tier and Amber Earth the second, at the asked-for rate,"
+                        + " and nothing speckles the Royal Depths."
+                : "  FAIL: " + speckleBandMisses + " speckled tier(s) outside the band, " + speckleStrays
+                        + " tier(s) speckled that should not be.");
+        System.out.printf(Locale.ROOT, "  %d cluster(s) outside [%d, %d] blocks, %d with the wrong material%n",
+                sizeViolations, ColonyGeneratorTunables.SOIL_SPECKLE_MIN_SIZE,
+                ColonyGeneratorTunables.SOIL_SPECKLE_MAX_SIZE, materialViolations);
+        System.out.println(sizeViolations == 0 && materialViolations == 0
+                ? "  PASS: every micro-patch is 1-3 blocks of its own tier's material."
+                : "  FAIL: " + sizeViolations + " mis-sized cluster(s), " + materialViolations + " mis-materialled.");
+        System.out.printf(Locale.ROOT,
+                "  micro-patch blocks: %d outside their tier, %d on air, %d in a chamber interior,"
+                        + " %d on fabric of their own kind%n",
+                speckleTierViolations, airViolations, interiorViolations, contrastViolations);
+        System.out.println(speckleTierViolations == 0 && airViolations == 0 && interiorViolations == 0
+                        && contrastViolations == 0
+                ? "  PASS: a micro-patch only ever substitutes contrasting plain fabric inside its own tier."
+                : "  FAIL: a micro-patch escaped the fabric-substitution rule.");
+    }
+
+    private static boolean inChunk(ColonyNoise.PocketBlock block, int minX, int minZ) {
+        return block.x() >= minX && block.x() < minX + 16 && block.z() >= minZ && block.z() < minZ + 16;
+    }
 
     /** The pre-round-1 flat per-block comb chances, kept only as the comparison baseline. */
     private static final double[] OLD_FLAT_COMB_CHANCE_BY_TIER = {0.014, 0.178, 0.0, 0.0};

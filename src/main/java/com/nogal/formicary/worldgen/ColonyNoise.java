@@ -97,6 +97,9 @@ import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_MA
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_MAX_SIZE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_MIN_LAYERS;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_PATCH_MIN_SIZE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_SPECKLE_CLUSTERS_PER_CHUNK_PER_TIER;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_SPECKLE_MAX_SIZE;
+import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.SOIL_SPECKLE_MIN_SIZE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_APPROACH_DISTANCE;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_CORRIDOR_END;
 import static com.nogal.formicary.worldgen.ColonyGeneratorTunables.THRONE_CORRIDOR_HALF_WIDTH;
@@ -2550,6 +2553,11 @@ public final class ColonyNoise {
     public static final int SOIL_MATERIAL_DIRT = 0;
     public static final int SOIL_MATERIAL_GRAVEL = 1;
     public static final int SOIL_MATERIAL_SAND = 2;
+    /** Round-5 micro-patch materials: the mod's own tier soils, used as speckle. */
+    public static final int SOIL_MATERIAL_PACKED_SOIL = 3;
+    public static final int SOIL_MATERIAL_AMBER_EARTH = 4;
+    /** {@link #SOIL_SPECKLE_MATERIAL_BY_TIER} sentinel: this tier grows no speckle. */
+    public static final int SOIL_MATERIAL_NONE = -1;
 
     /**
      * The walk's step directions, with the four horizontal ones repeated
@@ -2591,6 +2599,39 @@ public final class ColonyNoise {
      */
     public static final int[] SOIL_PATCH_AGGREGATE_BY_TIER =
             {SOIL_MATERIAL_GRAVEL, SOIL_MATERIAL_GRAVEL, SOIL_MATERIAL_SAND};
+
+    /**
+     * Which soil a tier's round-5 micro-patches speckle its plain fabric with, or
+     * {@link #SOIL_MATERIAL_NONE} for a tier that grows none. Indexed bottom-up like every
+     * other {@code *_BY_TIER} array.
+     *
+     * <p>Play-test round 5, verbatim: "add packed soil randomly generating through the top
+     * layer, small 1~3 block sized patches very frequent. and use amber earth in the second
+     * layer in the same small 1~3 block sized patches very frequent."
+     *
+     * <p><b>Both entries are chosen to contrast with the fabric they land in</b>, which is
+     * the whole point of the ask, and the mapping is only legible next to
+     * {@link #fabricKind}: tier 2 (the Fungal Gardens, the "top layer") is Amber Earth
+     * shot through with Hardened Soil, so Packed Soil is a block that appears nowhere else
+     * in the band; tier 1 (the Nurseries, the "second layer") is Deep Loam and Hardened
+     * Soil, so Amber Earth is likewise foreign there. Tier 0 is left alone -- the Royal
+     * Depths are already 83% Hardened Soil veined with resin, and the ask named two layers.
+     * {@link NoiseProbe} asserts the contrast per block rather than trusting this paragraph
+     * to survive the next palette retune.
+     */
+    public static final int[] SOIL_SPECKLE_MATERIAL_BY_TIER =
+            {SOIL_MATERIAL_NONE, SOIL_MATERIAL_AMBER_EARTH, SOIL_MATERIAL_PACKED_SOIL};
+
+    /**
+     * A micro-patch's step directions: the plain six neighbours, unweighted.
+     *
+     * <p>Deliberately not {@link #PATCH_STEPS}. A seam is weighted flat because 40-210
+     * blocks in a ball would read as a lump; a cluster of one to three blocks has no shape
+     * to speak of, so the horizontal bias would only cost draws to express a preference
+     * nothing can see.
+     */
+    private static final int[][] SPECKLE_STEPS =
+            {{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {0, 1, 0}, {0, -1, 0}};
 
     /**
      * Whether the solid position at (x, y, z) is plain fabric -- not a chamber's own shell
@@ -2736,6 +2777,146 @@ public final class ColonyNoise {
         return patches.toArray(new SoilPatch[0]);
     }
 
+    // ------------------------------------------------------------------
+    // Soil micro-patches (play-test round 5, item 3) -- the mod's own tier soils used as
+    // speckle through the two upper bands' plain fabric.
+    //
+    // Logan, verbatim: "add packed soil randomly generating through the top layer, small
+    // 1~3 block sized patches very frequent. and use amber earth in the second layer in the
+    // same small 1~3 block sized patches very frequent."
+    //
+    // A separate pass rather than a knob on the seams, because it is the OPPOSITE shape:
+    // the seams got 3.5x bigger in the same round precisely so they read as something to
+    // dig at, and these exist to break up the flat fabric between them. Sharing one
+    // algorithm would have meant one distribution trying to be both.
+    //
+    // Same safety rule as the seams and through the same predicate: fabric-material
+    // substitution only. A speckle never replaces air, never touches a chamber shell or
+    // interior, a ramp or landing floor, a comb, the membrane or the floor/ceiling caps --
+    // see #isPatchEligible, which is #isPlainFabric plus "and it is actually solid".
+    // ------------------------------------------------------------------
+
+    /**
+     * Every micro-patch that can reach into the chunk at ({@code minX}, {@code minZ}),
+     * including the ones seeded by its eight neighbours.
+     *
+     * <p>The 3x3 ring is the same discipline {@link #soilPatchesNear} uses and is very
+     * comfortably sufficient here: a cluster of at most
+     * {@link ColonyGeneratorTunables#SOIL_SPECKLE_MAX_SIZE} blocks grown one step at a time
+     * wanders at most {@code SOIL_SPECKLE_MAX_SIZE - 1} = 2 blocks from its seed column,
+     * against the 17 a chunk two out would need. Confining a cluster to its own chunk
+     * instead would have truncated the two-block overhang on every chunk border, which is
+     * the same straight-edge artifact round 3 introduced the ring to remove -- smaller, but
+     * the same kind, and the ring costs nothing to reuse.
+     */
+    public SoilPatch[] soilSpecklesNear(int minX, int minZ) {
+        ColumnCache cache = new ColumnCache();
+        List<SoilPatch> speckles = new ArrayList<>();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                Collections.addAll(speckles, soilSpecklesForChunk(cache, minX + dx * 16, minZ + dz * 16));
+            }
+        }
+        return speckles.toArray(new SoilPatch[0]);
+    }
+
+    /**
+     * Both fabric-substitution passes for one chunk -- {@link #soilPatchesNear}'s seams and
+     * {@link #soilSpecklesNear}'s micro-patches -- over one shared {@link ColumnCache}.
+     *
+     * <p>The generator's single call site, because the two passes write identically (a
+     * {@link SoilPatch}'s material index against a block state) and resolving the same
+     * eighteen chunks' feature arrays twice would be the same answer for twice the seeded
+     * draws. The two are still separately reachable above, which is how {@link NoiseProbe}
+     * measures each distribution on its own.
+     */
+    public SoilPatch[] soilFabricNear(int minX, int minZ) {
+        ColumnCache cache = new ColumnCache();
+        List<SoilPatch> all = new ArrayList<>();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                Collections.addAll(all, soilPatchesForChunk(cache, minX + dx * 16, minZ + dz * 16));
+                Collections.addAll(all, soilSpecklesForChunk(cache, minX + dx * 16, minZ + dz * 16));
+            }
+        }
+        return all.toArray(new SoilPatch[0]);
+    }
+
+    /**
+     * The micro-patches <b>seeded by</b> the chunk at ({@code minX}, {@code minZ}) --
+     * {@link ColonyGeneratorTunables#SOIL_SPECKLE_CLUSTERS_PER_CHUNK_PER_TIER} attempts in
+     * each tier {@link #SOIL_SPECKLE_MATERIAL_BY_TIER} names a material for. An attempt that
+     * seeds on air or on load-bearing solid is dropped, so the realized count is lower than
+     * the attempt count and varies with how hollow the neighbourhood is.
+     *
+     * <p>Each cluster is a one-to-three block walk over the plain six neighbours, confined
+     * to its own tier band so the material stays a fact about which layer the player is in
+     * -- the same confinement the seams have, and asserted the same way.
+     */
+    private SoilPatch[] soilSpecklesForChunk(ColumnCache cache, int minX, int minZ) {
+        // y = 9: a tenth independent stream, after the soil seams' 8.
+        //
+        // THE FIRST DRAW IS BURNED, and that is not superstition. `factory.at(x, y, z)` puts
+        // y into Mth.getSeed's low bits only, seedHi comes out byte-identical, and
+        // Xoroshiro's first output is one rotate-and-add -- so near the origin two streams
+        // differing only in y agree in draw #1 to nine decimal places (measured in play-test
+        // round 2; the chamber-bearing bug it caused is in docs/DECISIONS.md). Later draws
+        // diffuse fine. Burning one therefore makes this stream independent of the seams'
+        // y = 8 stream everywhere, rather than only far from spawn.
+        //
+        // Both tiers are then drawn from THIS ONE stream in sequence rather than from two
+        // y-keyed streams of their own, for exactly the same reason: sequential draws off a
+        // single Xoroshiro are independent by construction, y-adjacent ones are not.
+        RandomSource random = this.factory.at(minX, 9, minZ);
+        random.nextLong();
+        List<SoilPatch> speckles = new ArrayList<>();
+
+        for (int tier = 0; tier < TIER_COUNT; tier++) {
+            int material = SOIL_SPECKLE_MATERIAL_BY_TIER[tier];
+            if (material == SOIL_MATERIAL_NONE) {
+                continue;
+            }
+            int bandBottom = Math.max(FLOOR_TOP, tierMinY(tier));
+            int bandTop = Math.min(CEILING_BOTTOM, tierMaxY(tier));
+            if (bandTop <= bandBottom) {
+                continue;
+            }
+            for (int i = 0; i < SOIL_SPECKLE_CLUSTERS_PER_CHUNK_PER_TIER; i++) {
+                int seedX = minX + random.nextInt(16);
+                int seedZ = minZ + random.nextInt(16);
+                int seedY = bandBottom + random.nextInt(bandTop - bandBottom);
+                int targetSize = between(SOIL_SPECKLE_MIN_SIZE, SOIL_SPECKLE_MAX_SIZE, random);
+                if (!isPatchEligible(cache, seedX, seedY, seedZ)) {
+                    continue;
+                }
+
+                List<int[]> claimed = new ArrayList<>(targetSize);
+                Set<Long> claimedKeys = new HashSet<>();
+                claimed.add(new int[] {seedX, seedY, seedZ});
+                claimedKeys.add(positionKey(seedX, seedY, seedZ));
+                int attempts = 0;
+                int maxAttempts = targetSize * 8;
+                while (claimed.size() < targetSize && attempts < maxAttempts) {
+                    attempts++;
+                    int[] from = claimed.get(random.nextInt(claimed.size()));
+                    int[] offset = SPECKLE_STEPS[random.nextInt(SPECKLE_STEPS.length)];
+                    int nx = from[0] + offset[0];
+                    int ny = from[1] + offset[1];
+                    int nz = from[2] + offset[2];
+                    if (ny < bandBottom || ny >= bandTop
+                            || !claimedKeys.add(positionKey(nx, ny, nz))
+                            || !isPatchEligible(cache, nx, ny, nz)) {
+                        continue;
+                    }
+                    claimed.add(new int[] {nx, ny, nz});
+                }
+
+                speckles.add(new SoilPatch(toBlocks(claimed), material, tier));
+            }
+        }
+        return speckles.toArray(new SoilPatch[0]);
+    }
+
     /**
      * Whether a patch may claim (x, y, z): solid fabric that nothing load-bearing owns.
      *
@@ -2751,9 +2932,9 @@ public final class ColonyNoise {
     /**
      * A walk's already-claimed set key. Exact rather than a hash: y is inside
      * {@code [0, HEIGHT)} so eight bits hold it, and 26 bits each cover x and z out to
-     * +-33,554,432, past the 30,000,000 world border. Nothing in a patch is more than
-     * {@link ColonyGeneratorTunables#SOIL_PATCH_MAX_RADIUS} blocks from its seed anyway, so
-     * two claimed positions cannot alias even in principle.
+     * +-33,554,432, past the 30,000,000 world border. Nothing in a patch or a cluster is
+     * more than {@link ColonyGeneratorTunables#SOIL_PATCH_MAX_RADIUS} blocks from its seed
+     * anyway, so two claimed positions cannot alias even in principle.
      *
      * <p>Replaced a linear scan of the claimed list when round 5 took a seam to 270 blocks
      * and 2160 walk attempts -- that scan was quadratic in the target size, and the target

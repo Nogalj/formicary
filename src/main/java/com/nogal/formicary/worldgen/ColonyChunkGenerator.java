@@ -275,7 +275,13 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         // is over the 3x3 chunk neighbourhood and this pass writes only the blocks that land
         // inside its own chunk. Both chunks derive the same patch -- it is a pure function of
         // the chunk that seeded it -- so the two halves meet.
-        for (ColonyNoise.SoilPatch patch : noise.soilPatchesNear(minX, minZ)) {
+        //
+        // Round 5 added a second distribution through the same seam: 1-3 block micro-patches
+        // of Packed Soil through the top tier and of Amber Earth through the second, very
+        // frequent where the seams are rare and large. They write identically, so
+        // soilFabricNear hands back both over one shared ColumnCache rather than making this
+        // loop resolve the same eighteen chunks twice.
+        for (ColonyNoise.SoilPatch patch : noise.soilFabricNear(minX, minZ)) {
             BlockState material = soilPatchState(patch.material());
             BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
             for (ColonyNoise.PocketBlock block : patch.blocks()) {
@@ -289,11 +295,18 @@ public class ColonyChunkGenerator extends ChunkGenerator {
         return chunk;
     }
 
-    /** Maps a {@link ColonyNoise.SoilPatch#material()} index to its vanilla block state. */
-    private static BlockState soilPatchState(int material) {
+    /**
+     * Maps a {@link ColonyNoise.SoilPatch#material()} index to its block state -- the three
+     * vanilla aggregates the seams use, plus the two of the mod's own tier soils the round-5
+     * micro-patches speckle with. The latter two come out of {@link #fabricStates}, which
+     * already holds them: the same block a band is made of, used somewhere it is foreign.
+     */
+    private BlockState soilPatchState(int material) {
         return switch (material) {
             case ColonyNoise.SOIL_MATERIAL_GRAVEL -> Blocks.GRAVEL.defaultBlockState();
             case ColonyNoise.SOIL_MATERIAL_SAND -> Blocks.SAND.defaultBlockState();
+            case ColonyNoise.SOIL_MATERIAL_PACKED_SOIL -> this.fabricStates[ColonyNoise.FABRIC_PACKED_SOIL];
+            case ColonyNoise.SOIL_MATERIAL_AMBER_EARTH -> this.fabricStates[ColonyNoise.FABRIC_AMBER_EARTH];
             default -> Blocks.DIRT.defaultBlockState();
         };
     }
