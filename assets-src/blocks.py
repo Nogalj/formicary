@@ -1130,56 +1130,123 @@ def royal_pheromone_gland_item():
     return paint_mask(ROYAL_GLAND_MASK, ROYAL_LEGEND)
 
 
-HORN_LEGEND = {
-    ".": None,
-    "o": (86, 46, 12, 255),          # dark rim
-    "b": (152, 92, 30, 255),         # horn, shaded
-    "H": (226, 168, 82, 255),        # horn body
-    "A": (252, 226, 168, 255),       # the lit inside of the bell
-    "G": (214, 164, 62, 255),        # gold band
-    "g": (166, 120, 36, 255),        # gold band, shaded
-}
+HORN_OUTLINE = (86, 46, 12, 255)     # dark 1px rim
+HORN_SHADE = (128, 74, 22, 255)      # the inner side of the curve
+HORN_BODY = (196, 138, 58, 255)
+HORN_LIT = (232, 178, 92, 255)
+HORN_RIDGE = (252, 220, 158, 255)    # bright ridge along the outer curve
+HORN_TIP = (255, 244, 210, 255)
+HORN_BAND = (150, 102, 28, 255)      # the shading bands crossing the body
+HORN_MOUTH = (214, 164, 62, 255)     # royal gold mouthpiece
+HORN_MOUTH_LIT = (242, 208, 126, 255)
+HORN_MOUTH_DARK = (166, 120, 36, 255)
 
-# A curved horn: flared bell low-left, tapering up-right to the mouthpiece, with
-# a gold band around the bell. Diagonal on purpose -- every other item in this
-# mod is a vertical blob or a vial, so the silhouette alone identifies it.
-# WP-S2 item 2 fallout (2026-08-20): the border guard also caught this mask
-# -- the original rows 0 and 15 (the mouthpiece tip-cap and the bell
-# base-cap) put filled pixels directly on the top/bottom edge. Trimmed to
-# the original rows 2-13 (unchanged) with two blank rows at each end -- one
-# more than the strict minimum, since pheromone_horn_item() doesn't call
-# outline() on this mask, kept for a comfortable margin. Same diagonal, same
-# bands, 2 rows shorter at each end.
-HORN_MASK = [
-    "................",
-    "................",
-    ".........obHHbo.",
-    "........obHHbo..",
-    ".......obHHbo...",
-    "......obHHbo....",
-    ".....obHHbo.....",
-    "....obHHbo......",
-    "...obHHbo.......",
-    "..obHAHbo.......",
-    "..obHAAHbo......",
-    ".obGHAAHbo......",
-    ".obGGHAHbo......",
-    ".obgGGHHbo......",
-    "................",
-    "................",
-]
+# The horn's centre line: a quadratic Bezier from the wide mouthpiece end
+# (low left) to the tip (upper right), bowing up-left so the body actually
+# CURVES rather than running straight -- and a radius that tapers with it.
+# Diagonal on purpose: every other item in this mod is a vertical blob or a
+# vial, so the silhouette alone identifies it.
+HORN_BASE = (4.5, 10.0)
+HORN_CONTROL = (7.2, 5.2)
+HORN_TIP_POINT = (13.1, 4.0)
+HORN_R_BASE = 2.8
+HORN_R_TIP = 0.8
+# Raw fill bounds. outline() then spends one more pixel on every side, which
+# lands the finished sprite on x 1..14 / y 2..13 -- a 14x12 extent with the
+# 1px transparent margin assert_item_borders_transparent requires.
+HORN_X_MIN, HORN_X_MAX = 2, 13
+HORN_Y_MIN, HORN_Y_MAX = 3, 12
+# Where along the curve (0 = mouthpiece, 1 = tip) the anatomy sits. Note the
+# wide end's rounded cap ALL projects to u ~ 0, so the mouthpiece is a block
+# rather than a stripe; what makes it read as banded is HORN_COLLAR_U, the
+# dark ring separating it from the body.
+HORN_MOUTH_U = 0.11
+HORN_MOUTH_BAND_U = 0.05     # one dark band inside the mouthpiece block
+HORN_COLLAR_U = 0.17
+HORN_BAND_U = (0.34, 0.55, 0.74)
+HORN_BAND_HALF_U = 0.038
+HORN_TIP_U = 0.93
+# How far past the first sample the wide end may bulge. Without this the
+# round cap makes the mouthpiece a blob; vanilla's goat_horn is squared off
+# at that end, and the flat cut is most of what reads as "mouthpiece".
+HORN_BASE_FLAT = 1.1
 
 
 def pheromone_horn_item():
-    """Pheromone Horn (M7): reusable summon, crafted from the queen's gland."""
-    img = paint_mask(HORN_MASK, HORN_LEGEND)
+    """Pheromone Horn (M7): reusable summon, crafted from the queen's gland.
+
+    Round-4 item 4 ("needs a texture fix"): the old sprite was a hand-written
+    mask -- a four-column amber band ruled along the diagonal with a gold
+    patch at one end. 84 opaque px, but flat: constant width for most of its
+    length, no ridge, no bands, no mouthpiece to speak of. Vanilla's goat_horn
+    (99 px over a 14x12 extent, read out of the client-extra jar) gets its
+    read from anatomy instead -- a banded mouthpiece block at the wide end, a
+    body that tapers as it curves, and shading bands across it.
+
+    So this is now swept geometry rather than a mask: a tapering radius
+    carried along a bowed Bezier centre line, shaded by the signed distance
+    to that line (bright ridge on the outer curve, HORN_SHADE on the inner),
+    with the mouthpiece, the shading bands and the lightened tip all keyed to
+    position ALONG the curve so every band follows the bend instead of
+    cutting straight across it."""
+    img = blank()
     px = img.load()
-    # a specular run along the horn's upper edge, so the curve catches light
-    for (x, y) in [(11, 1), (10, 2), (9, 3), (8, 4), (7, 5)]:
-        if px[x, y][3] != 0:
-            px[x, y] = (250, 220, 158, 255)
-    px[4, 11] = (255, 246, 214, 255)
-    return img
+    samples = 128
+    pts = [_bezier_point(HORN_BASE, HORN_CONTROL, HORN_TIP_POINT,
+                         i / (samples - 1.0)) for i in range(samples)]
+
+    for y in range(HORN_Y_MIN, HORN_Y_MAX + 1):
+        for x in range(HORN_X_MIN, HORN_X_MAX + 1):
+            cx, cy = x + 0.5, y + 0.5
+            best_d2, best_i = None, 0
+            for i, (sx, sy) in enumerate(pts):
+                d2 = (cx - sx) ** 2 + (cy - sy) ** 2
+                if best_d2 is None or d2 < best_d2:
+                    best_d2, best_i = d2, i
+            u = best_i / (samples - 1.0)
+            r = HORN_R_BASE + (HORN_R_TIP - HORN_R_BASE) * u
+            if best_d2 > r * r:
+                continue
+
+            i0, i1 = max(0, best_i - 1), min(samples - 1, best_i + 1)
+            tx, ty = pts[i1][0] - pts[i0][0], pts[i1][1] - pts[i0][1]
+            length = (tx * tx + ty * ty) ** 0.5 or 1.0
+            nx, ny = -ty / length, tx / length
+            sx, sy = pts[best_i]
+            # negative = the outer (upper-left) side of the bend, which is the
+            # side the light comes from
+            perp = (cx - sx) * nx + (cy - sy) * ny
+            if best_i == 0:
+                along = (cx - sx) * (tx / length) + (cy - sy) * (ty / length)
+                if along < -HORN_BASE_FLAT:
+                    continue
+
+            if u <= HORN_MOUTH_U:
+                if abs(u - HORN_MOUTH_BAND_U) < HORN_BAND_HALF_U * 0.6:
+                    colour = HORN_MOUTH_DARK
+                elif perp <= -r * 0.5:
+                    colour = HORN_MOUTH_LIT
+                elif perp >= r * 0.45:
+                    colour = HORN_MOUTH_DARK
+                else:
+                    colour = HORN_MOUTH
+            elif u <= HORN_COLLAR_U:
+                colour = HORN_MOUTH_DARK
+            elif u >= HORN_TIP_U:
+                colour = HORN_TIP
+            elif any(abs(u - b) < HORN_BAND_HALF_U for b in HORN_BAND_U):
+                colour = HORN_BAND
+            elif perp <= -r * 0.55:
+                colour = HORN_RIDGE
+            elif perp <= -r * 0.1:
+                colour = HORN_LIT
+            elif perp >= r * 0.5:
+                colour = HORN_SHADE
+            else:
+                colour = HORN_BODY
+            px[x, y] = colour
+
+    return outline(img, HORN_OUTLINE)
 
 
 # ---------------------------------------------------------------------------
@@ -1371,24 +1438,88 @@ def chitin_boots_item():
     return from_mask(CHITIN_BOOTS_MASK)
 
 
+CHITIN_RIVET = (206, 206, 206, 255)
+
+PLATE_LEGEND = {
+    ".": None,
+    "o": CHITIN_OUTLINE,
+    "d": CHITIN_DARK,
+    "b": CHITIN_BASE,
+    "m": CHITIN_MID,
+    "r": CHITIN_RIM,
+    "R": CHITIN_RIVET,
+}
+
+# Chitin Plate (round-4 item 3): the forged intermediate the armor and both
+# end-goal tools are now crafted from, so its icon has to read at a glance in
+# a crafting grid the way iron_ingot does -- a squat slab with a lit top-left
+# bevel, a shaded bottom-right one, and four iron rivets marking the corners
+# where the metal is worked into the chitin. Deliberately the only sprite in
+# the chitin family carrying a grey tone: the rivets are what say "iron went
+# into this" without a second material filling the face.
+PLATE_MASK = [
+    "................",
+    "................",
+    "................",
+    "...oooooooooo...",
+    "..orrrrrrrrrro..",
+    "..orRmmmmmmRdo..",
+    "..ormmmmmmmmdo..",
+    "..ormmmmmmmmdo..",
+    "..orbbbbbbbbdo..",
+    "..orbbbbbbbbdo..",
+    "..orRbbbbbbRdo..",
+    "..oddddddddddo..",
+    "...oooooooooo...",
+    "................",
+    "................",
+    "................",
+]
+
+
+def chitin_plate_item():
+    """Chitin Plate: two chitin bound to an iron ingot, netherite-style."""
+    return paint_mask(PLATE_MASK, PLATE_LEGEND)
+
+
 # ---------------------------------------------------------------------------
 # Chitin tool set -- diagonal tool icons, vanilla's own layout: tip at the
 # top-right corner, stick handle running down to the bottom-left.
 #
 # Ep2 play-test revision (WP-1 item 2): the original five-tool Ep2 H1 set
 # (sword/pickaxe/axe/shovel/hoe) is gone, replaced by two hybrid tools --
-# Mandible Pickaxe and Pincer Sword. _tool_icon gained an optional
-# `center_fn` on top of its original `head_width_fn` so a head can curve off
-# the straight diagonal (needed for the sword's claw hook); passing none
-# keeps the original straight-diagonal behaviour.
+# Mandible Pickaxe and Pincer Sword.
+#
+# Round-4 play-test revision, item 1 ("models are too small, compare them to
+# vanilla"): both icons were rebuilt against the ACTUAL vanilla sprites, read
+# out of the client-extra jar rather than remembered --
+#   iron_sword     16x16, 84 opaque px, corner to corner, a five-column blade
+#                  band (dark edge / white / mid / white / black), a
+#                  three-line crossguard and a short wrapped grip;
+#   iron_pickaxe   13x13 extent, 68 opaque px, a broad head arc across the
+#                  whole top plus a limb down the right, and a 3px stick
+#                  handle running the full diagonal.
+# Ours measured 11x12 / 37 px (a twig) and 12x13 / 69 px with a stubby V for
+# a head. The rewrite below matches vanilla's mass and silhouette instead of
+# its own previous shape, and both tools are now netherite-class end-goal
+# items, so each carries a pale specular run along its lit edge.
+#
+# `_tool_icon` (one symmetric width profile traced along one straight axis)
+# went with that rewrite: it cannot express a blade split into two prongs by
+# a seam, nor a head whose two picks curve away from the shaft on their own,
+# and both painters now shade per-region instead of by distance from a single
+# centre line. The shared (s, t) frame it introduced survives as
+# `_tool_frame`, which is the part both tools actually reuse.
 # ---------------------------------------------------------------------------
 
 TOOL_STICK_LIGHT = (178, 140, 92, 255)
 TOOL_STICK_DARK = (140, 104, 62, 255)
+TOOL_STICK_EDGE = (96, 70, 38, 255)
 
-# Where the chitin head begins along the diagonal (see _tool_icon) -- everything
-# below this is bare stick handle, everything at/above it is the head profile.
-TOOL_HEAD_T_MIN = -3
+# End-goal tools want a hotter highlight than CHITIN_SPARK: a few pale pixels
+# along the lit edge is what separates "netherite-class" from "another brown
+# item" at inventory scale.
+CHITIN_PALE = (246, 198, 160, 255)
 
 # WP-S2 item 2 (2026-08-20): both tool icons used to paint corner-to-corner --
 # the stick ran to the literal (0,15) corner and the head tapered out toward
@@ -1400,6 +1531,14 @@ TOOL_HEAD_T_MIN = -3
 # from the edge so that after outline()'s +1px ring the sprite still has a
 # fully transparent row/column on every side -- not just a smaller version of
 # the same corner-touching shape, an actually-contained one.
+#
+# Round 4: it stays at 2, and that is NOT what was making the icons small.
+# outline() spends the second pixel of margin on the sprite's own dark ring,
+# so a RAW fill filling the 2..13 box renders as a 14x14 sprite with a 1px
+# transparent border -- exactly the largest icon assert_item_borders_transparent
+# allows. Dropping TOOL_MARGIN to 1 would instead push outline()'s ring onto
+# row/column 0 and 15 and fail that guard. The old icons were small because
+# their width profiles never filled the box, not because the box was small.
 TOOL_MARGIN = 2
 TOOL_MIN = TOOL_MARGIN
 TOOL_MAX = SIZE - 1 - TOOL_MARGIN  # 13: highest x/y a raw fill pixel may use
@@ -1409,43 +1548,17 @@ def _in_tool_bounds(x, y):
     return TOOL_MIN <= x <= TOOL_MAX and TOOL_MIN <= y <= TOOL_MAX
 
 
-def _tool_icon(head_width_fn, center_fn=None):
-    """Diagonal tool icon shared by both tools: a rotated coordinate frame
-    where `t` runs along the antidiagonal and `s` is the perpendicular offset
-    from it. Below TOOL_HEAD_T_MIN the icon is a 1px stick handle; at/above
-    it, head_width_fn(t) gives the chitin head's half-width in `s` units
-    around center_fn(t) (0 when omitted, i.e. centred on the stick), so each
-    tool is just a profile function -- and optionally a curve -- over one
-    shared diagonal frame (the same head-shape-as-a-function idea the crop
-    age models already use for stage interpolation). Painting is clipped to
-    `_in_tool_bounds` -- see TOOL_MARGIN above -- so head_width_fn/center_fn
-    only need to shape the silhouette; staying inside the canvas is
-    guaranteed here rather than trusted to their tuning."""
-    img = blank()
-    px = img.load()
-    for y in range(SIZE):
-        for x in range(SIZE):
-            if not _in_tool_bounds(x, y):
-                continue
-            s = x + y - (SIZE - 1)
-            t = x - y
-            if t < TOOL_HEAD_T_MIN:
-                if s == 0:
-                    px[x, y] = TOOL_STICK_DARK if (x // 2) % 2 else TOOL_STICK_LIGHT
-                continue
-            half = head_width_fn(t)
-            if half <= 0:
-                continue
-            rel = s - (center_fn(t) if center_fn else 0)
-            if abs(rel) >= half:
-                continue
-            if rel <= -half + 1:
-                px[x, y] = CHITIN_RIM
-            elif rel >= half - 1:
-                px[x, y] = CHITIN_DARK
-            else:
-                px[x, y] = CHITIN_MID
-    return outline(img, CHITIN_OUTLINE)
+def _tool_frame(x, y):
+    """The rotated frame both tools are drawn in: `s` is the perpendicular
+    offset from the tool's diagonal axis (the antidiagonal x + y == SIZE - 1),
+    positive toward the lower right; `t` is the position along that axis,
+    negative toward the bottom-left butt and positive toward the top-right
+    tip. Over the raw fill box (TOOL_MIN..TOOL_MAX) t runs -11..+11, with the
+    two corners (TOOL_MIN, TOOL_MAX) and (TOOL_MAX, TOOL_MIN) sitting at
+    s == 0. Note s and t always have opposite parity, so a fixed t line
+    contains every OTHER s -- widths are therefore reasoned about per raster
+    row, where s and t both advance by one per pixel."""
+    return x + y - (SIZE - 1), x - y
 
 
 def _bezier_point(p0, p1, p2, t):
@@ -1456,13 +1569,21 @@ def _bezier_point(p0, p1, p2, t):
     return x, y
 
 
-def _paint_prong(px, base, control, tip, half_width_start, half_width_end, samples=64):
+def _paint_prong(px, base, control, tip, half_width_start, half_width_end,
+                 samples=64, lit_side=1):
     """Rasterises one tapered, curved pick as a dense set of samples along a
     quadratic Bezier from `base` to `tip` (bowing toward `control`), shading
     each covered pixel by which side of the LOCAL tangent it falls on (RIM on
     the outer edge, DARK on the inner edge, MID in between) rather than by
     position in a single global frame -- which is what lets the stroke curve
-    on its own instead of just widening along one straight axis."""
+    on its own instead of just widening along one straight axis.
+
+    `lit_side` picks WHICH side of the tangent catches the light. The
+    tangent's left normal depends on the direction the stroke is drawn in, so
+    two picks leaving the same socket in opposite directions get opposite
+    normals and, at lit_side=1 for both, opposite shading -- which is how the
+    round-4 pickaxe first came out with a dark top arc and a lit underside.
+    Pass -1 on a stroke drawn "backwards" to keep the light in one place."""
     pts = [_bezier_point(base, control, tip, i / (samples - 1)) for i in range(samples)]
     for y in range(SIZE):
         for x in range(SIZE):
@@ -1484,7 +1605,7 @@ def _paint_prong(px, base, control, tip, half_width_start, half_width_end, sampl
             tx, ty = tx / length, ty / length
             nx, ny = -ty, tx
             sx, sy = pts[best_i]
-            perp = (cx - sx) * nx + (cy - sy) * ny
+            perp = ((cx - sx) * nx + (cy - sy) * ny) * lit_side
             if perp <= -half * 0.4:
                 px[x, y] = CHITIN_RIM
             elif perp >= half * 0.4:
@@ -1493,72 +1614,203 @@ def _paint_prong(px, base, control, tip, half_width_start, half_width_end, sampl
                 px[x, y] = CHITIN_MID
 
 
-def mandible_pickaxe_item():
-    """A pickaxe head that splits into two curved, tapered picks flaring away
-    from the shaft's top -- not _tool_icon's single symmetric blob (that
-    shape reads as a fat stick regardless of its width profile, since it is
-    still just one mass traced along one straight axis; that was the WP-R3
-    item 3 bug report this rewrite fixes).
-
-    The shaft reuses _tool_icon's rotated (t, s) diagonal frame (stick handle
-    only, no head band). The head is two independent tapered Bezier strokes
-    (see _paint_prong) planted at the point the shaft's diagonal naturally
-    ends -- one curving up and to the left, one curving up and to the right,
-    each its own curve with its own tangent at every point along it. That
-    independence is what a single shared profile function over one axis
-    cannot produce: two picks that visibly diverge and curve on their own,
-    like a pair of ant mandibles gripping the point where the shaft ends,
-    rather than one lobe that merely widens then narrows again."""
-    img = blank()
-    px = img.load()
+def _paint_diagonal_shaft(px, t_min, t_max, s_values, colour_fn):
+    """The stick handle both tools hang off: every raw pixel whose (s, t) has
+    s in `s_values` and t in [t_min, t_max], coloured by colour_fn(s, t). One
+    helper rather than two copies of the same rotated-frame loop, because the
+    two tools differ only in how wide and long the shaft is and how it is
+    shaded. outline() adds a dark column either side afterwards, so a
+    three-value s_values renders as vanilla's five-column grip."""
     for y in range(SIZE):
         for x in range(SIZE):
             if not _in_tool_bounds(x, y):
                 continue
-            s = x + y - (SIZE - 1)
-            t = x - y
-            if t < TOOL_HEAD_T_MIN and s == 0:
-                px[x, y] = TOOL_STICK_DARK if (x // 2) % 2 else TOOL_STICK_LIGHT
+            s, t = _tool_frame(x, y)
+            if s not in s_values or not (t_min <= t <= t_max):
+                continue
+            colour = colour_fn(s, t)
+            if colour is not None:
+                px[x, y] = colour
 
-    # The shaft (s == 0, t odd) last paints at t == -5 -> (x=5, y=10); the
-    # head starts one diagonal step further out, at t == -3 -> (x=6, y=9).
-    # WP-S2 item 2: the original control/tip points (2.0,6.0)->(1.0,2.0) and
-    # (11.5,4.5)->(14.5,1.0) ran the picks out to the canvas corners, which is
-    # what clipped in-game. Both prongs are now scaled 0.68x toward `base`
-    # (same curve shape, same divergent-mandible silhouette, just contained)
-    # so the tips land inside TOOL_MARGIN with room for outline()'s ring.
-    base = (6.5, 8.5)
-    _paint_prong(px, base, (3.44, 6.8), (2.76, 4.08), 1.7, 0.5)
-    _paint_prong(px, base, (9.9, 5.78), (11.94, 3.4), 1.7, 0.5)
-    return outline(img, CHITIN_OUTLINE)
+
+# --- Pincer Sword geometry, in the (s, t) frame ----------------------------
+# Laid out against vanilla iron_sword's proportions: roughly 60% blade, 15%
+# crossguard, 25% grip, measured along the diagonal. Ours has 22 diagonal
+# steps of raw box (t in -11..11) where vanilla has 30 of full canvas.
+SWORD_BLADE_T_MIN = -3      # perpendicular cut where blade meets crossguard
+# Four lines thick: a dark separator against the blade, two lines of lit
+# guard body, and a shaded underside. Three lines (one of them body) rendered
+# as a smudge rather than a bar -- a crossguard only reads if the light
+# actually falls on it.
+SWORD_GUARD_T_MIN = -7
+SWORD_GUARD_T_MAX = -4
+SWORD_GUARD_HALF_S = 4      # how far the guard reaches to either side
+SWORD_GRIP_T_MIN = -11      # the pommel end (the (2,13) raw corner)
+SWORD_GRIP_T_MAX = -8       # everything above this belongs to the guard
+SWORD_GRIP_S = (-1, 0, 1)   # three columns, matching iron_sword's grip
+SWORD_POMMEL_T = -10        # at/below this the grip caps off as a pommel
+SWORD_TAPER_T = 5           # blade holds full width to here, then tapers
+SWORD_HALF_WIDE = 2.5       # -> a five-column band: two lit columns, the
+                            #    seam, two more -- both prongs have to catch
+                            #    light or the icon reads as one bright edge
+                            #    with a shadow rather than as a pair
+SWORD_BAND_CENTRE = 0.0
+SWORD_HALF_TIP = 0.6
+SWORD_TIP_T = 11            # t of the raw tip pixel, (TOOL_MAX, TOOL_MIN)
+# Three pale specular pixels marching up the blade's lit edge (s == -2, so t
+# must be odd for the pixel to exist at all -- see _tool_frame).
+SWORD_SPECULAR_T = (-1, 1, 3)
+
+
+def _sword_blade_half(t):
+    """Half-width of the blade band at t: flat until SWORD_TAPER_T, then a
+    straight run down to a real point one step past the tip, so the blade
+    ends in a single pixel instead of a flat edge cropped by the canvas."""
+    if t <= SWORD_TAPER_T:
+        return SWORD_HALF_WIDE
+    k = (t - SWORD_TAPER_T) / float(SWORD_TIP_T + 1 - SWORD_TAPER_T)
+    return SWORD_HALF_WIDE + (SWORD_HALF_TIP - SWORD_HALF_WIDE) * k
 
 
 def pincer_sword_item():
-    """A single blade that tapers to a point while curving off the straight
-    diagonal -- the offset (via center_fn) is what turns a straight blade
-    into a hooked claw silhouette.
+    """Two chitin pincer prongs running the full diagonal as one blade,
+    parted by a dark seam and meeting at the tip; a crossguard perpendicular
+    to them; a wrapped grip and a bright pommel.
 
-    WP-S2 item 2: the old width(t) had a 0.6px floor and only zeroed out via
-    a hard `t >= 15` cutoff -- the blade never actually tapered to a point,
-    it ran at (near) full width straight into the canvas edge and got
-    chopped there, which is what read as clipped in-game. width(t) now
-    tapers linearly to a real 0 by TOOL_T_MAX (well inside TOOL_MARGIN), so
-    the blade comes to an actual point that fits on the canvas instead of a
-    flat edge that happened to fit."""
-    TOOL_T_MAX = 9
-    span = TOOL_T_MAX - TOOL_HEAD_T_MIN
+    Round-4 item 1: the previous icon was a single tapering claw about two
+    pixels wide -- 37 opaque px against iron_sword's 84 -- which is why it
+    read as a twig next to a vanilla weapon. This one fills the raw box
+    corner to corner, five chitin columns across the middle of the blade,
+    shaded SPARK / RIM / DARK-seam / RIM / MID from the lit upper-left edge
+    down to the shaded lower-right one. The seam is the whole trick: two
+    parallel prong masses either side of one dark column read as a pincer,
+    where a single mass of the same width just reads as a wider blade -- and
+    BOTH flanking columns have to be lit, or the dark column reads as shading
+    on one blade instead of the gap between two. It drops out near the tip
+    (where the band is no longer wide enough to hold two prongs and a gap),
+    which is what makes the prongs appear to MEET there rather than run past
+    each other."""
+    img = blank()
+    px = img.load()
 
-    def width(t):
-        if t >= TOOL_T_MAX:
-            return 0
-        return max(0.0, 1.6 * (1 - (t - TOOL_HEAD_T_MIN) / span))
+    def grip_colour(s, t):
+        if t <= SWORD_POMMEL_T:
+            return CHITIN_RIM
+        # alternating wrap bands, one diagonal step apart
+        return TOOL_STICK_LIGHT if t % 2 else TOOL_STICK_DARK
 
-    def curve(t):
-        if t < TOOL_HEAD_T_MIN:
-            return 0
-        return -min(2.2, (t - TOOL_HEAD_T_MIN) * 0.12)
+    _paint_diagonal_shaft(px, SWORD_GRIP_T_MIN, SWORD_GRIP_T_MAX,
+                          SWORD_GRIP_S, grip_colour)
 
-    return _tool_icon(width, curve)
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if not _in_tool_bounds(x, y):
+                continue
+            s, t = _tool_frame(x, y)
+
+            if SWORD_GUARD_T_MIN <= t <= SWORD_GUARD_T_MAX:
+                if abs(s) > SWORD_GUARD_HALF_S:
+                    continue
+                # The guard's own dark top edge: without it the guard and the
+                # blade are one continuous chitin mass and the crossguard
+                # simply does not read, which is what the first round-4 pass
+                # of this icon looked like.
+                if t == SWORD_GUARD_T_MAX:
+                    px[x, y] = CHITIN_OUTLINE
+                elif t == SWORD_GUARD_T_MIN:
+                    px[x, y] = CHITIN_DARK
+                elif s <= -2:
+                    px[x, y] = CHITIN_RIM
+                elif s >= 2:
+                    px[x, y] = CHITIN_BASE
+                else:
+                    px[x, y] = CHITIN_MID
+                continue
+
+            if t < SWORD_BLADE_T_MIN:
+                continue
+            half = _sword_blade_half(t)
+            if abs(s - SWORD_BAND_CENTRE) >= half:
+                continue
+            # A seam only where the band is wide enough for two prongs to sit
+            # either side of it; nearer the tip the prongs merge.
+            seam = half >= SWORD_HALF_WIDE - 0.2
+            if s <= -2:
+                px[x, y] = CHITIN_PALE if t in SWORD_SPECULAR_T else CHITIN_SPARK
+            elif s == -1:
+                px[x, y] = CHITIN_RIM
+            elif s == 0:
+                # much darker than BOTH neighbours, or the groove reads as
+                # shading on one wide blade instead of a gap between two
+                px[x, y] = CHITIN_DARK if seam else CHITIN_RIM
+            elif s == 1:
+                px[x, y] = CHITIN_RIM
+            else:
+                px[x, y] = CHITIN_MID
+
+    return outline(img, CHITIN_OUTLINE)
+
+
+# --- Mandible Pickaxe geometry ---------------------------------------------
+PICK_SHAFT_T_MIN = -11      # the (2,13) raw corner
+PICK_SHAFT_T_MAX = 9        # the shaft runs nearly the whole diagonal, and
+                            # its last step or two pokes past the head at the
+                            # top right exactly as vanilla's handle does
+PICK_SHAFT_S = (0, 1)       # two columns -> vanilla's four-column stick once
+                            # outline() has added an edge either side
+PICK_SOCKET = (10.6, 4.6)   # where both picks meet the shaft, near the top
+# Each pick: a quadratic Bezier leaving the socket, arcing away, and turning
+# back DOWN at the tip -- the downward hook is what reads as an ant mandible
+# rather than a spike. The long left pick sweeps the whole top of the canvas
+# (control at y ~ 1.4) and the short right one drops down the right-hand side,
+# which between them is vanilla iron_pickaxe's head: a broad top arc plus a
+# descending right limb, with the handle socketed at the top right.
+# (control, tip, lit_side) -- see _paint_prong on why the two picks need
+# opposite lit_side values to be lit from the same direction.
+PICK_LEFT = ((6.0, 1.4), (2.8, 4.6), -1)
+PICK_RIGHT = ((13.4, 5.0), (12.6, 8.6), 1)
+PICK_HALF_START = 1.8
+PICK_HALF_END = 0.5
+# Two pale specular pixels on the top arc's outer shoulder.
+PICK_SPECULAR = ((5, 2), (8, 2))
+
+
+def mandible_pickaxe_item():
+    """Vanilla's pickaxe silhouette in chitin: a long diagonal stick handle
+    from the bottom-left, and a broad head arc spanning the whole top, drawn
+    as two curved mandible picks that meet at the handle socket and turn
+    down at their tips.
+
+    Round-4 item 1: the previous head was a stubby V planted mid-canvas --
+    both picks left the shaft at (6.5, 8.5) and ran only to about y=3.4, so
+    the head occupied the middle of the icon instead of arcing across its
+    top, and nothing about it said 'pickaxe'. Vanilla iron_pickaxe's head
+    spans x5..x14 across rows 2-4 and its handle runs the full diagonal;
+    this now does the same, with the socket pushed up the shaft to
+    PICK_SHAFT_T_MAX so both picks have room to arc rather than splay.
+
+    The picks stay two independent tapered Bezier strokes (see _paint_prong),
+    each shaded by which side of its own LOCAL tangent a pixel falls on --
+    that is what lets them curve away from the shaft and hook back down
+    instead of being one lobe that widens and narrows along a single axis."""
+    img = blank()
+    px = img.load()
+
+    def shaft_colour(s, t):
+        return TOOL_STICK_LIGHT if s == 0 else TOOL_STICK_EDGE
+
+    _paint_diagonal_shaft(px, PICK_SHAFT_T_MIN, PICK_SHAFT_T_MAX,
+                          PICK_SHAFT_S, shaft_colour)
+
+    for control, tip, lit_side in (PICK_LEFT, PICK_RIGHT):
+        _paint_prong(px, PICK_SOCKET, control, tip,
+                     PICK_HALF_START, PICK_HALF_END, lit_side=lit_side)
+
+    for (sx, sy) in PICK_SPECULAR:
+        if px[sx, sy][3] != 0:
+            px[sx, sy] = CHITIN_PALE
+
+    return outline(img, CHITIN_OUTLINE)
 
 
 # ---------------------------------------------------------------------------
@@ -1888,6 +2140,7 @@ BLOCK_TEXTURES = {
 ITEM_TEXTURES = {
     "resin": resin_item,
     "chitin": chitin_item,
+    "chitin_plate": chitin_plate_item,
     "larva": larva_item,
     "fungal_spores": fungal_spores_item,
     "royal_jelly": royal_jelly_item,
