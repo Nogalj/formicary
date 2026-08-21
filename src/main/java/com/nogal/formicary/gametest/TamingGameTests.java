@@ -10,6 +10,7 @@ import com.nogal.formicary.entity.CropScanner;
 import com.nogal.formicary.entity.DepositToChestGoal;
 import com.nogal.formicary.entity.GuardPostTargetGoal;
 import com.nogal.formicary.entity.HarvestCropsGoal;
+import com.nogal.formicary.entity.IdleNearChestGoal;
 import com.nogal.formicary.entity.LarvaEntity;
 import com.nogal.formicary.entity.ModEntities;
 import com.nogal.formicary.entity.SoldierAntEntity;
@@ -40,6 +41,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.entity.HopperBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -104,6 +106,35 @@ public class TamingGameTests {
      * <em>when</em> it did finish rather than time out silently.
      */
     private static final int TWO_TRIP_TIMEOUT_TICKS = 800;
+
+    /**
+     * How many times {@link #a_bound_worker_only_ever_strolls_near_its_chest} draws from
+     * {@code IdleNearChestGoal.getPosition}. Fifty is a property test, not a spot check: each
+     * draw is ten independent random candidates scored against each other, so a rule that let
+     * even a small fraction of targets escape the ball would be caught with near certainty.
+     */
+    private static final int IDLE_DRAWS = 50;
+
+    /**
+     * How many of those draws have to come back non-null before the run counts as having
+     * tested anything. A draw legitimately answers {@code null} when its ten candidates all
+     * land somewhere unwalkable, so the invariant is asserted on non-null draws only -- which
+     * means a run where <em>every</em> draw was null would pass while proving nothing.
+     *
+     * <p>Measured on this arena 2026-08-20: 49 of 50. Half that is a floor, not a target.
+     */
+    private static final int IDLE_MIN_NON_NULL_DRAWS = 25;
+
+    /**
+     * Slack allowed when comparing a drawn {@code Vec3} against the block-space idle radius.
+     * {@code RandomPos.generateRandomPos} answers with {@code Vec3.atBottomCenterOf} the block
+     * it chose, i.e. the block's centre in x/z but its <em>floor</em> in y, while the radius
+     * itself is measured between block centres -- so a position exactly on the boundary can
+     * read up to half a block over. One block covers it without weakening the assertion in any
+     * way that matters (the failure this guards against is a twenty-block leash, not a
+     * seven-block one).
+     */
+    private static final double IDLE_RADIUS_TOLERANCE = 1.0;
 
     // ------------------------------------------------------- the diet fork --
 
@@ -857,6 +888,121 @@ public class TamingGameTests {
         });
     }
 
+    // ------------------------------------------------------- the idle ball --
+
+    /**
+     * <b>Play-test round 4, item 7</b>: "tamed worker ants should idle closer to their chest
+     * instead of wandering off."
+     *
+     * <p><b>Not a stroll observation, on purpose.</b> Watching an ant idle in an arena samples
+     * three unrelated distributions at once -- {@code RandomStrollGoal} only fires on a random
+     * 1-in-120 interval, the navigation may or may not reach whatever it picked, and a
+     * climbing ant that brushes a wall on the way goes over it and never comes back
+     * ({@code docs/gotchas/gametest.md}). What the change actually is, though, is one
+     * decision: where the stroll target comes from. So the test draws that decision directly,
+     * {@link #IDLE_DRAWS} times, and asserts the invariant on every draw. The ant never moves
+     * and no goal ever ticks.
+     *
+     * <p>Two cases, and they are the same assertion:
+     * <ul>
+     *   <li><b>Inside</b> -- a worker standing at its chest draws targets within
+     *       {@code IDLE_RADIUS} of the chest, never out at the twenty-block leash
+     *       {@code bindTo} sets.</li>
+     *   <li><b>Outside</b> -- a worker pushed well beyond that ball draws targets that are
+     *       still inside it, i.e. strictly nearer the chest than the worker itself is. That is
+     *       what "walk back toward the chest first" means here, and it falls out of the same
+     *       invariant rather than needing a second code path (see
+     *       {@link IdleNearChestGoal}'s javadoc for why the obvious
+     *       {@code LandRandomPos.getPosTowards} does <em>not</em> give it).</li>
+     * </ul>
+     *
+     * <p>A null draw is a legitimate answer -- ten attempts can all land in a wall -- so the
+     * assertion is on every <em>non-null</em> draw, plus a floor on how many came back at all
+     * so the run cannot pass vacuously.
+     *
+     * <p>{@code arena_platform} rather than the farm arena: 25x25 puts the whole
+     * radius-6 ball on solid floor with room to stand the worker nine blocks out for the
+     * second case, so "the draw was null" means the rule rejected it rather than the arena
+     * running out.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform")
+    public static void a_bound_worker_only_ever_strolls_near_its_chest(GameTestHelper helper) {
+        BlockPos chest = new BlockPos(12, STAND_Y, 12);
+        helper.setBlock(chest, Blocks.CHEST);
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(11, STAND_Y, 12));
+        worker.tame(keeper);
+        BlockPos absoluteChest = helper.absolutePos(chest);
+        worker.bindTo(absoluteChest);
+
+        // The wiring, not just the class: a correct goal the entity never registers would
+        // leave the reported bug exactly where it was.
+        helper.assertTrue(priorityOf(worker, IdleNearChestGoal.class) >= 0,
+                "the worker's registered idle stroll must be the bound-aware goal, not vanilla's");
+
+        IdleNearChestGoal idle = new IdleNearChestGoal(worker, 0.8);
+        Vec3 chestCentre = Vec3.atCenterOf(absoluteChest);
+
+        // (a) standing at the chest: every draw stays in the ball.
+        int drawn = countDrawsWithinIdleRadius(helper, idle, chestCentre, "standing at its chest");
+        helper.assertTrue(drawn >= IDLE_MIN_NON_NULL_DRAWS,
+                "the idle draw must actually produce targets on open floor; only " + drawn + " of "
+                        + IDLE_DRAWS + " draws came back non-null");
+
+        // (b) pushed nine blocks out, well past IDLE_RADIUS: same invariant, which now means
+        // every draw is strictly nearer the chest than the worker is.
+        BlockPos away = helper.absolutePos(new BlockPos(21, STAND_Y, 12));
+        worker.setPos(away.getX() + 0.5, away.getY(), away.getZ() + 0.5);
+        double workerDistance = worker.position().distanceTo(chestCentre);
+        helper.assertTrue(workerDistance > IdleNearChestGoal.IDLE_RADIUS,
+                "setup: the worker must start outside its own idle radius, it is " + workerDistance
+                        + " from the chest");
+
+        int drawnAway = countDrawsWithinIdleRadius(helper, idle, chestCentre, "stranded outside the ball");
+        helper.assertTrue(drawnAway >= IDLE_MIN_NON_NULL_DRAWS,
+                "a stranded worker must still find its way home; only " + drawnAway + " of "
+                        + IDLE_DRAWS + " draws came back non-null");
+        helper.succeed();
+    }
+
+    /**
+     * The other half of the rule, which is what keeps this a <em>bound</em>-worker change: an
+     * unbound worker is following its owner, so its stroll is vanilla's and must stay that way.
+     *
+     * <p>Asserted as "at least one draw lands outside {@code IDLE_RADIUS} of where the chest
+     * would have been" -- vanilla draws within 10 blocks of the <em>mob</em> with no reference
+     * to any chest at all, so over {@link #IDLE_DRAWS} attempts on open floor it is
+     * overwhelmingly likely to leave a 6-block ball. A goal that had accidentally kept the
+     * narrowed draw in follow mode could not produce one.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "arena_platform")
+    public static void a_following_worker_still_strolls_the_vanilla_way(GameTestHelper helper) {
+        BlockPos wouldBeChest = new BlockPos(12, STAND_Y, 12);
+
+        Player keeper = helper.makeMockPlayer(GameType.SURVIVAL);
+        TamedWorkerAntEntity worker = helper.spawn(ModEntities.TAMED_WORKER_ANT.get(),
+                new BlockPos(12, STAND_Y, 12));
+        worker.tame(keeper);
+        helper.assertFalse(worker.isBound(), "setup: this worker must be in follow mode");
+
+        IdleNearChestGoal idle = new IdleNearChestGoal(worker, 0.8);
+        Vec3 centre = Vec3.atCenterOf(helper.absolutePos(wouldBeChest));
+
+        boolean strayed = false;
+        for (int draw = 0; draw < IDLE_DRAWS && !strayed; draw++) {
+            Vec3 target = idle.getPosition();
+            strayed = target != null && target.distanceTo(centre) > IdleNearChestGoal.IDLE_RADIUS + 1;
+        }
+        helper.assertTrue(strayed,
+                "a following worker's stroll must be vanilla's -- none of " + IDLE_DRAWS
+                        + " draws left a " + IdleNearChestGoal.IDLE_RADIUS + "-block ball");
+        helper.succeed();
+    }
+
     /**
      * Ep2: the replant is guaranteed, not conditional on the loot roll.
      *
@@ -1095,6 +1241,31 @@ public class TamingGameTests {
                 }
             }
         }
+    }
+
+    /**
+     * Draws {@link #IDLE_DRAWS} idle targets from {@code idle} and fails the test on the first
+     * one that lands outside {@link IdleNearChestGoal#IDLE_RADIUS} of {@code chestCentre}.
+     *
+     * @return how many of the draws came back non-null, so the caller can refuse a run that
+     *         asserted nothing
+     */
+    private static int countDrawsWithinIdleRadius(GameTestHelper helper, IdleNearChestGoal idle,
+            Vec3 chestCentre, String situation) {
+        int drawn = 0;
+        for (int draw = 0; draw < IDLE_DRAWS; draw++) {
+            Vec3 target = idle.getPosition();
+            if (target == null) {
+                continue;
+            }
+            drawn++;
+            double distance = target.distanceTo(chestCentre);
+            helper.assertTrue(distance <= IdleNearChestGoal.IDLE_RADIUS + IDLE_RADIUS_TOLERANCE,
+                    "a bound worker " + situation + " drew an idle target " + distance
+                            + " blocks from its chest, outside the "
+                            + IdleNearChestGoal.IDLE_RADIUS + "-block idle radius (draw " + draw + ")");
+        }
+        return drawn;
     }
 
     /**

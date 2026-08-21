@@ -34,7 +34,6 @@ import net.minecraft.world.entity.ai.goal.FollowOwnerGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.MoveTowardsRestrictionGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
-import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
@@ -190,7 +189,11 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
         // In work mode the restriction is the chest, so this is what keeps idle wandering
         // from drifting the worker out of its own field.
         this.goalSelector.addGoal(5, new MoveTowardsRestrictionGoal(this, 0.9));
-        this.goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 0.8));
+        // Play-test round 4, item 7: while bound, the idle stroll stays inside
+        // IdleNearChestGoal.IDLE_RADIUS of the chest instead of using the whole 20-block
+        // leash the restriction above allows. In follow mode it is vanilla's stroll,
+        // unchanged.
+        this.goalSelector.addGoal(6, new IdleNearChestGoal(this, 0.8));
         this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 6.0F, 0.1F));
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
     }
@@ -209,8 +212,15 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
 
     /**
      * Switches this worker to work mode, anchored at {@code chest}. The vanilla home-point
-     * restriction is set a little wider than the patrol radius so the idle stroll can round
-     * the edge of the field without {@code MoveTowardsRestrictionGoal} yanking it back.
+     * restriction is set a little wider than the patrol radius so a job at the edge of the
+     * field can be finished without {@code MoveTowardsRestrictionGoal} yanking the worker
+     * back mid-approach.
+     *
+     * <p>That width is for <em>working</em>, and play-test round 4 (item 7) is where the
+     * difference started to matter: an idle worker used to spend it too, which is what "they
+     * wander off" was describing. The leash is deliberately unchanged -- narrowing it would
+     * break the harvest -- and it is the idle stroll that was narrowed instead, to
+     * {@link IdleNearChestGoal#IDLE_RADIUS}.
      */
     public void bindTo(BlockPos chest) {
         this.boundChest = chest.immutable();
