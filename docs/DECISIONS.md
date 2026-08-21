@@ -1918,3 +1918,87 @@ jittered 384-block grid, sparse wilds between them.
   crowding throne would need, so nine candidates are all there are. Cost is eight extra
   one-draw thrones, and only on a tier-0 pick. Fixed rather than left for the probe to catch
   because the probe samples larders while the generator places all of them.
+
+## Play-test round 4 -- Chitin Plate, the Royal tier and the ender ant egg (2026-08-20)
+
+- **Chitin Plate: shapeless 2 Chitin + 1 Iron Ingot -&gt; 1 plate.** Netherite's own
+  monster-part-plus-metal *pattern*, not its 4+4 *price* -- a full Chitin Armor set is
+  24 raw-material slots across four recipes (not netherite's 8), so netherite's own
+  ratio would have priced the set at 96 chitin + 96 iron. At 2:1 the set now costs
+  **48 chitin + 24 iron**. The plate replaces raw chitin as both the armor recipes'
+  ingredient (`ModRecipeProvider#chitinArmorRecipes`) and the repair item for
+  `ModArmorMaterials.CHITIN` *and* the new Royal tool tier -- one item now backs both
+  what you build the gear from and what you fix it with.
+- **The Royal tool tier sits a notch above netherite, verified against the decompiled
+  `Tiers.NETHERITE`** (durability 2031, speed 9.0F, attack damage bonus 4.0F,
+  enchantability 15): Royal is durability **2300**, speed **10.0F**, attack damage bonus
+  **4.0F** (unchanged from netherite -- the weapon buff is carried by the sword's own
+  base damage instead, see below), enchantability **18**, mining tag
+  `INCORRECT_FOR_NETHERITE_TOOL`, repaired with Chitin Plate. The old Chitin tier
+  (durability 400 / speed 7.5 / bonus 2.0 / enchantability 18, Iron-grade mining and
+  reached the moment a player owned any chitin at all) is deleted outright -- grepped
+  for `ModToolTiers.CHITIN` after the move and found nothing outside the tier's own
+  definition, so nothing was left half-migrated.
+- **The buff justification is that the recipe now costs a queen kill.** One Queen's
+  Crest per tool, and only the queen drops one, so this is post-boss gear rather than
+  an early/mid-game set -- see the crest-gated recipes below.
+- **The Pincer Sword's base damage rises 3.0F -&gt; 5.0F; the Mandible Pickaxe's base
+  damage/speed are unchanged** (its buff is entirely the tier: netherite-plus mining
+  speed and durability, still carrying the armor-gate bypass and the pickaxe+shovel
+  union tag from the round-2 revision -- neither of those was touched). **Correction to
+  this round's own framing:** the plan described the sword's result as "total attack 9,
+  one above netherite's 8". Verified against the decompiled `SwordItem
+  .createAttributes` (which sums base damage + tier bonus into one attribute modifier)
+  and `Player#createAttributes` (base `Attributes.ATTACK_DAMAGE` = 1.0), the actual
+  tooltip total is **10** (1 base + 5 base damage + 4.0 tier bonus) against netherite's
+  own verified **8** (1 + 3 + 4.0) -- two above, not one. The 5.0F/ROYAL-4.0F design
+  choice is implemented exactly as specced; only the arithmetic used to describe it is
+  corrected here and in `ModItems.SWORD_BASE_DAMAGE`'s javadoc.
+- **Both end-goal tools are crest-gated, one crest each.** Pincer Sword: column `X` /
+  `C` / `Y` (Chitin Plate / Queen's Crest / Stick). Mandible Pickaxe: `XCX` / ` Y ` /
+  ` Y ` (Chitin Plate, Queen's Crest, Chitin Plate over two Stick rows). Both
+  `unlockedBy` owning a crest -- the same advertise-after-the-fight logic the Pheromone
+  Horn recipe already uses, since only the queen drops one. One crest per tool is
+  farmable at end-game (queens are one per colony, colonies are infinite), not a
+  one-shot choice between the two tools. The crest itself still has no crafting recipe
+  of its own -- it stays drop-only (`ModBlockLootSubProvider`) even though round 4 turns
+  it into an *ingredient* two other recipes consume; `ModRecipeProvider.buildRecipes`'s
+  "deliberately not reciped" comment was reworded so it no longer reads as though the
+  crest is untouched by this round.
+- **Ender Ant Spawn Egg, reversing that entity's own "deliberately no spawn egg" call.**
+  Registered exactly like the mod's four existing eggs (`DeferredSpawnEggItem`, same
+  constructor shape verified against the decompiled source, which wires its own
+  dispenser behaviour and colour-tint handler for every registered instance with no
+  per-item extra needed). Colours: background `0x1A2E2A` (dark teal-black body),
+  highlight `0xB08FD8` (ender-purple speckle) -- this caste's own palette, distinct from
+  the other four eggs'. `item/template_spawn_egg` parent, no texture of our own, same as
+  every other egg. Placed at the end of the creative tab, alongside the other castes'
+  eggs.
+- **The four WP-A worker-AI decisions, recorded here on behalf of the already-landed
+  commits `857a9d9` / `fea4741` / `7d0d125`** (that work package ran and merged ahead of
+  this DECISIONS entry):
+  - **Deposit cooldown is failure backoff only, not a rest between trips.** The old code
+    armed `RETRY_COOLDOWN_TICKS` on every trip end, success included, costing a ~10s
+    stand-around per single-crop cycle. It now arms only when the pack is still
+    non-empty after the trip (chest full, chest gone, or timed out) -- a successful
+    emptying deposit arms nothing. Measured: a two-crop cycle fell from 276 to 59 ticks.
+  - **`IdleNearChestGoal`, `IDLE_RADIUS` = 6, chest-anchored draws.** Replaces the
+    priority-6 free-roam stroll with a bound-aware subclass: when bound, stroll targets
+    are drawn within 6 blocks of the chest (walking back toward it first when beyond
+    that radius); following behaviour is unchanged. `LandRandomPos.getPosTowards` was
+    considered and rejected -- its half-arc bias admits perpendicular steps that would
+    still let a bound worker drift along an arc at a constant distance from the chest
+    rather than actually idling near it.
+  - **Ageless-harvest rule**: a `HARVESTABLE_CROPS`-tagged block with no age property
+    (Pumpkin, Melon) is read as ripe by existence, not by growth stage -- harvested by
+    break-and-bank with no replant and no seed extraction (taking a "seed" would steal a
+    pumpkin from its own drops; the stem stays and regrows the fruit on its own). Stem
+    blocks (`StemBlock` / `AttachedStemBlock`) are excluded in code, never by relying on
+    the tag's contents, since the conventional `c:crops` tag joined this round is not
+    ours to curate.
+  - **`c:crops` joined via a raw `ResourceLocation`, not `Tags.Blocks.CROPS`.** Verified
+    against 21.0.167's own `Tags` class in `reference/`: the constant that exists there
+    is `Tags.Items.CROPS` (an item tag), not a block-side equivalent -- so the
+    conventional block tag is referenced by its literal `c:crops` location, added
+    optionally (an absent tag must never break tag-file loading) alongside the two
+    vanilla additions.
