@@ -82,6 +82,19 @@ public class ModItems {
 
     public static final DeferredItem<Item> RESIN = ITEMS.registerSimpleItem("resin");
     public static final DeferredItem<Item> CHITIN = ITEMS.registerSimpleItem("chitin");
+
+    /**
+     * Round-4 play-test revision, item 3: the armor/tool crafting intermediate. Shapeless
+     * 2 Chitin + 1 Iron Ingot -&gt; 1 plate ({@code ModRecipeProvider#chitinPlateRecipe}) --
+     * netherite's own "monster part + metal, shapeless" *pattern*, not its 4+4 *price*
+     * (a full armor set here is 24 pieces of raw chitin across four recipes, not
+     * netherite's 8, so netherite's own ratio would have overpriced it well past what the
+     * design intends). It replaces raw Chitin as both the four armor recipes' ingredient
+     * (see {@code ModRecipeProvider#chitinArmorRecipes}) and the repair item for
+     * {@link ModArmorMaterials#CHITIN} and the {@link ModToolTiers#ROYAL} tool tier.
+     */
+    public static final DeferredItem<Item> CHITIN_PLATE = ITEMS.registerSimpleItem("chitin_plate");
+
     public static final DeferredItem<Item> SCENT_GLAND = ITEMS.registerSimpleItem("scent_gland");
 
     /** M6: the captured grub. Right-click a block face to set it down (see {@link LarvaItem}). */
@@ -133,14 +146,35 @@ public class ModItems {
     }
 
     // --- Ep2 play-test revision (WP-1 item 2): the five-tool Ep2 H1 chitin set is gone --
-    // replaced by two hybrid tools on the same ModToolTiers.CHITIN tier. Per-tool base
-    // attack damage/speed are not part of the Tier interface (they're chosen per Item
-    // type, the way vanilla's Items.java does it per tool); these two keep the original
+    // replaced by two hybrid tools, originally on a Chitin tool tier. Per-tool base attack
+    // damage/speed are not part of the Tier interface (they're chosen per Item type, the
+    // way vanilla's Items.java does it per tool); these two originally kept the removed
     // set's Iron-borrowed base damage/attack-speed constants exactly (verified in the
     // decompiled Items.java), the same precedent ModArmorMaterials sets by matching Iron's
-    // defense values where the spec is silent. ---
+    // defense values where the spec is silent.
+    //
+    // Round-4 play-test revision (item 2): both tools move to the new ModToolTiers.ROYAL
+    // tier and become end-goal, crest-gated crafts (see
+    // ModRecipeProvider#chitinToolRecipes) -- see ROYAL's own javadoc for why it sits a
+    // notch above netherite. The pickaxe's base damage/speed are unchanged (its buff is
+    // entirely the tier); the sword's base damage rises, see SWORD_BASE_DAMAGE. ---
 
-    private static final float SWORD_BASE_DAMAGE = 3.0F;
+    /**
+     * Round-4 play-test revision buff: 3.0F -&gt; 5.0F. {@code SwordItem.createAttributes}
+     * sums a sword's base damage with its tier's own bonus into one ADD_VALUE attribute
+     * modifier (verified in the decompiled {@code SwordItem#createAttributes}: {@code
+     * attackDamage + tier.getAttackDamageBonus()}) -- 5.0 + {@link ModToolTiers#ROYAL}'s
+     * 4.0F bonus = 9.0. The player's own base {@code Attributes.ATTACK_DAMAGE} (1.0,
+     * verified in {@code Player#createAttributes}) then stacks on top of that modifier for
+     * the tooltip's displayed total, giving this sword a displayed 10 -- two above the
+     * netherite sword's own displayed 8 (1.0 base + its 3 base damage + {@code
+     * Tiers.NETHERITE}'s 4.0 bonus, verified against {@code Items.NETHERITE_SWORD} and
+     * {@code Tiers.NETHERITE} in reference/). The round-4 plan framed this as "one above
+     * netherite's 8"; that framing omits the +1.0 base-hand term on this side of the
+     * comparison, so this javadoc keeps the reference-verified total instead of repeating
+     * the mismatch -- the 5.0F/9.0-modifier design choice itself is unchanged.
+     */
+    private static final float SWORD_BASE_DAMAGE = 5.0F;
     private static final float SWORD_ATTACK_SPEED = -2.4F;
     private static final float PICKAXE_BASE_DAMAGE = 1.0F;
     private static final float PICKAXE_ATTACK_SPEED = -2.8F;
@@ -163,11 +197,11 @@ public class ModItems {
      * inherited unchanged, not overridden.
      */
     public static final DeferredItem<DiggerItem> MANDIBLE_PICKAXE = ITEMS.registerItem("mandible_pickaxe",
-            props -> new DiggerItem(ModToolTiers.CHITIN, ModBlockTags.MINEABLE_WITH_MANDIBLE_PICKAXE,
-                    props.attributes(DiggerItem.createAttributes(ModToolTiers.CHITIN, PICKAXE_BASE_DAMAGE, PICKAXE_ATTACK_SPEED))));
+            props -> new DiggerItem(ModToolTiers.ROYAL, ModBlockTags.MINEABLE_WITH_MANDIBLE_PICKAXE,
+                    props.attributes(DiggerItem.createAttributes(ModToolTiers.ROYAL, PICKAXE_BASE_DAMAGE, PICKAXE_ATTACK_SPEED))));
     public static final DeferredItem<SwordItem> PINCER_SWORD = ITEMS.registerItem("pincer_sword",
-            props -> new SwordItem(ModToolTiers.CHITIN,
-                    props.attributes(SwordItem.createAttributes(ModToolTiers.CHITIN, SWORD_BASE_DAMAGE, SWORD_ATTACK_SPEED))));
+            props -> new SwordItem(ModToolTiers.ROYAL,
+                    props.attributes(SwordItem.createAttributes(ModToolTiers.ROYAL, SWORD_BASE_DAMAGE, SWORD_ATTACK_SPEED))));
 
     public static final DeferredItem<BlockItem> PACKED_SOIL = ITEMS.registerSimpleBlockItem(ModBlocks.PACKED_SOIL);
     public static final DeferredItem<BlockItem> AMBER_EARTH = ITEMS.registerSimpleBlockItem(ModBlocks.AMBER_EARTH);

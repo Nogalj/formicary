@@ -56,7 +56,7 @@ public class MandiblePickaxeGameTests {
 
         helper.assertValueEqual(pickaxe.getDestroySpeed(sand), ModToolTiers.SPEED,
                 "mandible pickaxe destroy speed on a shovel-family block (sand) should match "
-                        + "the chitin tier's full speed, not the 1.0F default");
+                        + "its tool tier's full speed, not the 1.0F default");
         helper.assertTrue(pickaxe.isCorrectToolForDrops(sand),
                 "mandible pickaxe should now be the correct tool for drops on a "
                         + "shovel-family block (sand)");

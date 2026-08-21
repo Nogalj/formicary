@@ -44,6 +44,9 @@ public class ModItemModelProvider extends ItemModelProvider {
 
         basicItem(ModItems.RESIN.get());
         basicItem(ModItems.CHITIN.get());
+        // Round-4 play-test revision, item 3: flat sprite, same as every other plain item
+        // in this list -- the PNG itself is a separate art task.
+        basicItem(ModItems.CHITIN_PLATE.get());
         basicItem(ModItems.LARVA.get());
         // M8: a flat sprite, like every other seed item -- not a block-item parent, since
         // fungal_spores places fungal_spore_crop, a different block from its own name.

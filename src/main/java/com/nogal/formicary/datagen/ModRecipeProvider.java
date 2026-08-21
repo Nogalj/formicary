@@ -74,16 +74,18 @@ public class ModRecipeProvider extends RecipeProvider {
 
         // M8 (spec section 8): recipes, kept modest per section 5's standing rule --
         // "decorative crafting for resin/amber/glass". Deliberately NOT reciped: royal
-        // jelly, scent gland, larva, queen's crest, anthill core/soil, membrane -- those
-        // stay drops/harvest/worldgen-only by design.
+        // jelly, scent gland, larva, anthill core/soil, membrane -- those stay
+        // drops/harvest/worldgen-only by design. Queen's Crest still has no recipe of its
+        // own (still drop-only -- see ModBlockLootSubProvider) even though round 4 makes
+        // it an INGREDIENT the two end-goal tool recipes consume (chitinToolRecipes).
+        chitinPlateRecipe(recipeOutput);
         chitinArmorRecipes(recipeOutput);
         resinStorageRecipes(recipeOutput);
         amberGlassRecipe(recipeOutput);
         decorativeRecipes(recipeOutput);
 
-        // Ep2 play-test revision (WP-1 item 2): Mandible Pickaxe + Pincer Sword, the same
-        // standard vanilla shapes (heads + stick handle) the original five-tool Ep2 H1 set
-        // used.
+        // Ep2 play-test revision (WP-1 item 2; reworked round 4 into end-goal, crest-gated
+        // crafts -- see chitinToolRecipes' own javadoc): Mandible Pickaxe + Pincer Sword.
         chitinToolRecipes(recipeOutput);
 
         // Ep2 task H3: decorative families.
@@ -121,65 +123,90 @@ public class ModRecipeProvider extends RecipeProvider {
     }
 
     /**
-     * Ep2 play-test revision (WP-1 item 2): chitin heads + vanilla {@code Items.STICK}
-     * handles, in exactly the shapes the removed Ep2 H1 chitin sword/pickaxe used (3
-     * chitin over 2 sticks for the pickaxe, 2 chitin over 1 stick for the sword) --
-     * vanilla's own standard tool shapes, unchanged by the item rename.
+     * Round-4 play-test revision, item 3: the armor/tool crafting intermediate.
+     * Shapeless, like netherite's own monster-part-plus-metal upgrade recipe -- nothing
+     * about the arrangement should matter, the same reasoning every other shapeless
+     * recipe in this class already gives. Unlocked by owning chitin, not the plate
+     * itself (which would be circular).
      */
-    private void chitinToolRecipes(RecipeOutput recipeOutput) {
-        String hasChitin = getHasName(ModItems.CHITIN.get());
-
-        ShapedRecipeBuilder.shaped(RecipeCategory.COMBAT, ModItems.PINCER_SWORD.get())
-                .pattern("X")
-                .pattern("X")
-                .pattern("Y")
-                .define('X', ModItems.CHITIN.get())
-                .define('Y', Items.STICK)
-                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
-                .save(recipeOutput);
-
-        ShapedRecipeBuilder.shaped(RecipeCategory.TOOLS, ModItems.MANDIBLE_PICKAXE.get())
-                .pattern("XXX")
-                .pattern(" Y ")
-                .pattern(" Y ")
-                .define('X', ModItems.CHITIN.get())
-                .define('Y', Items.STICK)
-                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
+    private void chitinPlateRecipe(RecipeOutput recipeOutput) {
+        ShapelessRecipeBuilder.shapeless(RecipeCategory.MISC, ModItems.CHITIN_PLATE.get())
+                .requires(ModItems.CHITIN.get(), 2)
+                .requires(Items.IRON_INGOT)
+                .unlockedBy(getHasName(ModItems.CHITIN.get()), has(ModItems.CHITIN.get()))
                 .save(recipeOutput);
     }
 
-    /** The four standard armor-shape recipes, deferred to M8 per the spec. */
+    /**
+     * Round-4 play-test revision, item 2: the Pincer Sword and Mandible Pickaxe are now
+     * end-goal items rather than early/mid crafts. Both use Chitin Plate heads (X) and a
+     * Queen's Crest (C) as the guard/binding piece, replacing the old raw-chitin shapes
+     * (2-over-1 sword, 3-over-2 pickaxe). {@code unlockedBy} keys off owning a crest, the
+     * same advertise-after-the-fight logic {@code buildRecipes}'s Pheromone Horn recipe
+     * uses (only the queen drops a crest, so the recipe book cannot advertise either tool
+     * before that fight); one crest per tool means one queen kill per tool, which is
+     * farmable end-game since colonies -- and their queens -- are infinite.
+     */
+    private void chitinToolRecipes(RecipeOutput recipeOutput) {
+        String hasCrest = getHasName(ModItems.QUEENS_CREST.get());
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.COMBAT, ModItems.PINCER_SWORD.get())
+                .pattern("X")
+                .pattern("C")
+                .pattern("Y")
+                .define('X', ModItems.CHITIN_PLATE.get())
+                .define('C', ModItems.QUEENS_CREST.get())
+                .define('Y', Items.STICK)
+                .unlockedBy(hasCrest, has(ModItems.QUEENS_CREST.get()))
+                .save(recipeOutput);
+
+        ShapedRecipeBuilder.shaped(RecipeCategory.TOOLS, ModItems.MANDIBLE_PICKAXE.get())
+                .pattern("XCX")
+                .pattern(" Y ")
+                .pattern(" Y ")
+                .define('X', ModItems.CHITIN_PLATE.get())
+                .define('C', ModItems.QUEENS_CREST.get())
+                .define('Y', Items.STICK)
+                .unlockedBy(hasCrest, has(ModItems.QUEENS_CREST.get()))
+                .save(recipeOutput);
+    }
+
+    /**
+     * The four standard armor-shape recipes, deferred to M8 per the spec. Round-4 swaps
+     * X from raw Chitin to Chitin Plate (see that item's own javadoc for the economy) --
+     * shapes and yields are otherwise unchanged.
+     */
     private void chitinArmorRecipes(RecipeOutput recipeOutput) {
-        String hasChitin = getHasName(ModItems.CHITIN.get());
+        String hasPlate = getHasName(ModItems.CHITIN_PLATE.get());
 
         ShapedRecipeBuilder.shaped(RecipeCategory.COMBAT, ModItems.CHITIN_HELMET.get())
                 .pattern("XXX")
                 .pattern("X X")
-                .define('X', ModItems.CHITIN.get())
-                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
+                .define('X', ModItems.CHITIN_PLATE.get())
+                .unlockedBy(hasPlate, has(ModItems.CHITIN_PLATE.get()))
                 .save(recipeOutput);
 
         ShapedRecipeBuilder.shaped(RecipeCategory.COMBAT, ModItems.CHITIN_CHESTPLATE.get())
                 .pattern("X X")
                 .pattern("XXX")
                 .pattern("XXX")
-                .define('X', ModItems.CHITIN.get())
-                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
+                .define('X', ModItems.CHITIN_PLATE.get())
+                .unlockedBy(hasPlate, has(ModItems.CHITIN_PLATE.get()))
                 .save(recipeOutput);
 
         ShapedRecipeBuilder.shaped(RecipeCategory.COMBAT, ModItems.CHITIN_LEGGINGS.get())
                 .pattern("XXX")
                 .pattern("X X")
                 .pattern("X X")
-                .define('X', ModItems.CHITIN.get())
-                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
+                .define('X', ModItems.CHITIN_PLATE.get())
+                .unlockedBy(hasPlate, has(ModItems.CHITIN_PLATE.get()))
                 .save(recipeOutput);
 
         ShapedRecipeBuilder.shaped(RecipeCategory.COMBAT, ModItems.CHITIN_BOOTS.get())
                 .pattern("X X")
                 .pattern("X X")
-                .define('X', ModItems.CHITIN.get())
-                .unlockedBy(hasChitin, has(ModItems.CHITIN.get()))
+                .define('X', ModItems.CHITIN_PLATE.get())
+                .unlockedBy(hasPlate, has(ModItems.CHITIN_PLATE.get()))
                 .save(recipeOutput);
     }
 

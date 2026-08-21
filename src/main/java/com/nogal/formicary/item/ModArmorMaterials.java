@@ -34,6 +34,11 @@ import net.neoforged.neoforge.registries.DeferredRegister;
  * chestplate, boots) and {@code _layer_2.png} (inner: leggings), so
  * {@code formicary:chitin} means
  * {@code assets/formicary/textures/models/armor/chitin_layer_{1,2}.png}.
+ *
+ * <p>Round-4 play-test revision: the repair ingredient changes from raw Chitin to
+ * {@link ModItems#CHITIN_PLATE} -- the same swap the four armor recipes make in
+ * {@code ModRecipeProvider#chitinArmorRecipes}, so repairing the set costs the same
+ * crafting intermediate that built it.
  */
 public final class ModArmorMaterials {
     public static final DeferredRegister<ArmorMaterial> ARMOR_MATERIALS =
@@ -48,7 +53,7 @@ public final class ModArmorMaterials {
                     defense(2, 6, 5, 2),
                     9,
                     SoundEvents.ARMOR_EQUIP_TURTLE,
-                    () -> Ingredient.of(ModItems.CHITIN.get()),
+                    () -> Ingredient.of(ModItems.CHITIN_PLATE.get()),
                     List.of(new ArmorMaterial.Layer(
                             ResourceLocation.fromNamespaceAndPath(Formicary.MODID, "chitin"))),
                     0.0F,

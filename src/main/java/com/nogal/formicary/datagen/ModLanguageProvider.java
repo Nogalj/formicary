@@ -51,6 +51,7 @@ public class ModLanguageProvider extends LanguageProvider {
 
         addItem(ModItems.RESIN, "Resin");
         addItem(ModItems.CHITIN, "Chitin");
+        addItem(ModItems.CHITIN_PLATE, "Chitin Plate");
         addItem(ModItems.LARVA, "Larva");
         addItem(ModItems.ROYAL_JELLY, "Royal Jelly");
         addItem(ModItems.SCENT_GLAND, "Scent Gland");
