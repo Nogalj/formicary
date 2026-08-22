@@ -2195,15 +2195,19 @@ def antenna_segment(img, name, uv, length, ramp):
 # Faces: right x0..7 | FRONT x8..15 | left x16..23 | back x24..31, and within a
 # side face the column adjacent to the front is x7 / x16 (established by
 # measuring which half of each side face vanilla keeps as its helmet tapers).
-# Rows y11..y15 open x9..x14 of the front face: that is the face opening Logan
+# Rows y12..y15 open x9..x14 of the front face: that is the face opening Logan
 # asked for -- the player's own face renders through it. x8 and x15 survive as
-# 1px cheek posts framing the opening, tipped with AJAW_TIP mandible amber.
+# 1px cheek posts framing the opening, tipped with AJAW_TIP mandible amber, and
+# y11 stays closed as a brow ridge over the visor. Vanilla's own helmet is shut
+# down to y11 and open below (with two eye slits), so this is the same amount of
+# head, differently cut: one continuous opening instead of slits, which is what
+# "an opening for the players face" asks for.
 CHITIN_HELM_SIDE_MASK = [
     "################################",   # y8   dome plate, lit top edge
     "################################",   # y9   dome plate body
     "################################",   # y10  dome plate body
-    "#######.#......#.###############",   # y11  seam; face opening starts
-    "#####...#......#...#############",   # y12  cheek plate, lit top edge
+    "#######.########.###############",   # y11  brow ridge, still closed
+    "#####...#......#...#############",   # y12  cheek plate; face opening starts
     "###.....#......#.....###########",   # y13  cheek plate body + mandible tips
     "..........................####..",   # y14  back neck flap
     "................................",   # y15
