@@ -151,5 +151,30 @@ public class ModLanguageProvider extends LanguageProvider {
         add("advancements.formicary.first_harvest.description", "Have a tamed worker deliver its first harvest");
         add("advancements.formicary.raise_both_castes.title", "Two Castes, One Colony");
         add("advancements.formicary.raise_both_castes.description", "Raise both a worker and a soldier from larvae");
+
+        // Subtitles for every mod sound event (ModSounds / ModSoundDefinitionsProvider).
+        // Vanilla's phrasing is "<Subject> <verb>s" with the verb in the present tense --
+        // "Spider hisses", "Enderman teleports", "Warden roars" -- so these match that.
+        // They are what the Subtitles accessibility option shows, and they survive Logan
+        // swapping the audio underneath: the subtitle names the mob, not the borrowed sound.
+        add("subtitles.formicary.worker_ant.ambient", "Worker Ant skitters");
+        add("subtitles.formicary.worker_ant.hurt", "Worker Ant hurts");
+        add("subtitles.formicary.worker_ant.death", "Worker Ant dies");
+        add("subtitles.formicary.soldier_ant.ambient", "Soldier Ant chitters");
+        add("subtitles.formicary.soldier_ant.hurt", "Soldier Ant hurts");
+        add("subtitles.formicary.soldier_ant.death", "Soldier Ant dies");
+        add("subtitles.formicary.larva.hurt", "Larva squishes");
+        add("subtitles.formicary.larva.death", "Larva dies");
+        add("subtitles.formicary.ender_ant.ambient", "Ender Ant vwoops");
+        add("subtitles.formicary.ender_ant.hurt", "Ender Ant hurts");
+        add("subtitles.formicary.ender_ant.death", "Ender Ant dies");
+        add("subtitles.formicary.ender_ant.teleport", "Ender Ant teleports");
+        add("subtitles.formicary.queen.ambient", "The Queen chitters");
+        add("subtitles.formicary.queen.hurt", "The Queen hurts");
+        add("subtitles.formicary.queen.death", "The Queen dies");
+        add("subtitles.formicary.queen.roar", "The Queen roars");
+        add("subtitles.formicary.queen.acid_spit", "The Queen spits");
+        add("subtitles.formicary.queen.burrow", "The Queen burrows");
+        add("subtitles.formicary.queen.slam", "The Queen erupts");
     }
 }

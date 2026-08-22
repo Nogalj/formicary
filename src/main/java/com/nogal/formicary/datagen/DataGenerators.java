@@ -44,6 +44,10 @@ public class DataGenerators {
         generator.addProvider(event.includeServer(),
                 new ModAdvancementProvider(output, lookupProvider, existingFileHelper));
         generator.addProvider(event.includeClient(), new ModLanguageProvider(output));
+        // sounds.json: the mob-voice indirection layer. Client-side asset, like the models
+        // and the lang file. See docs/SOUNDS.md.
+        generator.addProvider(event.includeClient(),
+                new ModSoundDefinitionsProvider(output, existingFileHelper));
     }
 
     private DataGenerators() {

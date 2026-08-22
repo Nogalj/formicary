@@ -1,0 +1,173 @@
+{
+  "entity.ender_ant.ambient": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.enderman.ambient"
+      }
+    ],
+    "subtitle": "subtitles.formicary.ender_ant.ambient"
+  },
+  "entity.ender_ant.death": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.enderman.death"
+      }
+    ],
+    "subtitle": "subtitles.formicary.ender_ant.death"
+  },
+  "entity.ender_ant.hurt": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.enderman.hurt"
+      }
+    ],
+    "subtitle": "subtitles.formicary.ender_ant.hurt"
+  },
+  "entity.ender_ant.teleport": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.enderman.teleport"
+      }
+    ],
+    "subtitle": "subtitles.formicary.ender_ant.teleport"
+  },
+  "entity.larva.death": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.slime.squish_small"
+      }
+    ],
+    "subtitle": "subtitles.formicary.larva.death"
+  },
+  "entity.larva.hurt": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.slime.squish_small"
+      }
+    ],
+    "subtitle": "subtitles.formicary.larva.hurt"
+  },
+  "entity.queen.acid_spit": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.llama.spit"
+      }
+    ],
+    "subtitle": "subtitles.formicary.queen.acid_spit"
+  },
+  "entity.queen.ambient": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.spider.ambient"
+      }
+    ],
+    "subtitle": "subtitles.formicary.queen.ambient"
+  },
+  "entity.queen.burrow": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "block.rooted_dirt.break"
+      }
+    ],
+    "subtitle": "subtitles.formicary.queen.burrow"
+  },
+  "entity.queen.death": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.spider.death"
+      }
+    ],
+    "subtitle": "subtitles.formicary.queen.death"
+  },
+  "entity.queen.hurt": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.spider.hurt"
+      }
+    ],
+    "subtitle": "subtitles.formicary.queen.hurt"
+  },
+  "entity.queen.roar": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.warden.roar"
+      }
+    ],
+    "subtitle": "subtitles.formicary.queen.roar"
+  },
+  "entity.queen.slam": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.generic.explode"
+      }
+    ],
+    "subtitle": "subtitles.formicary.queen.slam"
+  },
+  "entity.soldier_ant.ambient": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.spider.ambient"
+      }
+    ],
+    "subtitle": "subtitles.formicary.soldier_ant.ambient"
+  },
+  "entity.soldier_ant.death": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.spider.death"
+      }
+    ],
+    "subtitle": "subtitles.formicary.soldier_ant.death"
+  },
+  "entity.soldier_ant.hurt": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.spider.hurt"
+      }
+    ],
+    "subtitle": "subtitles.formicary.soldier_ant.hurt"
+  },
+  "entity.worker_ant.ambient": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.spider.step"
+      }
+    ],
+    "subtitle": "subtitles.formicary.worker_ant.ambient"
+  },
+  "entity.worker_ant.death": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.spider.death"
+      }
+    ],
+    "subtitle": "subtitles.formicary.worker_ant.death"
+  },
+  "entity.worker_ant.hurt": {
+    "sounds": [
+      {
+        "type": "event",
+        "name": "entity.spider.hurt"
+      }
+    ],
+    "subtitle": "subtitles.formicary.worker_ant.hurt"
+  }
+}

@@ -13,6 +13,7 @@ import com.nogal.formicary.item.ModCreativeModeTabs;
 import com.nogal.formicary.item.ModItems;
 import com.nogal.formicary.loot.ModLootConditions;
 import com.nogal.formicary.portal.ModAttachments;
+import com.nogal.formicary.sound.ModSounds;
 import com.nogal.formicary.worldgen.ModWorldgen;
 
 import net.minecraft.world.item.CreativeModeTabs;
@@ -53,6 +54,10 @@ public class Formicary {
         ModAttachments.ATTACHMENT_TYPES.register(modEventBus);
         // M8: the two custom advancement criterion triggers (first harvest, caste grown).
         ModCriteriaTriggers.TRIGGER_TYPES.register(modEventBus);
+        // Every mob voice the mod owns. The entities reference these instead of vanilla
+        // SoundEvents constants; what each one actually plays is decided in the generated
+        // sounds.json (ModSoundDefinitionsProvider). See docs/SOUNDS.md.
+        ModSounds.SOUND_EVENTS.register(modEventBus);
 
         modEventBus.addListener(this::addCreative);
 
