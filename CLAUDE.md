@@ -142,6 +142,11 @@ subsystem, and bank new rules there, not here.
 - **Scripting a headless `runServer`/`runClient`** (piped stdin never reaches the game JVM;
   `--args` replaces the whole argfile; the self-driving `ServerTickEvent` probe recipe; the
   shot-list autopilot) -> `docs/dev-tools.md` (lives outside `gotchas/`, next to the tools)
+- **Adding or swapping a mob sound**, or `runData` dying with `Found invalid sound events:
+  [...]` / `Unable to find corresponding OGG file` (a `SoundType.SOUND` entry is checked
+  against the filesystem; a `SoundType.EVENT` redirect is checked against the registry, which
+  is why the mod ships 19 named voices and zero `.ogg` files) -> `docs/SOUNDS.md`
+  (player-facing walkthrough, also outside `gotchas/`)
 
 ## Workflow
 
