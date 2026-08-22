@@ -2,6 +2,8 @@ package com.nogal.formicary.entity;
 
 import javax.annotation.Nullable;
 
+import com.nogal.formicary.sound.ModSounds;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -267,19 +269,22 @@ public class TamedSoldierAntEntity extends TamableAnimal implements TamedAnt {
 
     // -------------------------------------------------------------- sounds --
 
+    // Deliberately the wild soldier's events, not a tamed-specific set: a tamed soldier is
+    // still a soldier, so one voice covers both. See docs/SOUNDS.md.
+
     @Override
     protected SoundEvent getAmbientSound() {
-        return SoundEvents.SPIDER_AMBIENT;
+        return ModSounds.SOLDIER_ANT_AMBIENT.get();
     }
 
     @Override
     protected SoundEvent getHurtSound(DamageSource damageSource) {
-        return SoundEvents.SPIDER_HURT;
+        return ModSounds.SOLDIER_ANT_HURT.get();
     }
 
     @Override
     protected SoundEvent getDeathSound() {
-        return SoundEvents.SPIDER_DEATH;
+        return ModSounds.SOLDIER_ANT_DEATH.get();
     }
 
     @Override

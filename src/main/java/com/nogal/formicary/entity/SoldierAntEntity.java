@@ -5,6 +5,7 @@ import java.util.UUID;
 import javax.annotation.Nullable;
 
 import com.nogal.formicary.colony.ColonyAnger;
+import com.nogal.formicary.sound.ModSounds;
 
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
@@ -13,7 +14,6 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
-import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -371,19 +371,21 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
 
     // -------------------------------------------------------------- sounds --
 
+    // Mod-owned events, not vanilla constants -- see docs/SOUNDS.md.
+
     @Override
     protected SoundEvent getAmbientSound() {
-        return SoundEvents.SPIDER_AMBIENT;
+        return ModSounds.SOLDIER_ANT_AMBIENT.get();
     }
 
     @Override
     protected SoundEvent getHurtSound(DamageSource damageSource) {
-        return SoundEvents.SPIDER_HURT;
+        return ModSounds.SOLDIER_ANT_HURT.get();
     }
 
     @Override
     protected SoundEvent getDeathSound() {
-        return SoundEvents.SPIDER_DEATH;
+        return ModSounds.SOLDIER_ANT_DEATH.get();
     }
 
     @Override

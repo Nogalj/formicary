@@ -6,6 +6,7 @@ import com.nogal.formicary.advancement.CasteGrownTrigger;
 import com.nogal.formicary.advancement.ModCriteriaTriggers;
 import com.nogal.formicary.item.ModItemTags;
 import com.nogal.formicary.item.ModItems;
+import com.nogal.formicary.sound.ModSounds;
 
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
@@ -227,14 +228,18 @@ public class LarvaEntity extends PathfinderMob {
     // No ambient sound: a passive grub wriggling in place should read as silent, not
     // chattering like the worker/soldier.
 
+    // Mod-owned events, not vanilla constants -- see docs/SOUNDS.md. Both currently
+    // redirect to SLIME_SQUISH_SMALL, but they are separate events so hurt and death can
+    // diverge later without another Java change.
+
     @Override
     protected SoundEvent getHurtSound(DamageSource damageSource) {
-        return SoundEvents.SLIME_SQUISH_SMALL;
+        return ModSounds.LARVA_HURT.get();
     }
 
     @Override
     protected SoundEvent getDeathSound() {
-        return SoundEvents.SLIME_SQUISH_SMALL;
+        return ModSounds.LARVA_DEATH.get();
     }
 
     @Override

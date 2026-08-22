@@ -1,6 +1,7 @@
 package com.nogal.formicary.entity;
 
 import com.nogal.formicary.colony.ColonyAnger;
+import com.nogal.formicary.sound.ModSounds;
 import com.nogal.formicary.worldgen.ColonyChunkGenerator;
 import com.nogal.formicary.worldgen.ColonyGeneratorTunables;
 
@@ -12,7 +13,6 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
-import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.damagesource.DamageSource;
@@ -414,9 +414,9 @@ public class EnderAntEntity extends PathfinderMob {
         spawnBlinkParticles(level, from);
         spawnBlinkParticles(level, this.position());
         if (!this.isSilent()) {
-            level.playSound(null, from.x, from.y, from.z, SoundEvents.ENDERMAN_TELEPORT,
+            level.playSound(null, from.x, from.y, from.z, ModSounds.ENDER_ANT_TELEPORT.get(),
                     this.getSoundSource(), 1.0F, 1.0F);
-            this.playSound(SoundEvents.ENDERMAN_TELEPORT, 1.0F, 1.0F);
+            this.playSound(ModSounds.ENDER_ANT_TELEPORT.get(), 1.0F, 1.0F);
         }
         return true;
     }
@@ -429,23 +429,26 @@ public class EnderAntEntity extends PathfinderMob {
 
     /**
      * Enderman voice rather than the colony's spider voice. The teleport sound is already
-     * {@code ENDERMAN_TELEPORT} (it is the one vanilla event that means "something just
-     * blinked"), and splitting the identity -- ant noises, ender teleport -- would make the
-     * one audio cue that matters read as a different mob entirely.
+     * the enderman one (it is the one vanilla event that means "something just blinked"),
+     * and splitting the identity -- ant noises, ender teleport -- would make the one audio
+     * cue that matters read as a different mob entirely.
+     *
+     * <p>These are mod-owned events now; the generated sounds.json redirects each to the
+     * vanilla enderman sound named above, so nothing changed audibly. See docs/SOUNDS.md.
      */
     @Override
     protected SoundEvent getAmbientSound() {
-        return SoundEvents.ENDERMAN_AMBIENT;
+        return ModSounds.ENDER_ANT_AMBIENT.get();
     }
 
     @Override
     protected SoundEvent getHurtSound(DamageSource damageSource) {
-        return SoundEvents.ENDERMAN_HURT;
+        return ModSounds.ENDER_ANT_HURT.get();
     }
 
     @Override
     protected SoundEvent getDeathSound() {
-        return SoundEvents.ENDERMAN_DEATH;
+        return ModSounds.ENDER_ANT_DEATH.get();
     }
 
     @Override

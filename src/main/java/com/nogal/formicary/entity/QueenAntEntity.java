@@ -10,6 +10,7 @@ import javax.annotation.Nullable;
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.colony.ColonyAnger;
 import com.nogal.formicary.effect.ModMobEffects;
+import com.nogal.formicary.sound.ModSounds;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.BlockParticleOption;
@@ -20,7 +21,6 @@ import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
-import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.BossEvent;
 import net.minecraft.world.damagesource.DamageSource;
@@ -423,7 +423,7 @@ public class QueenAntEntity extends PathfinderMob {
         if ((this.unlockedMoves & UNLOCK_FRENZY) == 0 && fraction < FRENZY_UNLOCK_FRACTION) {
             this.unlockedMoves |= UNLOCK_FRENZY;
             this.applyFrenzySpeed();
-            this.playSound(SoundEvents.WARDEN_ROAR, 2.5F, 0.7F);
+            this.playSound(ModSounds.QUEEN_ROAR.get(), 2.5F, 0.7F);
         }
     }
 
@@ -448,8 +448,9 @@ public class QueenAntEntity extends PathfinderMob {
         addTargetIfPlayerInRange(caught, this.getTarget(), origin, BURST_RADIUS);
         pheromoneBurst(level, origin, caught);
         summonWave(level);
-        // Temporary (Ep2 play-test revision): matches getAmbientSound's borrowed spider voice.
-        this.playSound(SoundEvents.SPIDER_AMBIENT, 2.0F, 0.5F);
+        // Her own ambient event, at burst volume -- so the phase burst tracks whatever voice
+        // getAmbientSound has, automatically.
+        this.playSound(ModSounds.QUEEN_AMBIENT.get(), 2.0F, 0.5F);
     }
 
     /**
@@ -540,7 +541,7 @@ public class QueenAntEntity extends PathfinderMob {
         spit.shoot(dx, dy + horizontal * 0.2, dz,
                 AcidSpitProjectile.LAUNCH_VELOCITY, AcidSpitProjectile.LAUNCH_INACCURACY);
         level.addFreshEntity(spit);
-        this.playSound(SoundEvents.LLAMA_SPIT, 1.6F, 0.6F);
+        this.playSound(ModSounds.QUEEN_ACID_SPIT.get(), 1.6F, 0.6F);
         this.spitCooldown = SPIT_COOLDOWN_TICKS;
     }
 
@@ -641,7 +642,7 @@ public class QueenAntEntity extends PathfinderMob {
         this.getNavigation().stop();
         this.setDeltaMovement(Vec3.ZERO);
         this.setInvisible(true);
-        this.playSound(SoundEvents.ROOTED_DIRT_BREAK, 2.0F, 0.5F);
+        this.playSound(ModSounds.QUEEN_BURROW.get(), 2.0F, 0.5F);
     }
 
     /**
@@ -700,7 +701,9 @@ public class QueenAntEntity extends PathfinderMob {
             // player gets to see that the dodge worked.
             level.sendParticles(ParticleTypes.EXPLOSION, surface.x, surface.y + 0.5, surface.z,
                     1, 0.0, 0.0, 0.0, 0.0);
-            this.playSound(SoundEvents.ROOTED_DIRT_PLACE, 1.6F, 0.5F);
+            // Same event as going under, a quarter of the noise -- one file covers both
+            // halves of the move. The volume/pitch are what makes them read differently.
+            this.playSound(ModSounds.QUEEN_BURROW.get(), 1.6F, 0.5F);
         }
     }
 
@@ -736,7 +739,10 @@ public class QueenAntEntity extends PathfinderMob {
         level.sendParticles(new BlockParticleOption(ParticleTypes.BLOCK,
                         level.getBlockState(BlockPos.containing(centre).below())),
                 centre.x, centre.y + 0.2, centre.z, 60, 2.0, 0.3, 2.0, 0.3);
-        this.playSound(SoundEvents.GENERIC_EXPLODE.value(), 2.0F, 0.6F);
+        // No .value() any more: ModSounds holds a DeferredHolder<SoundEvent, SoundEvent>, so
+        // .get() already yields the SoundEvent. GENERIC_EXPLODE needed .value() because it is
+        // one of the few SoundEvents fields declared as a Holder.Reference<SoundEvent>.
+        this.playSound(ModSounds.QUEEN_SLAM.get(), 2.0F, 0.6F);
     }
 
     /**
@@ -1106,20 +1112,21 @@ public class QueenAntEntity extends PathfinderMob {
 
     @Override
     protected SoundEvent getAmbientSound() {
-        // Temporary (Ep2 play-test revision): borrowed spider ambience until Logan supplies
-        // custom queen voice sounds. Hurt/death are already spider; this and the phase-burst
-        // playSound below (~:451) are the two spots that were still the bee-loop placeholder.
-        return SoundEvents.SPIDER_AMBIENT;
+        // Mod-owned event. The generated sounds.json still redirects it to SPIDER_AMBIENT,
+        // so this is the same borrowed spider ambience it has been since the Ep2 play-test
+        // revision -- but swapping in a real queen voice is now a sounds.json edit rather
+        // than a Java one. See docs/SOUNDS.md.
+        return ModSounds.QUEEN_AMBIENT.get();
     }
 
     @Override
     protected SoundEvent getHurtSound(DamageSource damageSource) {
-        return SoundEvents.SPIDER_HURT;
+        return ModSounds.QUEEN_HURT.get();
     }
 
     @Override
     protected SoundEvent getDeathSound() {
-        return SoundEvents.SPIDER_DEATH;
+        return ModSounds.QUEEN_DEATH.get();
     }
 
     @Override

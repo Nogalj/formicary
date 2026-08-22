@@ -5,6 +5,7 @@ import java.util.UUID;
 import javax.annotation.Nullable;
 
 import com.nogal.formicary.colony.ColonyAnger;
+import com.nogal.formicary.sound.ModSounds;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -251,20 +252,23 @@ public class WorkerAntEntity extends PathfinderMob implements CarriesItem {
     }
 
     // -------------------------------------------------------------- sounds --
+    // Mod-owned events, not vanilla constants: what they play is decided in the generated
+    // sounds.json (currently a redirect to the same spider sounds these used to name
+    // directly, so nothing changed audibly). See docs/SOUNDS.md.
 
     @Override
     protected SoundEvent getAmbientSound() {
-        return SoundEvents.SPIDER_STEP;
+        return ModSounds.WORKER_ANT_AMBIENT.get();
     }
 
     @Override
     protected SoundEvent getHurtSound(DamageSource damageSource) {
-        return SoundEvents.SPIDER_HURT;
+        return ModSounds.WORKER_ANT_HURT.get();
     }
 
     @Override
     protected SoundEvent getDeathSound() {
-        return SoundEvents.SPIDER_DEATH;
+        return ModSounds.WORKER_ANT_DEATH.get();
     }
 
     @Override

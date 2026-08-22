@@ -8,6 +8,7 @@ import java.util.UUID;
 import javax.annotation.Nullable;
 
 import com.nogal.formicary.block.ModBlockTags;
+import com.nogal.formicary.sound.ModSounds;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -587,19 +588,22 @@ public class TamedWorkerAntEntity extends TamableAnimal implements TamedAnt, Car
 
     // -------------------------------------------------------------- sounds --
 
+    // Deliberately the wild worker's events, not a tamed-specific set: a tamed worker is
+    // still a worker, so one voice covers both. See docs/SOUNDS.md.
+
     @Override
     protected SoundEvent getAmbientSound() {
-        return SoundEvents.SPIDER_STEP;
+        return ModSounds.WORKER_ANT_AMBIENT.get();
     }
 
     @Override
     protected SoundEvent getHurtSound(DamageSource damageSource) {
-        return SoundEvents.SPIDER_HURT;
+        return ModSounds.WORKER_ANT_HURT.get();
     }
 
     @Override
     protected SoundEvent getDeathSound() {
-        return SoundEvents.SPIDER_DEATH;
+        return ModSounds.WORKER_ANT_DEATH.get();
     }
 
     @Override
