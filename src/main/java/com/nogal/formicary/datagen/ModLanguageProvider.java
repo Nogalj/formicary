@@ -66,7 +66,12 @@ public class ModLanguageProvider extends LanguageProvider {
         add("item.formicary.pheromone_horn.no_room", "The colony has no room to answer");
 
         addItem(ModItems.HONEYED_COMB, "Honeyed Comb");
-        addItem(ModItems.FUNGAL_STEW, "Fungal Stew");
+        // Play-test round 7: de-bowled, so the display name drops "Stew". The registry id
+        // stays fungal_stew on purpose (renaming it would touch loot tables, advancements,
+        // recipes, models and a GameTest, and void the item in existing worlds) -- the id
+        // and the display name are deliberately out of sync here, don't "fix" one to match
+        // the other.
+        addItem(ModItems.FUNGAL_STEW, "Fungal Cake");
         addItem(ModItems.ROYAL_JELLY_TREAT, "Royal Jelly Treat");
 
         addItem(ModItems.FUNGAL_SPORES, "Fungal Spores");

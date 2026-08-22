@@ -109,7 +109,6 @@ public class ModRecipeProvider extends RecipeProvider {
                 .save(recipeOutput);
 
         ShapelessRecipeBuilder.shapeless(RecipeCategory.FOOD, ModItems.FUNGAL_STEW.get())
-                .requires(Items.BOWL)
                 .requires(ModItems.FUNGAL_BLOOM.get(), 2)
                 .requires(ModItems.FUNGAL_SPORES.get())
                 .unlockedBy(getHasName(ModItems.FUNGAL_BLOOM.get()), has(ModItems.FUNGAL_BLOOM.get()))

@@ -12,7 +12,6 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.DiggerItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemNameBlockItem;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.SwordItem;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -56,17 +55,17 @@ public class ModItems {
             .build();
 
     /**
-     * D1: bowl food from Fungus Garden crops (spec section 8). {@code usingConvertsTo}
-     * is the verified {@code FoodProperties.Builder} method (see {@code reference/}) that
-     * gives vanilla's Mushroom/Rabbit Stew their "returns a bowl" behaviour -- the same
-     * shape this reuses. Night Vision duration matches {@link #FUNGAL_BLOOM_NIGHT_VISION_TICKS}
+     * D1: pressed-fungus food from Fungus Garden crops (spec section 8). Play-test round 7
+     * removed the bowl -- a bowl never made sense for something an ant colony presses out
+     * of its own fungus, and {@code usingConvertsTo(Items.BOWL)} forced {@code stacksTo(1)}
+     * on the item (see {@link ModItems#FUNGAL_STEW}'s registration), which meant this food
+     * couldn't stack. Night Vision duration matches {@link #FUNGAL_BLOOM_NIGHT_VISION_TICKS}
      * exactly: that is the play-test round 1 retuned fungus precedent (10s), not the
      * spec's original 30s reading, and the task brief asks for the same 10s here.
      */
     private static final FoodProperties FUNGAL_STEW_FOOD = new FoodProperties.Builder()
             .nutrition(8)
             .saturationModifier(0.6F)
-            .usingConvertsTo(Items.BOWL)
             .effect(() -> new MobEffectInstance(MobEffects.NIGHT_VISION, FUNGAL_BLOOM_NIGHT_VISION_TICKS), 1.0F)
             .build();
 
@@ -128,7 +127,7 @@ public class ModItems {
     public static final DeferredItem<Item> HONEYED_COMB = ITEMS.registerItem("honeyed_comb",
             props -> new Item(props.food(HONEYED_COMB_FOOD)));
     public static final DeferredItem<Item> FUNGAL_STEW = ITEMS.registerItem("fungal_stew",
-            props -> new Item(props.food(FUNGAL_STEW_FOOD).stacksTo(1)));
+            props -> new Item(props.food(FUNGAL_STEW_FOOD)));
     public static final DeferredItem<Item> ROYAL_JELLY_TREAT = ITEMS.registerItem("royal_jelly_treat",
             props -> new Item(props.food(ROYAL_JELLY_TREAT_FOOD)));
 
