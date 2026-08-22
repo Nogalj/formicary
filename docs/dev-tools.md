@@ -195,6 +195,42 @@ generation:
 Both passes: spectator first entry, `--quickPlaySingleplayer <save>` via the patched
 launch-script copy (recipe above). (`verified: 2026-08-20`, third shoot of the pattern)
 
+### Photographing WORN armor -- and proving client registration actually fires
+
+A custom armor model (`IClientItemExtensions#getHumanoidArmorModel`) has a failure mode no
+headless test and no offline render can reach: the geometry can bake perfectly while the
+*registration* path -- `RegisterClientExtensionsEvent`, `EntityRenderersEvent.AddLayers`,
+the layer bake -- is mis-wired, and the player sees plain vanilla armor or a crash. An
+armor stand in a real client exercises the whole chain, and doubles as the picture:
+
+```
+{"command": "gamerule sendCommandFeedback false"}          <- FIRST, or the chat overlay
+{"command": "gamemode spectator"}                          <-   covers the subject entirely
+{"command": "summon minecraft:armor_stand 3 99.0 0 {NoGravity:1b,ShowArms:1b,Rotation:[-90f,0f]}"}
+{"command": "item replace entity @e[type=armor_stand,limit=1,sort=nearest] armor.head with formicary:chitin_helmet"}
+   ... one per slot (armor.chest / armor.legs / armor.feet) ...
+{"x": 0, "y": 99, "z": 0, "yaw": -90, "pitch": 12}         <- camera level with the stand
+```
+
+`NoGravity` is what keeps the stand at the summoned Y instead of falling out of frame, and
+every camera aims at the stand, so the subject lands at the crosshair -- i.e. dead centre --
+which makes cropping the shots afterwards a fixed box rather than a colour search. (A colour
+search was tried first and matched the dirt hillside, whose browns are the chitin browns.)
+
+**Scratch worlds: never clone one of Logan's saves.** A clone inherits his player, and on
+2026-08-21 that player was *dead* -- every frame of the shoot was the respawn GUI, twice,
+before the cause was obvious. Build the scratch world from the dedicated server's own world
+instead, which has no player state to inherit:
+
+```powershell
+Copy-Item -Recurse run\world run\saves\devfresh
+Remove-Item -Recurse -Force run\saves\devfresh\playerdata   # fresh, alive player at spawn
+```
+
+Then `--quickPlaySingleplayer devfresh`. Quick-play silently drops to the main menu if the
+named save is absent, which reads as "the autopilot never armed" -- check
+`run\saves\` before blaming the shot list. (`verified: 2026-08-21`)
+
 ## Scripting the dedicated server (headless probes)
 
 - **`gradlew runServer` does not forward piped stdin to the game JVM** -- the server is a
