@@ -953,52 +953,58 @@ JELLY_RIM = (140, 100, 24, 255)
 
 
 def royal_jelly_item():
-    """Royal Jelly (M6): a fat, glossy pale-gold droplet -- round bulb with a
-    drawn-out point on top, lit from the upper left, shaded along the lower
-    right, and outlined so the silhouette holds at 16px."""
+    """Royal Jelly (M6): a viscous glob, not a shiny bead -- a rounded crown
+    tapering to a hanging drip at the bottom, a DARKER core (the raw
+    ingredient reads denser than its finished ROYAL_JELLY_TREAT cousin), a
+    skin that brightens toward a translucent edge, and a bright specular.
+    Play-test round 7: the old shape was a round bulb with a spike on top --
+    that silhouette reads as a garlic clove no matter how it is coloured, so
+    this reshapes it into a liquid-drop silhouette (round top, drip-point
+    bottom) instead of just recolouring the same clove."""
     img = blank()
     px = img.load()
-    # WP-S2 item 2 fallout (2026-08-20): the border guard the brief added for
-    # the two named tool icons also caught this one -- the bulb's bottom edge
-    # plus outline()'s +1px ring reached row 15. cy nudged up 1.5px; shape
-    # and technique otherwise unchanged.
-    cx, cy = 8.0, 9.0
+
+    # Play-test round 7 reshape: rows round over fast at the crown (y3-6),
+    # belly out at y6-7, then taper SLOWLY into a long drip tail (y8-13) --
+    # that asymmetry (round top, long tail) is what reads as hanging liquid
+    # rather than the lens/gem shape a symmetric taper gives. Kept at
+    # row<=13 so outline()'s +1px ring stays off the canvas edge (border
+    # guard).
+    rows = {
+        3: range(6, 10), 4: range(4, 12), 5: range(3, 13), 6: range(2, 14),
+        7: range(2, 14), 8: range(3, 13), 9: range(4, 12), 10: range(5, 11),
+        11: range(6, 10), 12: range(7, 9), 13: range(7, 8),
+    }
+    for y, xs in rows.items():
+        for x in xs:
+            px[x, y] = JELLY_MID
+
+    cx, cy = 7.5, 6.8
 
     def sdf(x, y):
         dx, dy = x + 0.5 - cx, y + 0.5 - cy
         return dx * dx + dy * dy
 
-    # the bulb
-    for y in range(SIZE):
-        for x in range(SIZE):
+    # a dark viscous core, brightening out to a translucent edge skin --
+    # the same three-band ramp as the treat, just centred lower/darker so
+    # the raw ingredient reads denser than its finished cousin.
+    for y, xs in rows.items():
+        for x in xs:
             d = sdf(x, y)
-            if d < 20:
-                px[x, y] = lerp_color(JELLY_CORE, JELLY_MID, min(1.0, d / 20))
-
-    # the point: a spine widening from one pixel as it drops into the bulb
-    for y in range(2, 11):
-        half = (y - 2) // 3
-        for x in range(8 - half, 9 + half):
-            if px[x, y][3] == 0:
-                px[x, y] = lerp_color(JELLY_MID, JELLY_CORE, (y - 2) / 9.0)
-
-    # shade the LOWER-RIGHT skin only -- shading the whole perimeter would ring the
-    # droplet in gold and read as a coin rather than as a lit blob.
-    for y in range(SIZE):
-        for x in range(SIZE):
-            if px[x, y][3] == 0:
-                continue
-            on_edge = (x + 1 >= SIZE or px[x + 1, y][3] == 0) or (y + 1 >= SIZE or px[x, y + 1][3] == 0)
-            if on_edge and (x + 0.5 - cx) + (y + 0.5 - cy) > -1.0:
-                px[x, y] = JELLY_DEEP
+            if d < 10:
+                px[x, y] = lerp_color(JELLY_RIM, JELLY_DEEP, min(1.0, d / 10))
+            elif d < 24:
+                px[x, y] = lerp_color(JELLY_DEEP, JELLY_MID, min(1.0, (d - 10) / 14))
+            else:
+                px[x, y] = lerp_color(JELLY_MID, JELLY_CORE, min(1.0, (d - 24) / 12))
 
     outline(img, JELLY_RIM)
 
-    # specular: a bright comma on the upper-left shoulder of the bulb
-    for (x, y) in [(5, 9), (6, 8), (5, 10)]:
+    # specular: a bright comma on the upper-left shoulder of the glob
+    for (x, y) in [(5, 6), (6, 5), (5, 7)]:
         if px[x, y][3] != 0:
             px[x, y] = JELLY_CORE
-    px[6, 9] = (255, 253, 240, 255)
+    px[6, 5] = (255, 253, 240, 255)
     return img
 
 
@@ -1856,109 +1862,186 @@ def mandible_pickaxe_item():
 # ---------------------------------------------------------------------------
 
 def honeyed_comb_item():
-    """Honeyed Comb: a bite-sized hunk of comb, sugar-glazed -- the same
-    tilted-ellipse SDF technique chitin_item uses, in provision_comb's
-    honey-gold palette, with a couple of dark hex-cell notches so it reads
-    as broken-off comb rather than a smooth biscuit."""
+    """Honeyed Comb: a broken-off, honey-glazed hunk of wax comb. Play-test
+    round 7 art pass -- the old version was a flat SDF blob with three
+    isolated notch pixels standing in for "comb", which measured at 116
+    opaque px but carried no actual cell structure (vanilla's honeycomb item
+    is a visible grid of cells at a comparable pixel count). This keeps the
+    tilted-ellipse silhouette but fills it with `comb()`'s own offset
+    cell-grid technique at a finer 3px pitch, so it reads as a chunk of
+    comb rather than a biscuit -- while staying a bounded chunk silhouette,
+    not a tiling wall texture, which is what keeps it distinct from the
+    brood/royal/provision_comb BLOCK textures (each a full 16x16 tile)."""
     img = blank()
     px = img.load()
-    core = (240, 188, 66, 255)
-    mid = (206, 148, 40, 255)
-    rim = (144, 96, 24, 255)
+    line = (150, 96, 20, 255)
+    cap = (240, 188, 66, 255)
+    cap_hi = (255, 226, 140, 255)
+    cap_shade = (196, 138, 34, 255)
+    rim = (110, 68, 16, 255)
+    drip = (222, 158, 40, 255)
+    drip_hi = (255, 214, 100, 255)
 
     def sdf(x, y):
-        dx, dy = x + 0.5 - 8.0, y + 0.5 - 8.5
+        dx, dy = x + 0.5 - 8.0, y + 0.5 - 7.0
         u = dx * 0.92 + dy * 0.30
         v = -dx * 0.30 + dy * 0.92
-        return (u * u) / 32.0 + (v * v) / 20.0
+        return (u * u) / 34.0 + (v * v) / 22.0
 
+    cell = 3
     for y in range(SIZE):
+        row = y // cell
+        xo = 1 if row % 2 else 0
         for x in range(SIZE):
-            d = sdf(x, y)
-            if d < 1.0:
-                px[x, y] = lerp_color(core, mid, min(1.0, d))
+            if sdf(x, y) >= 1.0:
+                continue
+            ccx = (x + xo) % cell
+            ccy = y % cell
+            if ccx == 0 or ccy == 0:
+                px[x, y] = line
+            elif ccx == 1 and ccy == 1:
+                px[x, y] = cap_hi
+            elif ccx == cell - 1 or ccy == cell - 1:
+                px[x, y] = cap_shade
+            else:
+                px[x, y] = cap
+
     outline(img, rim)
-    # broken hex-cell notches -- a hint of comb structure, not a full grid
-    for (x, y) in [(6, 5), (10, 7), (7, 11)]:
-        if px[x, y][3] != 0:
-            px[x, y] = rim
-    # honey glaze highlight, upper-left
-    px[5, 4] = (255, 226, 140, 255)
+
+    # a couple of honey drips off the lower edge -- kept at row<=13 so
+    # outline()'s +1px ring stays off the canvas edge (border guard).
+    px[6, 12] = drip
+    px[6, 13] = drip_hi
+    px[10, 11] = drip
+
+    # glaze highlight, upper-left shoulder
+    if px[5, 4][3] != 0:
+        px[5, 4] = (255, 236, 170, 255)
     if px[6, 4][3] != 0:
         px[6, 4] = (255, 226, 140, 255)
     return img
 
 
+# WP-2 play-test round 7: de-bowled. FUNGAL_STEW's display name is now
+# "Fungal Cake" (ModLanguageProvider) -- the registry id and this function's
+# name deliberately keep the old word (see ModItems' javadoc for why).
 def fungal_stew_item():
-    """Fungal Stew: a wooden bowl (vanilla mushroom-stew silhouette) filled
-    with luminous fungal broth -- FUNGAL_GLOW/FUNGAL_BRIGHT from
-    fungal_bloom's own palette, so the stew visibly comes from the garden
-    crop rather than reading as generic soup."""
+    """Fungal Cake: a pressed patty of colony fungus, not a bowl of stew.
+    Slab silhouette with a slightly domed top, painted in FUNGAL_PAL --
+    the same teal-green already established by fungal_bloom/fungal_carpet,
+    reused rather than inventing a new palette -- flecked with brighter
+    FUNGAL_GLOW/FUNGAL_BRIGHT spore specks, a dark rim, and a lit top edge.
+    It should look like something an ant colony pressed out of its own
+    fungus, not something served in a dish."""
     img = blank()
     px = img.load()
-    wood_rim = (120, 84, 40, 255)
-    wood_dark = (84, 58, 26, 255)
-    broth_deep = (28, 77, 61, 255)
-    broth = (46, 121, 96, 255)
+    dark, mid1, mid2, light, pale = FUNGAL_PAL
 
-    # bowl: a wide shallow arc, rim two pixels thick
-    # WP-S2 item 2 fallout (2026-08-20): the border guard also caught this
-    # one -- the original rows ran 11-15, putting the bowl's base directly on
-    # the bottom edge. Every row shifted up by 1 (10-14); shape unchanged.
-    bowl_rows = {
-        10: range(2, 14), 11: range(1, 15), 12: range(1, 15),
-        13: range(2, 14), 14: range(3, 13),
+    # slab body: mostly straight sides (a pressed patty, not a mushroom cap)
+    # -- only the top row narrows, giving a slight dome instead of a peak.
+    rows = {
+        4: range(4, 12),
+        5: range(3, 13),
+        6: range(2, 14),
+        7: range(2, 14),
+        8: range(2, 14),
+        9: range(2, 14),
+        10: range(2, 14),
+        11: range(3, 13),
     }
-    for y, xs in bowl_rows.items():
+    for y, xs in rows.items():
         for x in xs:
-            px[x, y] = wood_dark
-    for (x, y) in [(1, 11), (2, 10), (13, 10), (14, 11)]:
-        px[x, y] = wood_rim
-    # broth pool inside the rim
-    broth_rows = {9: range(3, 13), 10: range(2, 14), 11: range(2, 14)}
-    for y, xs in broth_rows.items():
-        for x in xs:
-            px[x, y] = broth
-    for (x, y) in [(4, 9), (11, 9), (7, 10), (8, 11)]:
-        px[x, y] = broth_deep
-    # a fleck of bright glow, off-centre, echoing fungal_bloom's cap highlight
-    px[9, 9] = FUNGAL_BRIGHT
-    px[8, 10] = FUNGAL_GLOW
+            px[x, y] = mid2
+
+    # lit top edge -- one row, the dome's crown catching the light
+    for x in range(4, 12):
+        px[x, 4] = light
+    # a pressed seam line partway down -- reads as a compressed layer, not
+    # a smooth round gem
+    for x in range(2, 14):
+        if px[x, 7][3] != 0:
+            px[x, 7] = mid1
+    # shaded underside -- the pressed slab's bottom face
+    for x in range(3, 13):
+        px[x, 11] = dark
+    for x in range(2, 14):
+        px[x, 10] = mid1
+
+    outline(img, dark)
+
+    # spore specks, deterministic -- brighter and more scattered than the
+    # slab's own mid-tone so they read as flecks, not shading
+    r = rng("fungal_stew:specks")
+    spots = []
+    for _ in range(6):
+        x, y = r.randint(3, 12), r.randint(5, 10)
+        spots.append((x, y))
+    for (x, y) in spots[:4]:
+        if px[x, y][3] != 0:
+            px[x, y] = FUNGAL_GLOW
+    for (x, y) in spots[4:]:
+        if px[x, y][3] != 0:
+            px[x, y] = FUNGAL_BRIGHT
     return img
 
 
 def royal_jelly_treat_item():
-    """Royal Jelly Treat: royal_jelly_item's own droplet SDF, sized down and
-    seated on a short comb-brown wafer base -- "jelly + comb" as the two
-    halves of the sprite, distinguishing it from the plain jelly item at a
-    glance in the hotbar."""
+    """Royal Jelly Treat: a glossy, SET jelly candy on a comb-wafer base --
+    royal_jelly_item's own droplet family (JELLY_CORE/MID/RIM, reused, not
+    reinvented) but the finished half of the pair: a light, glossy centre
+    that brightens again right at the edge (a translucent-glass look, as if
+    light is passing back out through the jelly's skin) instead of the raw
+    ingredient's dark viscous core, and a stronger specular. Play-test round
+    7: the old flat wafer + soft droplet read as butter on a plank, so the
+    wafer now carries a hex-cell hint (a grout line, a lit top corner) to
+    read as comb."""
     img = blank()
     px = img.load()
-    cx, cy = 8.0, 8.5
+    cx, cy = 8.0, 7.5
 
     def sdf(x, y):
         dx, dy = x + 0.5 - cx, y + 0.5 - cy
         return dx * dx + dy * dy
 
+    # glossy droplet: a rich gold body (JELLY_MID, not the pale JELLY_CORE --
+    # a whole droplet of the palest tone is what read as butter), then
+    # translucent brightening right at the very edge instead of the raw
+    # ingredient's dark-core ramp -- that edge band plus the specular below
+    # are the only places the pale tone appears.
     for y in range(SIZE):
         for x in range(SIZE):
             d = sdf(x, y)
-            if d < 14:
-                px[x, y] = lerp_color(JELLY_CORE, JELLY_MID, min(1.0, d / 14))
-    # comb wafer base beneath the droplet
-    # WP-S2 item 2 fallout (2026-08-20): the border guard also caught this
-    # one -- the wafer's bottom row (14) plus outline()'s +1px ring reached
-    # row 15. Both ranges shifted up by 1; shape unchanged.
+            if d < 8:
+                px[x, y] = JELLY_MID
+            elif d < 13:
+                px[x, y] = lerp_color(JELLY_MID, JELLY_DEEP, (d - 8) / 5.0)
+            elif d < 19:
+                px[x, y] = lerp_color(JELLY_DEEP, JELLY_CORE, (d - 13) / 6.0)
+
+    # comb wafer base beneath the droplet, with a hex-cell hint so it reads
+    # as comb rather than a plain plank
+    wafer = (150, 104, 40, 255)
+    wafer_lit = (192, 140, 62, 255)
+    wafer_line = (108, 72, 24, 255)
     for y in range(11, 14):
-        for x in range(4, 12):
+        for x in range(3, 13):
             if px[x, y][3] == 0:
-                px[x, y] = (150, 104, 40, 255)
-    for x in range(4, 12):
-        px[x, 11] = (192, 140, 62, 255)
+                px[x, y] = wafer
+    for x in range(3, 13):
+        px[x, 11] = wafer_lit
+    # a row of small grout marks -- a hex-cell hint, not full-height bars
+    # (which read as drawer slats rather than comb)
+    for (x, y) in [(5, 12), (8, 12), (10, 12), (6, 13), (9, 13)]:
+        px[x, y] = wafer_line
+
     outline(img, JELLY_RIM)
-    # specular, upper-left shoulder
-    if px[5, 6][3] != 0:
-        px[5, 6] = (255, 253, 240, 255)
+
+    # strong specular -- bigger and brighter than the raw jelly's single dot
+    for (x, y) in [(5, 5), (6, 4), (5, 6), (6, 5), (7, 4)]:
+        if px[x, y][3] != 0:
+            px[x, y] = JELLY_CORE
+    px[6, 4] = (255, 253, 240, 255)
+    px[6, 5] = (255, 253, 240, 255)
     return img
 
 
