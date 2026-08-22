@@ -54,12 +54,19 @@ public class ModSoundDefinitionsProvider extends SoundDefinitionsProvider {
     @Override
     public void registerSounds() {
         // ---------------------------------------------------------- worker ant --
-        borrow(ModSounds.WORKER_ANT_AMBIENT, SoundEvents.SPIDER_STEP, "worker_ant.ambient");
+        // Logan's recording, 2026-08-21 (mono, 24 kHz, 2.85s) -- the first sound in the mod
+        // that is actually ours rather than a redirect.
+        add(ModSounds.WORKER_ANT_AMBIENT, definition()
+                .subtitle("subtitles.formicary.worker_ant.ambient")
+                .with(sound("formicary:entity/worker_ant/ambient")));
         borrow(ModSounds.WORKER_ANT_HURT, SoundEvents.SPIDER_HURT, "worker_ant.hurt");
         borrow(ModSounds.WORKER_ANT_DEATH, SoundEvents.SPIDER_DEATH, "worker_ant.death");
 
         // --------------------------------------------------------- soldier ant --
-        borrow(ModSounds.SOLDIER_ANT_AMBIENT, SoundEvents.SPIDER_AMBIENT, "soldier_ant.ambient");
+        // Logan's recording, 2026-08-21 (mono, 24 kHz, 2.85s).
+        add(ModSounds.SOLDIER_ANT_AMBIENT, definition()
+                .subtitle("subtitles.formicary.soldier_ant.ambient")
+                .with(sound("formicary:entity/soldier_ant/ambient")));
         borrow(ModSounds.SOLDIER_ANT_HURT, SoundEvents.SPIDER_HURT, "soldier_ant.hurt");
         borrow(ModSounds.SOLDIER_ANT_DEATH, SoundEvents.SPIDER_DEATH, "soldier_ant.death");
 
@@ -74,7 +81,13 @@ public class ModSoundDefinitionsProvider extends SoundDefinitionsProvider {
         borrow(ModSounds.ENDER_ANT_TELEPORT, SoundEvents.ENDERMAN_TELEPORT, "ender_ant.teleport");
 
         // --------------------------------------------------------------- queen --
-        borrow(ModSounds.QUEEN_AMBIENT, SoundEvents.SPIDER_AMBIENT, "queen.ambient");
+        // Logan's recording, 2026-08-21 (mono, 24 kHz, 2.29s). Note this event has TWO call
+        // sites: QueenAntEntity#getAmbientSound (the idle voice) and the phase-transition
+        // burst, which plays the same event at volume 2.0 / pitch 0.5 -- so this one file is
+        // heard both as her idle and, pitched down, as her phase change.
+        add(ModSounds.QUEEN_AMBIENT, definition()
+                .subtitle("subtitles.formicary.queen.ambient")
+                .with(sound("formicary:entity/queen/ambient")));
         borrow(ModSounds.QUEEN_HURT, SoundEvents.SPIDER_HURT, "queen.hurt");
         borrow(ModSounds.QUEEN_DEATH, SoundEvents.SPIDER_DEATH, "queen.death");
         borrow(ModSounds.QUEEN_ROAR, SoundEvents.WARDEN_ROAR, "queen.roar");

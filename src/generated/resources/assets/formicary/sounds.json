@@ -64,10 +64,7 @@
   },
   "entity.queen.ambient": {
     "sounds": [
-      {
-        "type": "event",
-        "name": "entity.spider.ambient"
-      }
+      "formicary:entity/queen/ambient"
     ],
     "subtitle": "subtitles.formicary.queen.ambient"
   },
@@ -118,10 +115,7 @@
   },
   "entity.soldier_ant.ambient": {
     "sounds": [
-      {
-        "type": "event",
-        "name": "entity.spider.ambient"
-      }
+      "formicary:entity/soldier_ant/ambient"
     ],
     "subtitle": "subtitles.formicary.soldier_ant.ambient"
   },
@@ -145,10 +139,7 @@
   },
   "entity.worker_ant.ambient": {
     "sounds": [
-      {
-        "type": "event",
-        "name": "entity.spider.step"
-      }
+      "formicary:entity/worker_ant/ambient"
     ],
     "subtitle": "subtitles.formicary.worker_ant.ambient"
   },
