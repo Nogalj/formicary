@@ -1970,19 +1970,21 @@ SOLD_BASE = (92, 28, 20, 255)
 SOLD_MID = (118, 40, 28, 255)
 SOLD_LIGHT = (145, 55, 38, 255)
 SOLD_PALE = (168, 70, 48, 255)
-AHEAD_DARK = (30, 13, 11, 255)     # soldier head-plate tones (helmet + pauldrons)
+AHEAD_DARK = (30, 13, 11, 255)     # deepest head-plate tones -- hidden caps, joints
 AHEAD_BASE = (46, 19, 15, 255)
-AHEAD_MID = (64, 27, 21, 255)
-AHEAD_LIGHT = (82, 36, 27, 255)
-# Ep2 task I4 redesign (2026-08-18): AHEAD_MID/_LIGHT top out at 64/82 -- next to
-# the body's SOLD_LIGHT/SOLD_PALE (145/168) that is a much narrower value range,
-# and it is why the helmet read as a flat dark blob on a posed armor stand while
-# the torso's bands were still legible. AHEAD_RIM borrows enough of the body's
-# range to give the helmet a real lit edge without changing its hue family.
-AHEAD_RIM = (104, 46, 34, 255)
-AJAW_TIP = (206, 122, 78, 255)     # pale mandible tip -- claw/clasp accents
-AEYE = (196, 98, 52, 255)          # antenna-tip amber -- eye lenses
-EYE_GLOW = (244, 178, 118, 255)    # brighter glint above each eye lens -- I4
+# Ep2 task I4 (2026-08-18) banked this lesson: the helmet used to be painted out
+# of an AHEAD_* ramp that topped out at 82, so next to the body's SOLD_LIGHT /
+# SOLD_PALE (145/168) it had a much narrower value range -- which is exactly why
+# it read as a flat dark blob on a posed armor stand while the torso's banding
+# was still legible. Round 7 (2026-08-21) keeps that lesson by removing its
+# cause: the helmet's visible faces are now painted from the SAME ramp the torso
+# uses (SOLD_BASE 92 -> SOLD_PALE 168 -> CHITIN_RIM 196), so the head cannot
+# drift dark relative to the body again. AHEAD_DARK/_BASE survive only for
+# genuinely hidden geometry (boot sole, hip cap), where flatness is correct.
+AJAW_TIP = (206, 122, 78, 255)     # pale mandible tip -- claw/clasp/face-frame accents
+# The AEYE / EYE_GLOW painted "eye lenses" are GONE as of round 7: the helmet now
+# has a real transparent face opening, which makes painted eyes both redundant and
+# the exact thing Logan named ("just a bunch of lines with eyes").
 
 
 def _jitter(px, name, x0, y0, w, h, amount=6):
@@ -1998,48 +2000,84 @@ def _jitter(px, name, x0, y0, w, h, amount=6):
                           max(0, min(255, c[2] + j)), 255)
 
 
-def segment_plates(img, name, x0, y0, w, h, band=4, rim=None, base=None, seam=None,
-                   face_w=None):
-    """Overlapping chitin segment bands, gaster-style: each band has a lit top
-    rim, a shaded body that bulges (lighter) toward each face's centre columns,
-    and a near-black seam row. face_w splits the strip into faces so the bulge
-    curves per face rather than across the whole UV strip."""
-    rim = rim or SOLD_LIGHT
-    base = base or SOLD_BASE
-    seam = seam or SOLD_DARKEST
-    px = img.load()
-    fw = face_w or w
-    for yy in range(h):
-        phase = yy % band
-        for xx in range(w):
-            fx = xx % fw
-            centre = abs((fx + 0.5) - fw / 2.0) / (fw / 2.0)   # 0 centre .. 1 edge
-            bulge = int((0.5 - centre) * 22)                   # +11 centre, -11 edge
-            if phase == 0:
-                c = rim
-            elif phase == band - 1:
-                c = seam
-            else:
-                c = base
-            if c is not seam:
-                c = (max(0, min(255, c[0] + bulge)), max(0, min(255, c[1] + bulge // 2)),
-                     max(0, min(255, c[2] + bulge // 2)), 255)
-            px[x0 + xx, y0 + yy] = c
-    _jitter(px, name, x0, y0, w, h)
+def band_mask(y0, rows, width, first_row, last_row):
+    """Coverage rows for a plain rectangular band: full width for absolute
+    texture rows first_row..last_row (inclusive), transparent everywhere else.
+    Returns `rows` strings of `width` chars, the first describing row y0."""
+    return ["#" * width if first_row <= y0 + i <= last_row else "." * width
+            for i in range(rows)]
 
 
-def flat_plate(img, name, x0, y0, w, h, base, rim, seam):
-    """A single smooth plate: lit top row, shaded bottom row, jittered body."""
+def paint_strip(img, name, x0, y0, mask, ramp, roles, faces, bulge=14,
+                seam_fill=None, rim_fill=None, corner=0.42):
+    """Paint a UV strip from three parallel per-row tables plus a face list.
+
+    Round 7 (2026-08-21) split what the old painter conflated:
+
+      * `mask`  -- COVERAGE. One string per texture row starting at y0,
+        '#' = plated, '.' = left transparent. The old
+        `segment_plates`/`flat_plate` pair had no coverage table at all: it
+        filled every rect it was handed, which is exactly why the set read as
+        chunky and bulky.
+      * `ramp`  -- the row's base COLOUR.
+      * `roles` -- what the row IS: "rim" (a plate's lit top edge), "body", or
+        "seam" (the dark gap where the next plate overlaps this one).
+
+    `faces` is the list of face widths in strip order (right | front | left |
+    back). The role table is applied PER FACE, not per row, and that is the
+    point of this rewrite: painting a seam or a highlight straight across all
+    64 columns is what produced Logan's "just a bunch of lines". Instead --
+
+      * a seam only darkens the middle ~half of each face and reverts to
+        `seam_fill` at the flanks, so plate boundaries read as a row of
+        overlapping dashes rather than one continuous rule;
+      * a rim highlight likewise fades to `rim_fill` at the flanks, so it
+        reads as a specular on a curved plate rather than a stripe;
+      * the outermost column of every face -- a real box corner, always in
+        shadow -- is pulled toward SOLD_DARKEST, which lays a vertical grid
+        over the whole piece and breaks any horizontal continuity that is
+        left."""
+    seam_fill = seam_fill or SOLD_BASE
+    rim_fill = rim_fill or SOLD_MID
+    px = img.load()
+    for row, bits in enumerate(mask):
+        base = ramp[row]
+        if base is None:
+            continue
+        role = roles[row]
+        col = 0
+        for fw in faces:
+            for i in range(fw):
+                if bits[col + i] != "#":
+                    continue
+                frac = abs((i + 0.5) - fw / 2.0) / (fw / 2.0)   # 0 centre .. 1 edge
+                if role == "seam" and frac > 0.5:
+                    c = seam_fill
+                elif role == "rim" and frac > 0.6:
+                    c = rim_fill
+                else:
+                    c = base
+                if role != "seam":
+                    d = int((0.5 - frac) * bulge)
+                    c = (max(0, min(255, c[0] + d)), max(0, min(255, c[1] + d // 2)),
+                         max(0, min(255, c[2] + d // 2)), 255)
+                if i == 0 or i == fw - 1:
+                    c = lerp_color(c, SOLD_DARKEST, corner)
+                px[x0 + col + i, y0 + row] = c
+            col += fw
+        if role != "seam":
+            _jitter(px, name, x0, y0 + row, len(bits), 1)
+
+
+def solid_cap(img, name, x0, y0, w, h, base, edge):
+    """A cap face (top of head, sole of boot, hip joint): flat body with a
+    darker border. Caps sit against the player and are barely seen edge-on, so
+    they stay simple -- the shaping budget goes on the side strips."""
     px = img.load()
     for yy in range(h):
         for xx in range(w):
-            if yy == 0:
-                c = rim
-            elif yy == h - 1:
-                c = seam
-            else:
-                c = base
-            px[x0 + xx, y0 + yy] = c
+            border = yy in (0, h - 1) or xx in (0, w - 1)
+            px[x0 + xx, y0 + yy] = edge if border else base
     _jitter(px, name, x0, y0, w, h)
 
 
@@ -2049,8 +2087,183 @@ def flat_plate(img, name, x0, y0, w, h, base, rim, seam):
 #   body  texOffs(16,16) 8x12x4  -> sides x16..39 y20..31, caps x20..35 y16..19
 #   arm   texOffs(40,16) 4x12x4  -> sides x40..55 y20..31, caps x44..51 y16..19
 #   leg   texOffs(0,16)  4x12x4  -> sides x0..15  y20..31, caps x4..11  y16..19
-# (mirrored left arm/leg reuse the same rects, so each is painted once.)
+#   hat   texOffs(32,0)  8x8x8   -> sides x32..63 y8..15,  caps x40..55 y0..7
+# (mirrored left arm/leg reuse the same rects, so each is painted once. The hat
+# box is part of the HEAD slot's model and is left fully transparent, exactly as
+# vanilla's own armor layers leave it -- it is inflated a further 0.5, so
+# anything painted there would float off the helmet.)
+#
+# Within a side strip the four faces run right | front | left | back; within a
+# cap pair the FIRST slot is the UP face and the SECOND the DOWN face. Both were
+# established by measurement, not recall -- see the coverage block below.
 ARMOR_TEX_W, ARMOR_TEX_H = 64, 32
+
+HEAD_SIDE_FACES = (8, 8, 8, 8)      # right | front | left | back
+BODY_SIDE_FACES = (4, 8, 4, 8)
+ARM_SIDE_FACES = (4, 4, 4, 4)
+LEG_SIDE_FACES = (4, 4, 4, 4)
+
+# ---------------------------------------------------------------------------
+# Round-7 coverage (2026-08-21). Logan: "it looks way too chunky and bulky ...
+# the chestplate should also only cover the same amount of player space as a
+# normal vanilla chestplate, so not the arms, and same with the legs and boots."
+#
+# That is measurable, and it was measured. Vanilla iron_layer_1/_2 were pulled
+# out of the 1.21 client jar into a scratch dir and their OPAQUE ROWS COUNTED
+# per box-UV rect. Only the resulting NUMBERS live here -- no vanilla pixel,
+# alpha channel or file was copied into this repo. What the count said:
+#
+#   region                    vanilla rows (of the rect)   vanilla px
+#   helmet cap  (UP slot)     all 8x8                             64
+#   helmet cap  (DOWN slot)   none -- never painted                 0
+#   helmet sides              y8..y14, shaped, face notch open    154
+#   chest caps  (both)        none -- never painted                 0
+#   chest sides               y20..y30, full only y22..y28        222
+#   sleeve cap  (UP slot)     all 4x4                              16
+#   sleeve sides              y20..y24 ONLY (5 of 12 rows)         80
+#   boot cap    (DOWN slot)   all 4x4                              16
+#   boot sides                y26..y31 ONLY (6 of 12 rows)         96
+#   ------------------------------------------------------- layer_1 648
+#   belt (body) sides         y27..y31 ONLY -- the WAIST           120
+#   greave sides              y20..y28 ONLY (9 of 12 rows)        144
+#   greave cap  (UP slot)     all 4x4                              16
+#   ------------------------------------------------------- layer_2 280
+#
+# Ours was 1056 / 296, because the old painter filled every rect it was handed:
+# the sleeve ran the arm's full 12 rows instead of 5, both chest caps and the
+# helmet's DOWN cap were solid, and the leggings' belt sat at y20..y24 -- the
+# top of the torso box, i.e. across the CHEST -- instead of at the waist.
+# ---------------------------------------------------------------------------
+
+SLEEVE_ROWS = (20, 24)      # chestplate sleeve: stops partway down the upper arm
+BOOT_ROWS = (26, 31)        # boots stay boot-height
+GREAVE_ROWS = (20, 28)      # leggings stop above the ankle, leaving the boot room
+BELT_ROWS = (27, 31)        # leggings' belt sits at the WAIST, not the chest
+
+# Antenna UV allocation. This block and ChitinArmorModel.java are ONE source of
+# truth in two files -- the Java mirrors these four numbers as named constants
+# and cites this block. Both segments are cubes of w=1, h=LEN, d=1, so each
+# occupies a 4-wide strip (east|north|west|south) under a 2px cap row:
+#   scape    x56..59, y16..21      funicle  x56..59, y22..26
+# x56..63 / y16..31 is the one region of the 64x32 armor layout that no
+# humanoid box touches -- asserted below rather than asserted in a comment.
+ANTENNA_SCAPE_UV = (56, 16)
+ANTENNA_SCAPE_LEN = 5
+ANTENNA_FUNICLE_UV = (56, 22)
+ANTENNA_FUNICLE_LEN = 4
+
+HUMANOID_UV_RECTS = (
+    ("head sides", 0, 8, 32, 8), ("head caps", 8, 0, 16, 8),
+    ("hat", 32, 0, 32, 16),
+    ("body sides", 16, 20, 24, 12), ("body caps", 20, 16, 16, 4),
+    ("arm sides", 40, 20, 16, 12), ("arm caps", 44, 16, 8, 4),
+    ("leg sides", 0, 20, 16, 12), ("leg caps", 4, 16, 8, 4),
+)
+
+
+def assert_free_uv(x0, y0, w, h, what):
+    """Guard the antenna UV allocation: fail loudly if it ever overlaps a
+    humanoid box's rect. Without this, a future layout tweak would silently
+    paint the antennae onto somebody's shoulder."""
+    for (name, rx, ry, rw, rh) in HUMANOID_UV_RECTS:
+        if x0 < rx + rw and rx < x0 + w and y0 < ry + rh and ry < y0 + h:
+            raise AssertionError(
+                "{} UV ({},{} {}x{}) overlaps the {} rect ({},{} {}x{})".format(
+                    what, x0, y0, w, h, name, rx, ry, rw, rh))
+
+
+def antenna_segment(img, name, uv, length, ramp):
+    """Paint one antenna segment's box UV.
+
+    The cube is w=1, h=length, d=1, so its side strip is 4 columns wide
+    (east|north|west|south) starting one row below the cap row, and its two 1px
+    caps sit on the cap row at u+1 (UP -- the segment's far end, which is seen)
+    and u+2 (DOWN -- the joint, which is buried in the previous segment).
+    `ramp` runs far end -> joint."""
+    u, v = uv
+    assert_free_uv(u, v, 4, length + 1, name)
+    px = img.load()
+    px[u + 1, v] = ramp[0]
+    px[u + 2, v] = SOLD_DARKEST
+    for i in range(length):
+        for k in range(4):
+            px[u + k, v + 1 + i] = ramp[i]
+    _jitter(px, name, u, v + 1, 4, length)
+
+
+# Helmet side strip (x0..31, y8..15), '#' plated / '.' left transparent.
+# Faces: right x0..7 | FRONT x8..15 | left x16..23 | back x24..31, and within a
+# side face the column adjacent to the front is x7 / x16 (established by
+# measuring which half of each side face vanilla keeps as its helmet tapers).
+# Rows y11..y15 open x9..x14 of the front face: that is the face opening Logan
+# asked for -- the player's own face renders through it. x8 and x15 survive as
+# 1px cheek posts framing the opening, tipped with AJAW_TIP mandible amber.
+CHITIN_HELM_SIDE_MASK = [
+    "################################",   # y8   dome plate, lit top edge
+    "################################",   # y9   dome plate body
+    "################################",   # y10  dome plate body
+    "#######.#......#.###############",   # y11  seam; face opening starts
+    "#####...#......#...#############",   # y12  cheek plate, lit top edge
+    "###.....#......#.....###########",   # y13  cheek plate body + mandible tips
+    "..........................####..",   # y14  back neck flap
+    "................................",   # y15
+]
+
+CHITIN_HELM_SIDE_RAMP = [
+    CHITIN_RIM,      # y8  lit top edge of the dome plate
+    SOLD_MID,        # y9
+    SOLD_BASE,       # y10
+    SOLD_DARKEST,    # y11 seam between the dome and cheek plates
+    SOLD_PALE,       # y12 lit top edge of the cheek plate
+    SOLD_BASE,       # y13
+    SOLD_DARK,       # y14
+    None,            # y15
+]
+
+CHITIN_HELM_SIDE_ROLES = [
+    "rim", "body", "body", "seam", "rim", "body", "body", None,
+]
+
+# Chest side strip (x16..39, y20..31). Faces: right x16..19 | FRONT x20..27 |
+# left x28..31 | back x32..39. The collar rows notch out around the neck and the
+# skirt rows taper to a point front and back, so the plate reads as a gaster
+# segment rather than a box -- and, per the measurement above, the piece stops
+# at y30 instead of running the box's full 12 rows.
+CHITIN_CHEST_SIDE_MASK = [
+    "######....########....##",   # y20 collar, neck notch
+    "#######..##########..###",   # y21
+    "########################",   # y22 seam
+    "########################",   # y23 mesonotum plate, lit top edge
+    "########################",   # y24
+    "########################",   # y25
+    "########################",   # y26 seam
+    "########################",   # y27 skirt plate, lit top edge
+    "########################",   # y28
+    ".....######......######.",   # y29 skirt taper
+    "......####..............",   # y30 skirt point
+    "........................",   # y31
+]
+
+CHITIN_CHEST_SIDE_RAMP = [
+    CHITIN_RIM,      # y20 lit top edge of the collar plate
+    SOLD_MID,        # y21
+    SOLD_DARKEST,    # y22 seam
+    SOLD_PALE,       # y23 lit top edge of the mesonotum plate
+    SOLD_MID,        # y24
+    SOLD_BASE,       # y25
+    SOLD_DARKEST,    # y26 seam
+    SOLD_PALE,       # y27 lit top edge of the skirt plate
+    SOLD_MID,        # y28
+    SOLD_BASE,       # y29
+    SOLD_DARK,       # y30
+    None,            # y31
+]
+
+CHITIN_CHEST_SIDE_ROLES = [
+    "rim", "body", "seam",
+    "rim", "body", "body", "seam",
+    "rim", "body", "body", "body", None,
+]
 
 
 def chitin_layer_1():
@@ -2058,89 +2271,156 @@ def chitin_layer_1():
     HumanoidArmorLayer.usesInnerModel() is true only for LEGS, so everything
     except the leggings reads this file.
 
-    Design pulls straight from the soldier ant model: near-black head plates
-    with a crest ridge and amber eye lenses on the helmet, gaster-style segment
-    bands on the torso with a dark pronotum shield, pauldron plates on the
-    shoulders, mandible-pale claw tips on the boots.
+    Round 7 (2026-08-21) rebuilt this from Logan's play-test note -- "way too
+    chunky and bulky and the texture is just a bunch of lines with eyes ... i
+    want the helmet to have antennae and an opening for the players face ...
+    make them more ant like". Three separate defects, three separate fixes:
 
-    Ep2 task I4 redesign (2026-08-18): a posed-armor-stand check found the
-    helmet reading as a near-flat dark blob next to the torso's legible
-    banding -- AHEAD_RIM widens its edge highlight to match, the brow ridge
-    borrows the body's own SOLD_LIGHT instead of the dimmer AHEAD_LIGHT, each
-    eye lens grows from a single pixel to a two-pixel lens plus a brighter
-    EYE_GLOW glint (the same "make it bigger and brighter, not just present"
-    fix the I3 resin-weep retexture needed), and a small pale mandible-tip hint
-    under the brow ties the helmet back to the boots' own AJAW_TIP claw accents."""
+    * COVERAGE. The old painter filled every UV rect it was handed, which is
+      why the set was +63% opaque against vanilla iron. Coverage is now an
+      explicit mask table per region, with the row ranges taken from a direct
+      measurement of vanilla's own layers (numbers only -- see the coverage
+      block above). The sleeve stops after 5 of the arm box's 12 rows, the
+      boot occupies 6, and the caps vanilla never paints are no longer painted.
+    * DESIGN. Horizontal banding is gone. Each region is now a few BIG
+      overlapping plates -- lit top edge, shaded body, near-black seam -- with
+      a per-face bulge so a flat UV strip reads as a curved carapace. Beetle
+      plating, not stripes.
+    * FEATURES. The helmet's front face is cut open across x9..x14 so the
+      player's face shows through, and the painted eye lenses are deleted: with
+      a real opening they were redundant and they were the thing Logan named.
+      The antennae are NOT painted here -- they are real geometry on
+      ChitinArmorModel, and this file only owns their UV strip (x56..59).
+
+    The Ep2 task I4 lesson (2026-08-18: the helmet read as a flat dark blob on
+    a posed armor stand because it was painted from a ramp that topped out at
+    82 while the torso ran to 168) is preserved by removing its cause rather
+    than patching it. Every visible helmet face now draws from the SAME ramp as
+    the torso -- SOLD_BASE 92 / SOLD_PALE 168 / CHITIN_RIM 196 -- so head and
+    body cannot drift apart in value again, and the helmet's brightest pixels
+    (the AJAW_TIP mandible posts framing the face opening) are brighter than
+    anything on the chest."""
     img = Image.new("RGBA", (ARMOR_TEX_W, ARMOR_TEX_H), (0, 0, 0, 0))
     px = img.load()
 
-    # -- helmet: head-plate tones. Side strip is 4 faces of 8: right/front/left/back.
-    flat_plate(img, "helm_sides", 0, 8, 32, 8, AHEAD_BASE, AHEAD_RIM, SOLD_DARKEST)
-    # brow ridge -- one lighter row above the eyes, all the way round
-    for xx in range(32):
-        px[xx, 10] = SOLD_LIGHT
-    # amber eye lenses: two on the front face, one on each side face -- each a
-    # 2px lens (widened outward, away from the other eye on the same face) with
-    # a brighter glint above so they read from further back than one pixel can.
-    for (ex, ey, ox) in [(10, 12, -1), (13, 12, 1), (3, 12, -1), (20, 12, -1)]:
-        px[ex, ey] = AEYE
-        px[ex + ox, ey] = AEYE  # NOT wrap(): that mods by the 16px block SIZE,
-                                 # not this 64px-wide armor texture (would fold
-                                 # x=20-1=19 back to x=3 and hit the other eye).
-        px[ex, ey - 1] = EYE_GLOW
-    # a pale mandible-tip hint peeking out under the brow on the front face
-    px[11, 13] = lerp_color(AJAW_TIP, AHEAD_DARK, 0.3)
-    px[12, 13] = lerp_color(AJAW_TIP, AHEAD_DARK, 0.3)
-    # skull cap with a crest ridge running front-to-back
-    flat_plate(img, "helm_top", 8, 0, 8, 8, AHEAD_BASE, AHEAD_RIM, AHEAD_DARK)
-    for yy in range(0, 8):
-        px[11, yy] = AHEAD_MID
-        px[12, yy] = AHEAD_LIGHT
-    px[12, 1] = SOLD_LIGHT
-    flat_plate(img, "helm_bottom", 16, 0, 8, 8, AHEAD_DARK, AHEAD_DARK, AHEAD_DARK)
+    # -- helmet sides: two big plates, a hard seam, and an open face.
+    paint_strip(img, "helm_sides", 0, 8, CHITIN_HELM_SIDE_MASK,
+                CHITIN_HELM_SIDE_RAMP, CHITIN_HELM_SIDE_ROLES, HEAD_SIDE_FACES)
+    # mandible-amber tips on the two cheek posts that frame the face opening --
+    # the helmet's brightest pixels, and the same accent the boots' claws use.
+    px[8, 13] = AJAW_TIP
+    px[15, 13] = AJAW_TIP
+    # crest ridge: two lit columns down the middle of the FRONT (x11..x12) and
+    # BACK (x27..x28) faces, continuing the head shield's ridge over the dome.
+    # A vertical feature is the cheapest thing that stops three stacked rows
+    # from reading as three stripes -- which is what "just a bunch of lines"
+    # meant -- and it is what an ant's head actually has.
+    for yy in range(8, 11):
+        for cx_ in (11, 12, 27, 28):
+            px[cx_, yy] = lerp_color(px[cx_, yy], CHITIN_SPARK, 0.45)
 
-    # -- chestplate: segment bands (3 bands over 12 rows), bulging per face.
-    # Body side strip is faces of width 4/8/4/8 -- fake it with face_w=4 (the 8-wide
-    # faces just get two gentle bulges, which reads as paired plates).
-    segment_plates(img, "chest_sides", 16, 20, 24, 12, band=4, face_w=4)
-    # pronotum shield: a dark rounded plate on the chest front face (x20..27)
-    flat_plate(img, "chest_shield", 21, 21, 6, 5, AHEAD_BASE, SOLD_PALE, SOLD_DARKEST)
-    px[21, 21] = SOLD_BASE   # knock the corners off so it reads rounded
-    px[26, 21] = SOLD_BASE
-    px[21, 25] = SOLD_DARK
-    px[26, 25] = SOLD_DARK
-    # shoulder caps
-    flat_plate(img, "chest_caps", 20, 16, 16, 4, AHEAD_MID, SOLD_LIGHT, AHEAD_DARK)
+    # -- helmet top: the head shield, split front/back by a seam with a raised
+    # crest ridge running along the centre (x11..x12).
+    for yy in range(8):
+        for xx in range(8, 16):
+            if yy in (0, 7) or xx in (8, 15):
+                c = SOLD_DARK          # rounded margin
+            elif yy == 4:
+                c = SOLD_DARKEST       # seam: head shield | occiput
+            elif xx in (11, 12):
+                c = CHITIN_RIM         # crest ridge
+            else:
+                c = SOLD_MID
+            px[xx, yy] = c
+    for xx in range(9, 15):
+        px[xx, 1] = CHITIN_SPARK if xx in (11, 12) else SOLD_PALE
+        px[xx, 5] = CHITIN_SPARK if xx in (11, 12) else SOLD_PALE
+    _jitter(px, "helm_top", 8, 0, 8, 8)
+    # helmet DOWN cap (x16..23, y0..7) stays transparent -- vanilla never paints
+    # it, and it is the underside of the head, permanently inside the player.
 
-    # -- sleeves: pauldron plate over the top, segments below.
-    flat_plate(img, "arm_pauldron", 40, 20, 16, 4, AHEAD_BASE, SOLD_PALE, SOLD_DARKEST)
-    segment_plates(img, "arm_sides", 40, 24, 16, 8, band=4, face_w=4)
-    flat_plate(img, "arm_caps", 44, 16, 8, 4, AHEAD_MID, SOLD_LIGHT, AHEAD_DARK)
+    # -- chestplate: three plates (collar / mesonotum / skirt), two seams.
+    paint_strip(img, "chest_sides", 16, 20, CHITIN_CHEST_SIDE_MASK,
+                CHITIN_CHEST_SIDE_RAMP, CHITIN_CHEST_SIDE_ROLES, BODY_SIDE_FACES)
+    # Pronotum shield: a raised, ROUNDED centre plate on the chest's front
+    # face, taller than it is wide and inset from the flanks -- deliberately
+    # not a full-width bar, which would just be another line. Its highlight is
+    # a 2px specular, not a row.
+    for xx in range(22, 26):
+        px[xx, 23] = SOLD_PALE
+    for xx in range(21, 27):
+        px[xx, 24] = SOLD_LIGHT
+        px[xx, 25] = SOLD_MID
+    px[23, 24] = CHITIN_SPARK
+    px[24, 24] = CHITIN_SPARK
+    for xx in range(22, 26):
+        px[xx, 26] = SOLD_BASE   # the shield's tail breaks the seam below it
+    # both chest caps (x20..35, y16..19) stay transparent, as vanilla's do.
 
-    # -- boots: dark chitin with pale claw tips at the toes (front face x4..7).
-    flat_plate(img, "boot_sides", 0, 27, 16, 5, SOLD_DARK, SOLD_MID, SOLD_DARKEST)
-    for (bx, by) in [(5, 31), (6, 31)]:
-        px[bx, by] = AJAW_TIP
-    px[5, 30] = lerp_color(AJAW_TIP, SOLD_DARK, 0.5)
-    flat_plate(img, "boot_sole", 8, 16, 4, 4, SOLD_DARKEST, SOLD_DARKEST, SOLD_DARKEST)
+    # -- sleeves: one pauldron plate that stops partway down the upper arm.
+    paint_strip(img, "arm_sides", 40, 20,
+                band_mask(20, 12, 16, SLEEVE_ROWS[0], SLEEVE_ROWS[1]),
+                [CHITIN_RIM, SOLD_MID, SOLD_MID, SOLD_BASE, SOLD_DARKEST]
+                + [None] * 7,
+                ["rim", "body", "body", "body", "seam"] + [None] * 7,
+                ARM_SIDE_FACES)
+    solid_cap(img, "arm_cap", 44, 16, 4, 4, SOLD_LIGHT, SOLD_BASE)
+
+    # -- boots: two short plates with pale claw tips at the toes (front face).
+    paint_strip(img, "boot_sides", 0, 20,
+                band_mask(20, 12, 16, BOOT_ROWS[0], BOOT_ROWS[1]),
+                [None] * 6
+                + [CHITIN_RIM, SOLD_MID, SOLD_DARKEST, SOLD_PALE, SOLD_BASE,
+                   SOLD_DARK],
+                [None] * 6 + ["rim", "body", "seam", "rim", "body", "body"],
+                LEG_SIDE_FACES)
+    for bx in (5, 6):
+        px[bx, 31] = AJAW_TIP
+        px[bx, 30] = lerp_color(AJAW_TIP, SOLD_BASE, 0.55)
+    solid_cap(img, "boot_sole", 8, 16, 4, 4, AHEAD_BASE, AHEAD_DARK)
+
+    # -- antennae: UV only. The cubes themselves live on ChitinArmorModel and
+    # are parented to the head, so they inherit head rotation.
+    antenna_segment(img, "antenna_scape", ANTENNA_SCAPE_UV, ANTENNA_SCAPE_LEN,
+                    [SOLD_LIGHT, SOLD_MID, SOLD_MID, SOLD_BASE, SOLD_DARK])
+    antenna_segment(img, "antenna_funicle", ANTENNA_FUNICLE_UV,
+                    ANTENNA_FUNICLE_LEN,
+                    [CHITIN_SPARK, CHITIN_RIM, SOLD_PALE, SOLD_MID])
     return img
 
 
 def chitin_layer_2():
-    """Inner layer: leggings only. Belt with a mandible-pale clasp across the
-    body box, tight segment greaves down the leg box, stopping above the ankle
-    so the boots' own band is not doubled."""
+    """Inner layer: leggings only (HumanoidArmorLayer.usesInnerModel is true
+    just for EquipmentSlot.LEGS).
+
+    Round 7 moved the belt off the chest. It was painted at y20..y24 -- the TOP
+    of the torso box, i.e. across the ribs -- where vanilla's leggings paint
+    y27..y31, the bottom five rows, which is the waist. Greaves are three
+    segments down y20..y28, stopping above the ankle so the boot's own plate is
+    not doubled, and the clasp keeps its AJAW_TIP mandible accent."""
     img = Image.new("RGBA", (ARMOR_TEX_W, ARMOR_TEX_H), (0, 0, 0, 0))
     px = img.load()
-    flat_plate(img, "belt_sides", 16, 20, 24, 5, AHEAD_BASE, SOLD_MID, SOLD_DARKEST)
-    # clasp on the front face
-    for (cx_, cy_) in [(23, 21), (24, 21), (23, 22), (24, 22)]:
+
+    # -- belt: one plate around the waist.
+    paint_strip(img, "belt_sides", 16, 20,
+                band_mask(20, 12, 24, BELT_ROWS[0], BELT_ROWS[1]),
+                [None] * 7
+                + [CHITIN_RIM, SOLD_MID, SOLD_MID, SOLD_BASE, SOLD_DARKEST],
+                [None] * 7 + ["rim", "body", "body", "body", "seam"],
+                BODY_SIDE_FACES)
+    for (cx_, cy_) in [(23, 28), (24, 28), (23, 29), (24, 29)]:
         px[cx_, cy_] = AJAW_TIP
-    px[23, 21] = lerp_color(AJAW_TIP, SOLD_PALE, 0.4)
-    flat_plate(img, "belt_top", 20, 16, 8, 4, AHEAD_DARK, AHEAD_DARK, AHEAD_DARK)
-    segment_plates(img, "greave_sides", 0, 20, 16, 8, band=3, face_w=4,
-                   rim=SOLD_MID, base=SOLD_DARK, seam=SOLD_DARKEST)
-    flat_plate(img, "greave_top", 4, 16, 4, 4, AHEAD_DARK, AHEAD_DARK, AHEAD_DARK)
+    px[23, 28] = lerp_color(AJAW_TIP, SOLD_PALE, 0.4)
+
+    # -- greaves: two leg segments, ant-leg style.
+    paint_strip(img, "greave_sides", 0, 20,
+                band_mask(20, 12, 16, GREAVE_ROWS[0], GREAVE_ROWS[1]),
+                [CHITIN_RIM, SOLD_MID, SOLD_MID, SOLD_BASE, SOLD_DARKEST,
+                 SOLD_PALE, SOLD_MID, SOLD_BASE, SOLD_DARKEST] + [None] * 3,
+                ["rim", "body", "body", "body", "seam",
+                 "rim", "body", "body", "seam"] + [None] * 3,
+                LEG_SIDE_FACES)
+    solid_cap(img, "greave_cap", 4, 16, 4, 4, AHEAD_BASE, AHEAD_DARK)
     return img
 
 
