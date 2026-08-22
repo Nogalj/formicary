@@ -2099,3 +2099,54 @@ item order.
    sit adjacent to carved-out air than before. Left as vanilla cave-gravel behaviour --
    placed with `update=false`, so it does not fall on its own the instant it generates --
    and accepted as-is rather than patched around.
+
+## Play-test round 7 (2026-08-21)
+
+1. **The chitin armor recipe already used Chitin Plates.** Logan asked whether it did;
+   verified against the GENERATED recipe JSON rather than the builder source (the
+   generated file is what the game loads, so it is the ground truth): all four of
+   `chitin_{helmet,chestplate,leggings,boots}.json` key `X` to `formicary:chitin_plate`,
+   from round 4. No change.
+
+2. **"Too chunky and bulky" was measurable, and the measurement found a bug nobody
+   reported.** Ours was 1056 opaque px against vanilla iron's 648 in the same 64x32
+   layout (+63%), because the painter FILLED each body-part UV rect with horizontal
+   bands where vanilla paints a shaped silhouette and leaves most of the rect
+   transparent. Counting vanilla's painted rows per rect gave the real coverage rule --
+   sleeves are 5 of the arm's 12 rows, both chest caps and the helmet's DOWN cap are
+   never painted at all -- and exposed that **our leggings' belt sat at the TOP of the
+   torso box (chest height) instead of the waist**. Rebuilt to those numbers: 658 armor
+   px vs 648, layer_2 exactly 280.
+   **Licensing rule applied: no vanilla pixel or alpha data entered the repo.** The
+   extraction lived in a scratch dir; what crossed over was NUMBERS (row ranges), which
+   is layout fact, not artwork.
+
+3. **Antennae need geometry, not paint.** Armor layers are flat textures on the vanilla
+   `HumanoidModel`, so a painted antenna is a squiggle on the head cube. Real antennae
+   come from a custom armor model via NeoForge's
+   `IClientItemExtensions#getHumanoidArmorModel` -- a class that was NOT in `reference/`
+   and had to be re-extracted before use (partial extraction != missing API).
+   **Helmet only**: `usesInnerModel` is true for `LEGS`, so leggings render with the
+   inner model at 0.5F deformation and handing them this 1.0F model would visibly fatten
+   them. No mixin was needed.
+
+4. **The first repaint reproduced the complaint at a different frequency.** A per-row
+   rim/body/seam ramp is still stripes. Roles are now applied per FACE -- seam darkening
+   only across the middle of each face, highlights fading at the flanks, every box corner
+   pulled toward the darkest tone -- which lays a vertical grid over the piece and reads
+   as plating instead of lines.
+
+5. **De-bowling the Fungal Stew is three coupled changes, not one.** The recipe's
+   `Items.BOWL`, the food's `usingConvertsTo(Items.BOWL)`, and `stacksTo(1)` -- the last
+   existed ONLY because bowl foods must not stack, so removing the bowl without removing
+   it would have left the stacking complaint unfixed. Display name is now "Fungal Cake";
+   **the registry id stays `fungal_stew`** deliberately -- renaming it would touch loot
+   tables, advancements, recipes, models and a GameTest, and void the item in existing
+   worlds, all for a label.
+
+6. **Our food icons failed vanilla's four-part standard.** Vanilla foods each carry a dark
+   outline, a 3-4 tone ramp, a specular highlight, and one piece of internal structure
+   (cookie chips, melon seeds, honeycomb cells). Ours carried none: Honeyed Comb was a
+   flat amber blob with three dots and no cells at all, the treat read as butter on a
+   plank, and the raw jelly read as garlic -- a SILHOUETTE problem, so it was reshaped
+   rather than recoloured. All four repainted to 106-129 px, in vanilla's 106-140 band.
