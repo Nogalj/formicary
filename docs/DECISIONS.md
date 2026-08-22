@@ -2056,18 +2056,32 @@ item order.
    Earth) fabric, Amber Earth speckles into tier-1 (Deep Loam) fabric, Royal Depths
    stays clean. Both draw from one shared chunk-keyed RNG stream with the first draw
    burned, per the banked y-key first-draw-correlation rule.
+   **Round 6 raised it again: 48 -> 113 cluster seeds** on Logan's "increase to roughly
+   200 per chunk per tier". Two things worth recording. (a) The "200" was read as
+   **blocks**, not cluster seeds, because blocks-per-chunk is the figure the round-5
+   report handed him -- a number quoted back at you means whatever unit you gave it in.
+   (b) The conversion was measured rather than assumed: 48 seeds realized 83.7-87.2
+   blocks, i.e. ~1.77 blocks per attempt after eligibility loss, so 200 / 1.77 = 113. That
+   lands near 2% of band fabric, a fifth of the Hardened Soil accent rather than a tenth.
+   The probe's coverage band moved with it, `[52, 140]` -> `[122, 330]`, keeping the
+   halving-or-doubling shape. Third consecutive round asking for more visible material
+   variation -- on this dial the evidence says err upward.
 6. **Tillable colony soils + the spore's light-free growth (this work package).**
-   - **Tilling**: a hoe right-click now turns Packed Soil, Amber Earth and Deep Loam
-     into vanilla `minecraft:farmland`, via `BlockEvent.BlockToolModificationEvent`
-     (`TillingEvents`, on the game bus, following `PortalEvents`' `@EventBusSubscriber`
-     pattern) delegating to a pure static seam (`SoilTilling.tilledState`) that mirrors
-     vanilla's live `HOE_TILL` check exactly: convert only when the space above is air.
-     Hardened Soil is deliberately excluded -- it is the dimension's stone-equivalent,
-     not its dirt -- and so are the brick/tile/resin building-block families (a build a
-     player made, not colony fabric). **Accepted as-is**: vanilla farmland reverts to
-     plain dirt when trampled (or through its own moisture/light upkeep), which puts a
-     vanilla dirt block into the colony's fabric -- not fought, since dirt has been a
-     worldgen material down there since round 2 already.
+   - **Tilling: REVERTED IN ROUND 6, and the reversal is the decision worth keeping.**
+     Round 5 read "player should be able to plant inside the formicary dimension" as
+     "the colony's own soils must become tillable" and shipped a
+     `BlockEvent.BlockToolModificationEvent` handler turning Packed Soil, Amber Earth and
+     Deep Loam into farmland. Logan's correction: *"do not have packed soil, amber earth,
+     and deep loam turn into farmland, i just wanted dirt to be tillable."* Vanilla dirt
+     has generated in the colony's fabric since round 2's soil pockets and round 5's
+     seams, and vanilla dirt was **already** tillable down there by vanilla's own rule --
+     the dimension is not `ultrawarm`, so a water bucket works and farmland hydrates
+     normally. The feature answered a question nobody asked, and its blast radius was the
+     dimension's entire identity: a colony whose walls are farmable is not a colony.
+     `SoilTilling` and `TillingEvents` are deleted, not disabled. **The generalisable
+     rule: when a request names a capability ("be able to plant"), find the smallest
+     existing mechanism that already delivers it before adding one -- the answer here
+     required zero code and was already shipped.**
    - **Fungal Spore in the dark**: `FungalSporeCropBlock` drops `CropBlock`'s light gate
      from both `canSurvive` (which normally requires `hasSufficientLight`) and the
      random-tick growth roll (which normally requires `getRawBrightness(pos, 0) >= 9`
@@ -2079,7 +2093,7 @@ item order.
    - **No code needed for vanilla crops**: farmland plus a Fungal Bloom's light-10 glow
      already clears wheat's own `>= 8` survival requirement, so ordinary wheat (and any
      other vanilla farmland crop) already grows in the colony once a Fungal Bloom is
-     nearby -- ambient interaction between round 5's tilling and the mod's own
+     nearby -- ambient interaction between vanilla dirt tilling and the mod's own
      pre-existing light source, not a feature that needed writing.
 7. **WP-beta's gravel/sand note.** Larger seams (item 4 above) mean more gravity blocks
    sit adjacent to carved-out air than before. Left as vanilla cave-gravel behaviour --

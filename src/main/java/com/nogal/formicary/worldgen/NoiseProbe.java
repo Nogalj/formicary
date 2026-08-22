@@ -3089,17 +3089,21 @@ public final class NoiseProbe {
 
     /**
      * The band a speckled tier's micro-patch coverage has to land in, in blocks written per
-     * chunk per tier. Measured <b>83.7 to 87.2</b> over the six speckled tier-by-seed cells
-     * (0.78%-0.90% of the band's plain fabric); band {@code [52, 140]}, the same
-     * halving-or-doubling shape and for the same reason -- 41.9 and 174.4 both fall outside.
-     * The spread is far tighter than the seams' because 48 cluster seeds per chunk is a large
-     * enough sample to average, where one or two seams per chunk is not.
+     * chunk per tier. <b>Round 6 retuned both edges</b> with the cluster-seed dial (48 ->
+     * 113, see {@link ColonyGeneratorTunables#SOIL_SPECKLE_CLUSTERS_PER_CHUNK_PER_TIER});
+     * measured <b>195.0 to 205.7</b> blocks (1.84%-2.11% of the band's plain fabric,
+     * 97.7-102.5 realized clusters) over the six speckled tier-by-seed cells. Band
+     * {@code [122, 330]} keeps the same halving-or-doubling shape the seam band uses and for
+     * the same reason: half the new figure (~100) falls under the floor and double it (~400)
+     * over the ceiling, so neither a silently reverted dial nor a runaway one can pass. The
+     * spread is far tighter than the seams' because a hundred-odd cluster seeds per chunk is
+     * a large enough sample to average, where one or two seams per chunk is not.
      *
      * <p>A tier {@link ColonyNoise#SOIL_SPECKLE_MATERIAL_BY_TIER} names no material for is
      * asserted at exactly zero instead, which is an invariant rather than a band.
      */
-    private static final double SPECKLE_COVERAGE_MIN_PER_CHUNK = 52.0;
-    private static final double SPECKLE_COVERAGE_MAX_PER_CHUNK = 140.0;
+    private static final double SPECKLE_COVERAGE_MIN_PER_CHUNK = 122.0;
+    private static final double SPECKLE_COVERAGE_MAX_PER_CHUNK = 330.0;
 
     /**
      * What the two fabric-substitution passes actually put in each band, and whether the

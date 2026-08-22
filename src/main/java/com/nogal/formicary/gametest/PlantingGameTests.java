@@ -1,33 +1,30 @@
 package com.nogal.formicary.gametest;
 
-import java.util.List;
 
 import com.nogal.formicary.Formicary;
 import com.nogal.formicary.block.FungalSporeCropBlock;
 import com.nogal.formicary.block.ModBlocks;
-import com.nogal.formicary.block.SoilTilling;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * Headless coverage for play-test round 5, item 5: planting inside the colony. Follows
+ * Headless coverage for play-test round 5, item 5: planting inside the colony -- which
+ * after round 6 means the Fungal Spore's light-free survival and growth, and nothing else.
+ * Round 5's hoe-tilling of the three colony soils was REVERTED in round 6 (Logan: "do not
+ * have packed soil, amber earth, and deep loam turn into farmland, i just wanted dirt to be
+ * tillable") -- vanilla dirt, which has generated in the colony's fabric since round 2, was
+ * always tillable there by vanilla's own rule, so the feature was answering a question that
+ * had not been asked. Follows
  * {@code PolishGameTests}' and {@code TamingGameTests}' established conventions -- see
  * {@code docs/gotchas/gametest.md} (open before touching this file) for the harness
  * limits this works around.
  *
- * <p>The tilling test drives {@link SoilTilling#tilledState} directly rather than through
- * {@code GameTestHelper.makeMockPlayer} and a simulated hoe {@code UseOnContext} --
- * {@code docs/gotchas/gametest.md}'s mock-player limits (no advancements, invisible to
- * {@code getNearestPlayer}) make that route unreliable for asserting a block-state
- * transform, and {@code AntClimbing#tamedClimbFlag} is this project's own precedent for
- * testing a pure decision function straight, the same way this file does.
  */
 @GameTestHolder(Formicary.MODID)
 public class PlantingGameTests {
@@ -58,35 +55,6 @@ public class PlantingGameTests {
      * block anything at all; a genuinely light-tight cell has to be built by hand.
      */
     private static final int WHEAT_LIGHT_THRESHOLD = 8;
-
-    /**
-     * The three soft tier soils till into farmland when the space above is air; Hardened
-     * Soil (the dimension's stone-equivalent, spec section 5) does not till at all; and the
-     * air-above gate itself refuses even a tillable soil when the space above is not air --
-     * vanilla's own tilling rule (see {@code SoilTilling}'s javadoc), mirrored rather than
-     * invented.
-     */
-    @PrefixGameTestTemplate(false)
-    @GameTest(template = "platform")
-    public static void hoe_tilling_turns_the_three_soft_soils_into_farmland_but_not_hardened_soil(
-            GameTestHelper helper) {
-        for (Block soil : List.of(ModBlocks.PACKED_SOIL.get(), ModBlocks.AMBER_EARTH.get(),
-                ModBlocks.DEEP_LOAM.get())) {
-            BlockState tilled = SoilTilling.tilledState(soil.defaultBlockState(), true);
-            helper.assertTrue(tilled != null && tilled.is(Blocks.FARMLAND),
-                    soil + " should till into farmland when the space above is air, got " + tilled);
-        }
-
-        BlockState hardenedResult = SoilTilling.tilledState(ModBlocks.HARDENED_SOIL.get().defaultBlockState(), true);
-        helper.assertTrue(hardenedResult == null,
-                "hardened soil must not be tillable even with air above, got " + hardenedResult);
-
-        BlockState blockedByCeiling = SoilTilling.tilledState(ModBlocks.PACKED_SOIL.get().defaultBlockState(), false);
-        helper.assertTrue(blockedByCeiling == null,
-                "packed soil must not till when the space above is not air, got " + blockedByCeiling);
-
-        helper.succeed();
-    }
 
     /**
      * A Fungal Spore crop planted on farmland inside a hand-built, genuinely light-tight

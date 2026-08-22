@@ -1529,24 +1529,27 @@ public final class ColonyGeneratorTunables {
      * 9-11% accent. A speckle rate an order of magnitude under it would be a curiosity, not
      * the "very frequent" the ask asked for twice.
      *
-     * <p>The arithmetic, and then what it actually came out as. 48 attempts x a mean cluster
-     * of 2 blocks = 96 blocks per chunk per tier before the eligibility loss; NoiseProbe's
-     * composition sweep measures <b>41.7-43.6 realized clusters and 83.7-87.2 blocks per
-     * chunk per tier</b> over the three standard seeds, which is <b>0.78%-0.90% of the
-     * band's plain fabric</b> -- about a tenth of the Hardened Soil accent it is scattered
-     * through. Comparable total material per chunk to the soil seams above, but delivered as
-     * forty-odd separate finds instead of one or two, which is the difference the ask is
-     * about. That section gates the figure inside a band, so it is the number to retune
-     * against; this constant is the only dial that moves it.
+     * <p><b>Round 6 raised it from 48 to 113</b>, on Logan's "increase to roughly 200 per
+     * chunk per tier" -- a figure quoted against the BLOCKS number this javadoc reports, not
+     * the cluster-seed count, because blocks per chunk is what the previous round's report to
+     * him described. The conversion is measured, not assumed: 48 attempts realized 83.7-87.2
+     * blocks over the three standard seeds, i.e. ~1.77 blocks per attempt after the
+     * eligibility loss, so 200 / 1.77 = 113. Expect ~98 realized clusters and ~200 blocks per
+     * chunk per tier, about 2% of the band's plain fabric -- now roughly a FIFTH of the
+     * 9-11% Hardened Soil accent rather than a tenth, which is the visible-frequency step the
+     * ask is about. NoiseProbe's composition section gates the figure inside a band, so it is
+     * the number to retune against; this constant is the only dial that moves it.
      *
-     * <p><b>Why 48 and not single digits.</b> Eight cluster seeds per chunk per tier would be
+     * <p><b>Why never single digits.</b> Eight cluster seeds per chunk per tier would be
      * about 14 blocks -- 0.15% of the band, which is exactly the coverage round 3's soil
-     * patches had, and round 3's patches are the thing this same play-test round was told
+     * patches had, and round 3's patches are the thing a later play-test round was told
      * twice were too small to register. Broken into 1-3 block dots that same budget would be
      * strictly less noticeable than the seams were, so it could not have delivered "very
-     * frequent" whatever it did to the block count.
+     * frequent" whatever it did to the block count. Round 5 shipped 48 and round 6 was asked
+     * for more again, which is the same signal a third time: when in doubt on this dial, the
+     * evidence says go up.
      */
-    public static final int SOIL_SPECKLE_CLUSTERS_PER_CHUNK_PER_TIER = 48;
+    public static final int SOIL_SPECKLE_CLUSTERS_PER_CHUNK_PER_TIER = 113;
 
     /**
      * Blocks a micro-patch's walk targets, inclusive range -- Logan's "small 1~3 block sized
