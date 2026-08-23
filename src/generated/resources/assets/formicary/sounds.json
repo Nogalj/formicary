@@ -64,7 +64,9 @@
   },
   "entity.queen.ambient": {
     "sounds": [
-      "formicary:entity/queen/ambient"
+      "formicary:entity/queen/ambient1",
+      "formicary:entity/queen/ambient2",
+      "formicary:entity/queen/ambient3"
     ],
     "subtitle": "subtitles.formicary.queen.ambient"
   },
@@ -79,19 +81,14 @@
   },
   "entity.queen.death": {
     "sounds": [
-      {
-        "type": "event",
-        "name": "entity.spider.death"
-      }
+      "formicary:entity/queen/death"
     ],
     "subtitle": "subtitles.formicary.queen.death"
   },
   "entity.queen.hurt": {
     "sounds": [
-      {
-        "type": "event",
-        "name": "entity.spider.hurt"
-      }
+      "formicary:entity/queen/hurt1",
+      "formicary:entity/queen/hurt2"
     ],
     "subtitle": "subtitles.formicary.queen.hurt"
   },
@@ -115,49 +112,43 @@
   },
   "entity.soldier_ant.ambient": {
     "sounds": [
-      "formicary:entity/soldier_ant/ambient"
+      "formicary:entity/soldier_ant/ambient1",
+      "formicary:entity/soldier_ant/ambient2",
+      "formicary:entity/soldier_ant/ambient3"
     ],
     "subtitle": "subtitles.formicary.soldier_ant.ambient"
   },
   "entity.soldier_ant.death": {
     "sounds": [
-      {
-        "type": "event",
-        "name": "entity.spider.death"
-      }
+      "formicary:entity/soldier_ant/death"
     ],
     "subtitle": "subtitles.formicary.soldier_ant.death"
   },
   "entity.soldier_ant.hurt": {
     "sounds": [
-      {
-        "type": "event",
-        "name": "entity.spider.hurt"
-      }
+      "formicary:entity/soldier_ant/hurt1",
+      "formicary:entity/soldier_ant/hurt2"
     ],
     "subtitle": "subtitles.formicary.soldier_ant.hurt"
   },
   "entity.worker_ant.ambient": {
     "sounds": [
-      "formicary:entity/worker_ant/ambient"
+      "formicary:entity/worker_ant/ambient1",
+      "formicary:entity/worker_ant/ambient2",
+      "formicary:entity/worker_ant/ambient3"
     ],
     "subtitle": "subtitles.formicary.worker_ant.ambient"
   },
   "entity.worker_ant.death": {
     "sounds": [
-      {
-        "type": "event",
-        "name": "entity.spider.death"
-      }
+      "formicary:entity/worker_ant/death"
     ],
     "subtitle": "subtitles.formicary.worker_ant.death"
   },
   "entity.worker_ant.hurt": {
     "sounds": [
-      {
-        "type": "event",
-        "name": "entity.spider.hurt"
-      }
+      "formicary:entity/worker_ant/hurt1",
+      "formicary:entity/worker_ant/hurt2"
     ],
     "subtitle": "subtitles.formicary.worker_ant.hurt"
   }
