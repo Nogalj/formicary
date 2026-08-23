@@ -37,8 +37,23 @@ public final class TrailPath {
 
     // -------------------------------------------------------------- tunables --
 
-    /** How many positions the ring buffer holds before it starts overwriting. Tunable. */
-    public static final int CAPACITY = 512;
+    /**
+     * How many positions the ring buffer holds before it starts overwriting. Tunable.
+     *
+     * <p>Play-test round 8 ("needs to go even further"): raised 512 -> 2048, so the trail
+     * remembers roughly 4096 blocks of walking rather than 1024 at
+     * {@link #MIN_SAMPLE_DISTANCE} spacing. Round 1 had already fixed {@link #light}
+     * retracing only part of the buffer, so a trail that still stopped short meant the
+     * buffer itself was wrapping -- which it does fast, because samples are taken on
+     * <i>distance moved</i>, and wandering a chamber spends them just as quickly as
+     * walking a corridor.
+     *
+     * <p>This does not cost 4x the particle traffic, because
+     * {@code PortalEvents#drawTrail} only sends the points near the player -- see
+     * {@code PortalEvents.TRAIL_DRAW_RADIUS}. Steady-state sends are now bounded by that
+     * radius rather than by this number.
+     */
+    public static final int CAPACITY = 2048;
 
     /** How far the player must move from the last sample before another is taken. Tunable. */
     public static final double MIN_SAMPLE_DISTANCE = 2.0;

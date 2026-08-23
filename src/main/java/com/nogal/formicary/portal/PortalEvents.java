@@ -49,14 +49,34 @@ public final class PortalEvents {
      * Particles sent per lit-trail point on each refresh.
      *
      * <p>Play-test round 1: dropped from 2 to 1 now that {@link TrailPath#light} retraces
-     * the whole recorded buffer (up to {@link TrailPath#CAPACITY}, 512 points) instead of
-     * the newest 30. At the old count of 2 that would have meant up to 1024 particle
-     * sends in a single tick, every {@link TrailPath#TRAIL_REFRESH_TICKS} ticks -- halving
-     * this alongside doubling the refresh interval (20 -> 40 ticks) brings the worst case
-     * down to 512 sends per 2 seconds, a ~4x reduction in steady-state particle rate even
-     * though the trail itself can now be ~17x longer.
+     * the whole recorded buffer instead of the newest 30. At the old count of 2 that would
+     * have meant up to 1024 particle sends in a single tick, every
+     * {@link TrailPath#TRAIL_REFRESH_TICKS} ticks -- halving this alongside doubling the
+     * refresh interval (20 -> 40 ticks) brought the worst case down sharply even though
+     * the trail itself got far longer.
      */
     private static final int TRAIL_PARTICLES_PER_POINT = 1;
+
+    /**
+     * How close a lit-trail point must be to the player before its particle is sent.
+     *
+     * <p>Play-test round 8 raised {@link TrailPath#CAPACITY} 512 -> 2048. Without this
+     * cull that would have been a 4x rise in packets per refresh, because the
+     * {@code longDistance} flag {@link #drawTrail} passes to
+     * {@code ServerLevel#sendParticles} sets vanilla's own cutoff to 512 blocks -- far
+     * past anything the player can see, so effectively no cull at all (verified in the
+     * decompiled {@code ServerLevel#sendParticles(ServerPlayer, boolean, double, double,
+     * double, Packet)}: {@code closerToCenterThan(..., longDistance ? 512.0 : 32.0)}).
+     *
+     * <p>64 blocks is twice vanilla's non-longDistance cutoff and well past normal cave
+     * sight lines, so nothing visible is lost. Keeping {@code longDistance = true} on top
+     * of it is deliberate: that flag also sets {@code overrideLimiter} on the packet, so
+     * the trail still draws for players on reduced particle settings -- which matters for
+     * something whose whole job is telling you the way out.
+     *
+     * <p>Net effect: the trail is 4x longer and the steady-state packet count went down.
+     */
+    private static final int TRAIL_DRAW_RADIUS = 64;
 
     @SubscribeEvent
     public static void onProjectileImpact(ProjectileImpactEvent event) {
@@ -144,12 +164,22 @@ public final class PortalEvents {
     }
 
     /**
-     * Puffs one particle per recorded point, sent to that player alone -- the trail is their
-     * own memory of the route, not a beacon everyone in the colony can read.
+     * Puffs one particle per recorded point within {@link #TRAIL_DRAW_RADIUS}, sent to that
+     * player alone -- the trail is their own memory of the route, not a beacon everyone in
+     * the colony can read.
+     *
+     * <p>The whole frozen route stays lit; this only decides which of its points are worth
+     * a packet right now. Walking the trail brings the next stretch into range, so it
+     * reveals ahead of the player exactly as it did before the cull.
      */
     private static void drawTrail(ServerPlayer player, List<BlockPos> points) {
         ServerLevel level = player.serverLevel();
+        double radiusSqr = (double) TRAIL_DRAW_RADIUS * TRAIL_DRAW_RADIUS;
+        BlockPos here = player.blockPosition();
         for (BlockPos point : points) {
+            if (here.distSqr(point) > radiusSqr) {
+                continue;
+            }
             level.sendParticles(player, ParticleTypes.HAPPY_VILLAGER, true,
                     point.getX() + 0.5, point.getY() + 0.6, point.getZ() + 0.5,
                     TRAIL_PARTICLES_PER_POINT, 0.15, 0.25, 0.15, 0.0);
