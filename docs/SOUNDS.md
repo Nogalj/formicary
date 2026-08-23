@@ -1,12 +1,36 @@
 # Adding your own sounds
 
-Every mob in Formicary already has its own named sound events -- `formicary:entity.queen.roar`
-and eighteen others. Right now each of them is a **redirect** to a vanilla sound, so the mod
-ships zero audio files and still sounds like something. Replacing any one of them with your
-own recording is **one line of Java-adjacent config plus one file** -- no new code, no
-recompile of anything you have to understand.
+Every mob in Formicary has its own named sound events -- `formicary:entity.queen.roar` and
+eighteen others. Each one is either a **real file** or a **redirect** to a vanilla sound, and
+the mod started life as all redirects, which is why it sounded like something before any audio
+existed. Replacing a redirect with your own recording is **one line of Java-adjacent config
+plus one file** -- no new code, no recompile of anything you have to understand.
 
 This document is the whole procedure.
+
+> ## Read this first: three mobs are GENERATED
+>
+> The **worker ant, soldier ant and queen** now have real audio, and their `.ogg` files are
+> **build output**. They are cut by `assets-src/sounds.py` from Logan's raw recordings in
+> `assets-src/audio-src/`, the same way `blocks.py` generates every texture.
+>
+> **Do not hand-edit those files** -- the next run of the script overwrites them. To change
+> how one of those three sounds, edit the `VOICES` table at the top of `assets-src/sounds.py`
+> and re-run it:
+>
+> ```powershell
+> uv run --with soundfile --with numpy python assets-src\sounds.py
+> .\gradlew runData
+> ```
+>
+> The table holds, per mob: which windows of the recording become the three ambient variants,
+> the playback-rate offset for each, and which stretch the hurt and death are cut from. The
+> constants below it control how far a hurt is pitched up and how far a death glides down.
+> Everything in the rest of this document still applies to the mobs that are still redirects,
+> and to adding a brand-new voice.
+>
+> If you record a **replacement** for one of the three, drop it in `assets-src/audio-src/`
+> under the same name and re-run the script -- not into the resources tree.
 
 ---
 
@@ -39,8 +63,8 @@ Keep it short. Vanilla mob sounds are mostly well under two seconds.
 
 ## 2. Where the file goes
 
-Everything lives under `src/main/resources/assets/formicary/sounds/`. The folders do not exist
-yet -- create the ones you need.
+Everything lives under `src/main/resources/assets/formicary/sounds/`. Three mob folders are
+there already (generated -- see the callout at the top); create any others you need.
 
 The path is derived from the name you will write in step 3: `formicary:entity/queen/roar`
 becomes `assets/formicary/sounds/` + `entity/queen/roar` + `.ogg`. **Slashes, not dots** --
@@ -49,23 +73,23 @@ dots would give you one flat file literally named `entity.queen.roar.ogg`.
 Tamed ants deliberately share their wild caste's voice: the tamed worker uses the worker's
 events, the tamed soldier uses the soldier's. One file covers both.
 
-| Sound event | File to create (under `src/main/resources/assets/formicary/sounds/`) | Currently borrows |
+| Sound event | File (under `src/main/resources/assets/formicary/sounds/`) | Source |
 |---|---|---|
-| `formicary:entity.worker_ant.ambient` | `entity/worker_ant/ambient.ogg` | `entity.spider.step` |
-| `formicary:entity.worker_ant.hurt` | `entity/worker_ant/hurt.ogg` | `entity.spider.hurt` |
-| `formicary:entity.worker_ant.death` | `entity/worker_ant/death.ogg` | `entity.spider.death` |
-| `formicary:entity.soldier_ant.ambient` | `entity/soldier_ant/ambient.ogg` | `entity.spider.ambient` |
-| `formicary:entity.soldier_ant.hurt` | `entity/soldier_ant/hurt.ogg` | `entity.spider.hurt` |
-| `formicary:entity.soldier_ant.death` | `entity/soldier_ant/death.ogg` | `entity.spider.death` |
+| `formicary:entity.worker_ant.ambient` | `entity/worker_ant/ambient1..3.ogg` | **generated** (3 variants) |
+| `formicary:entity.worker_ant.hurt` | `entity/worker_ant/hurt1..2.ogg` | **generated** (2 variants) |
+| `formicary:entity.worker_ant.death` | `entity/worker_ant/death.ogg` | **generated** |
+| `formicary:entity.soldier_ant.ambient` | `entity/soldier_ant/ambient1..3.ogg` | **generated** (3 variants) |
+| `formicary:entity.soldier_ant.hurt` | `entity/soldier_ant/hurt1..2.ogg` | **generated** (2 variants) |
+| `formicary:entity.soldier_ant.death` | `entity/soldier_ant/death.ogg` | **generated** |
 | `formicary:entity.larva.hurt` | `entity/larva/hurt.ogg` | `entity.slime.squish_small` |
 | `formicary:entity.larva.death` | `entity/larva/death.ogg` | `entity.slime.squish_small` |
 | `formicary:entity.ender_ant.ambient` | `entity/ender_ant/ambient.ogg` | `entity.enderman.ambient` |
 | `formicary:entity.ender_ant.hurt` | `entity/ender_ant/hurt.ogg` | `entity.enderman.hurt` |
 | `formicary:entity.ender_ant.death` | `entity/ender_ant/death.ogg` | `entity.enderman.death` |
 | `formicary:entity.ender_ant.teleport` | `entity/ender_ant/teleport.ogg` | `entity.enderman.teleport` |
-| `formicary:entity.queen.ambient` | `entity/queen/ambient.ogg` | `entity.spider.ambient` |
-| `formicary:entity.queen.hurt` | `entity/queen/hurt.ogg` | `entity.spider.hurt` |
-| `formicary:entity.queen.death` | `entity/queen/death.ogg` | `entity.spider.death` |
+| `formicary:entity.queen.ambient` | `entity/queen/ambient1..3.ogg` | **generated** (3 variants) |
+| `formicary:entity.queen.hurt` | `entity/queen/hurt1..2.ogg` | **generated** (2 variants) |
+| `formicary:entity.queen.death` | `entity/queen/death.ogg` | **generated** |
 | `formicary:entity.queen.roar` | `entity/queen/roar.ogg` | `entity.warden.roar` |
 | `formicary:entity.queen.acid_spit` | `entity/queen/acid_spit.ogg` | `entity.llama.spit` |
 | `formicary:entity.queen.burrow` | `entity/queen/burrow.ogg` | `block.rooted_dirt.break` |
@@ -105,6 +129,16 @@ That is the entire change. `borrow(...)` is just a shorthand for "point this eve
 one"; `add(...)` with a `sound("formicary:...")` points it at your file instead. Keep the
 `.subtitle(...)` line exactly as it was -- that is the text shown when subtitles are on, and it
 already says the right thing.
+
+In practice the file has a shorter helper for exactly this, `voice(...)`, which builds the same
+thing from a mob name and a list of files:
+
+```java
+voice(ModSounds.QUEEN_ROAR, "queen", "roar", "roar");
+//    event                  folder   subtitle  file(s)
+```
+
+Listing more than one file is how a voice gets random variation -- see section 6.
 
 Then regenerate `sounds.json`:
 
@@ -183,15 +217,28 @@ point of this setup.
 All of these go inside the same `add(...)` call in `ModSoundDefinitionsProvider`.
 
 **Random variations.** List several sounds in one definition and the game picks one at random
-each time -- this is how vanilla keeps a mob's idle noise from getting repetitive:
+each time -- this is how vanilla keeps a mob's idle noise from getting repetitive, and it is
+what the three ants use:
+
+```java
+voice(ModSounds.QUEEN_ROAR, "queen", "roar", "roar1", "roar2", "roar3");
+```
+
+which expands to:
 
 ```java
 add(ModSounds.QUEEN_ROAR, definition()
         .subtitle("subtitles.formicary.queen.roar")
-        .with(sound("formicary:entity/queen/roar1"))
-        .with(sound("formicary:entity/queen/roar2"))
-        .with(sound("formicary:entity/queen/roar3")));
+        .with(sound("formicary:entity/queen/roar1"),
+              sound("formicary:entity/queen/roar2"),
+              sound("formicary:entity/queen/roar3")));
 ```
+
+Worth knowing: variation from *pitch alone* is weak. The generator makes the ants' three
+ambients from three different windows of the same recording, so each one has genuinely
+different content, and the pitch offset is only +-6% on top. Minecraft then applies its own
++-20% random pitch at playback, which is why baking in a large offset is counterproductive --
+it just makes one variant sound like a different animal.
 
 **Per-file tweaks.** Chain these onto any individual `sound(...)`:
 
@@ -225,4 +272,6 @@ by anything here.
 | `src/main/java/com/nogal/formicary/datagen/ModSoundDefinitionsProvider.java` | **The file you edit.** Decides what each event plays. |
 | `src/main/java/com/nogal/formicary/datagen/ModLanguageProvider.java` | Subtitle text. |
 | `src/generated/resources/assets/formicary/sounds.json` | Generated -- never edit by hand; `runData` overwrites it. |
-| `src/main/resources/assets/formicary/sounds/...` | Where your `.ogg` files go. |
+| `src/main/resources/assets/formicary/sounds/...` | Where `.ogg` files go. The three ant folders are GENERATED -- do not hand-edit. |
+| `assets-src/audio-src/` | The raw recordings the generated sounds are cut from. Source of truth. |
+| `assets-src/sounds.py` | Generates the three ants' 18 files. Edit its `VOICES` table to retune. |

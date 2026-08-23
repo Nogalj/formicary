@@ -2150,3 +2150,83 @@ item order.
    flat amber blob with three dots and no cells at all, the treat read as butter on a
    plank, and the raw jelly read as garlic -- a SILHOUETTE problem, so it was reshaped
    rather than recoloured. All four repainted to 106-129 px, in vanilla's 106-140 band.
+
+---
+
+## Play-test round 8 (2026-08-23)
+
+Seven asks: shorter ant ambients with variation plus derived injured/death sounds, a
+cheaper-yielding Trail Pheromone that reaches further, Brood Comb moved up a tier, a
+pointier sword tip, and three ingredient swaps.
+
+1. **The ant voices became a generator, not an export.** Logan's three recordings moved to
+   `assets-src/audio-src/` and are now SOURCES; the 18 shipped `.ogg` files are built by
+   `assets-src/sounds.py`, matching the contract `blocks.py` already has for textures. The
+   argument is that these asks repeat every round -- "shorter", "higher", "more variation"
+   -- and each is one number in a table here versus a re-export whose settings nobody wrote
+   down. The `VOICES` table holds, per mob, the three ambient windows, their rate offsets,
+   and the hurt/death source spans.
+
+2. **Variation has to come from CONTENT, not pitch.** Three ambients cut from three
+   different windows of the same recording land at 1496 / 1593 / 1368 Hz spectral centroid
+   for the worker -- audibly different material. Repitching one clip three times would not
+   have, and Minecraft already applies +-20% random pitch at playback, so a large baked
+   offset is actively counterproductive: it makes one variant sound like a different
+   animal. Baked offsets are held to +-6%.
+
+3. **A death is a falling pitch, not a longer hurt.** The hurt is a flat speed-up (rate
+   1.38 / 1.28, 4ms attack, 0.10s decay). The death starts higher still and glides DOWN
+   across the clip (1.30 -> 0.82). That downward glide is the whole read; a flat pitched-up
+   clip of the same length just sounds like a longer yelp.
+
+4. **Two DSP steps are load-bearing rather than polish.** An anti-alias low pass before any
+   speed-up, because content above the new Nyquist folds back down the spectrum as
+   inharmonic grit -- the exact reason naively pitched-up game audio fizzes. And
+   raised-cosine edges on every clip, because a hard cut at a non-zero sample is a step, and
+   a step is an audible click on every single play. The death's rate ramp is also integrated
+   a sample at a time, so the read position advances by the rate AT that position; scaling a
+   cumulative sum instead honours the ramp only at its endpoints.
+
+5. **A longer trail had to come with a cull, or it was a 4x packet regression.**
+   `TrailPath.CAPACITY` 512 -> 2048 (~4096 blocks of walking remembered, up from ~1024).
+   Round 1 had already fixed `light()` retracing only part of the buffer, so a trail that
+   still stopped short meant the buffer itself was wrapping -- which it does fast, because
+   samples are spent on distance MOVED, and circling a chamber burns them as quickly as
+   walking a corridor. The `longDistance` flag `drawTrail` passes sets vanilla's own cutoff
+   to 512 blocks (`ServerLevel#sendParticles`: `closerToCenterThan(..., longDistance ?
+   512.0 : 32.0)`), i.e. effectively no cull. Culling at 64 blocks in `drawTrail` means the
+   trail is 4x longer AND sends fewer packets than before. Keeping `longDistance = true` on
+   top is deliberate -- it also sets `overrideLimiter`, so the trail still draws on reduced
+   particle settings, which matters for something whose job is telling you the way out.
+
+6. **The sword tip was measured, not eyeballed.** Rung profile over t == 5..11 was
+   3,2,3,2,1,0,1 cells, so the blade was still three and four cells wide two raster rows
+   from the corner -- a chisel end. Now 3,2,1,0,1,0,1: the last five rungs are a
+   single-cell diagonal staircase, which is how vanilla's diagonal blades end. The parity
+   trade in `_tool_frame` is why this is a table and not a formula -- an odd t can only be
+   3 cells wide or 1, an even t only 2 or 0, so there is no 2 on an odd row to taper
+   through. Cost: 4 opaque px, 50 -> 46 before outline. Found in passing that
+   `SWORD_SHOULDER_HALF = 2.1` selected exactly the same cells as `SWORD_HALF_WIDE`'s 2.5
+   and had never done anything.
+
+7. **Brood Comb moving to Resin Blocks is a 2.25x price rise, and it propagates.** Four
+   blocks (36 resin) for four combs is 9 resin each against the old 4. Honeyed Comb and,
+   through it, the Royal Jelly Treat both start at a comb, so the whole food tier reprices.
+   Flagged rather than silently absorbed; Logan asked for it explicitly.
+
+8. **Fungal Cake binding with sugar instead of spores removes a real conflict.** Spores are
+   the crop seed. Spending them on food competed directly with planting them, which is the
+   loop the dimension is actually about.
+
+9. **The recipe book became generated too, for the same reason as the sounds.** Five of its
+   26 recipes changed in the same session it was published. `assets-src/recipe_book.py` now
+   reads shape, ingredients, counts, unlock gates and display names out of the datagen
+   output and fills a template, so the page cannot disagree with the game. Only group
+   assignment and the Ep2 flag stay curated, and the script hard-fails if a datapack recipe
+   is missing from that table -- a new recipe cannot quietly go missing from the page.
+
+10. **An empty crafting slot is invisible to a broken-image check.** The Goat Horn swap put
+    a vanilla ingredient on the page that had no hand-drawn stand-in, so it rendered as an
+    empty slot with a working tooltip -- zero broken images, nothing in the console. The
+    generator now asserts every referenced vanilla id has art in the template's `VAN` table,
+    and the assertion was verified to fire by temporarily removing the entry.
