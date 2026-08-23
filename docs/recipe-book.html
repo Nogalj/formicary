@@ -1,0 +1,602 @@
+<title>The Colony Recipe Book</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+/* ---------- tokens: light lives on the bare :root ---------- */
+:root{
+  --ground:#E7DDCD; --panel:#FBF7F0;  --panel-2:#F2EADD;
+  --well:#E0D3BE;   --well-in:#D6C7AF;
+  --rim:#CDBBA0;    --rim-2:#B7A283;
+  --ink:#2A1C11;    --ink-2:#5F4A34;  --ink-3:#7A6349;
+  --amber:#A5650F;  --amber-hi:#C77C18;
+  --amber-soft:rgba(165,101,15,.13);
+  --amber-glow:rgba(199,124,24,.34);
+  --chitin:#8B5A2A;
+  --spore:#26704F;  --spore-soft:rgba(38,112,79,.14);
+  --shadow:0 1px 2px rgba(42,28,17,.07), 0 6px 18px rgba(42,28,17,.06);
+  --comb:none;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#17100B; --panel:#221811;  --panel-2:#1B130D;
+    --well:#120C08;   --well-in:#0D0805;
+    --rim:#3A2A1C;    --rim-2:#4C3823;
+    --ink:#EFE2CE;    --ink-2:#BFAA8D;  --ink-3:#9C866B;
+    --amber:#E9A23B;  --amber-hi:#F5B85C;
+    --amber-soft:rgba(233,162,59,.12);
+    --amber-glow:rgba(233,162,59,.30);
+    --chitin:#C4834A;
+    --spore:#77BE9B;  --spore-soft:rgba(119,190,155,.13);
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 26px rgba(0,0,0,.34);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#17100B; --panel:#221811;  --panel-2:#1B130D;
+  --well:#120C08;   --well-in:#0D0805;
+  --rim:#3A2A1C;    --rim-2:#4C3823;
+  --ink:#EFE2CE;    --ink-2:#BFAA8D;  --ink-3:#9C866B;
+  --amber:#E9A23B;  --amber-hi:#F5B85C;
+  --amber-soft:rgba(233,162,59,.12);
+  --amber-glow:rgba(233,162,59,.30);
+  --chitin:#C4834A;
+  --spore:#77BE9B;  --spore-soft:rgba(119,190,155,.13);
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 26px rgba(0,0,0,.34);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:"Instrument Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:15px; line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1240px;margin:0 auto;padding:0 22px 76px}
+
+/* ---------- masthead ---------- */
+.mast{padding:52px 0 26px}
+.eyebrow{
+  font-family:"JetBrains Mono",ui-monospace,monospace;
+  font-size:11px; letter-spacing:.15em; text-transform:uppercase;
+  color:var(--amber); margin:0 0 14px;
+}
+h1{
+  font-family:"Bricolage Grotesque","Instrument Sans",sans-serif;
+  font-weight:800; font-size:clamp(2.5rem,7vw,4.4rem);
+  line-height:.95; letter-spacing:-.03em; margin:0; text-wrap:balance;
+}
+h1 .glow{color:var(--amber)}
+.lede{max-width:60ch; margin:18px 0 0; font-size:1.0625rem; color:var(--ink-2)}
+.stats{
+  display:flex; flex-wrap:wrap; margin:30px 0 0;
+  border-top:1px solid var(--rim); border-bottom:1px solid var(--rim);
+}
+.stat{padding:14px 24px 13px; flex:1 1 auto; min-width:126px; border-right:1px solid var(--rim)}
+.stat:first-child{padding-left:0}
+.stat:last-child{border-right:0}
+.stat b{
+  display:block; font-family:"Bricolage Grotesque",sans-serif; font-weight:700;
+  font-size:1.8rem; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums;
+}
+.stat span{
+  display:block; font-family:"JetBrains Mono",monospace; font-size:10.5px;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); margin-top:3px;
+}
+
+/* ---------- chokepoints ---------- */
+.choke{
+  margin:34px 0 0; padding:22px 24px; border-radius:3px;
+  background:var(--panel-2); border:1px solid var(--rim); border-left:3px solid var(--amber);
+}
+.choke h2{
+  font-family:"Bricolage Grotesque",sans-serif; font-weight:700;
+  font-size:1.0625rem; letter-spacing:-.01em; margin:0 0 6px;
+}
+.choke p{margin:0 0 16px; color:var(--ink-2); font-size:.9375rem; max-width:70ch}
+.choke-rows{display:grid; gap:12px}
+.choke-row{display:flex; align-items:center; gap:14px; flex-wrap:wrap}
+.choke-row .icon{
+  width:34px; height:34px; flex:none; display:grid; place-items:center;
+  background:var(--well); border:1px solid var(--rim-2); border-radius:2px;
+}
+.choke-row .icon img{width:24px; height:24px; image-rendering:pixelated}
+.choke-txt{font-size:.9375rem; color:var(--ink-2); flex:1 1 22ch}
+.choke-txt b{color:var(--ink); font-weight:600}
+.feeds{
+  font-family:"JetBrains Mono",monospace; font-size:11px; font-variant-numeric:tabular-nums;
+  color:var(--amber); background:var(--amber-soft); padding:3px 9px; border-radius:2px; white-space:nowrap;
+}
+
+/* ---------- controls ---------- */
+.controls{
+  position:sticky; top:0; z-index:40; margin:38px 0 0; padding:14px 0 13px;
+  background:var(--ground); border-bottom:1px solid var(--rim);
+  display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+}
+.search{position:relative; flex:1 1 240px; max-width:330px}
+.search input{
+  width:100%; font:inherit; font-size:.9375rem; color:var(--ink);
+  background:var(--panel); border:1px solid var(--rim); border-radius:2px;
+  padding:9px 12px 9px 34px;
+}
+.search input::placeholder{color:var(--ink-3)}
+.search input:focus-visible{outline:2px solid var(--amber); outline-offset:1px; border-color:var(--amber)}
+.search svg{
+  position:absolute; left:11px; top:50%; transform:translateY(-50%);
+  width:14px; height:14px; color:var(--ink-3); pointer-events:none;
+}
+.chips{display:flex; gap:7px; flex-wrap:wrap}
+.chip{
+  font-family:"JetBrains Mono",monospace; font-size:11px; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--ink-2);
+  background:transparent; border:1px solid var(--rim); border-radius:2px;
+  padding:7px 11px; cursor:pointer; transition:background .12s,color .12s,border-color .12s;
+}
+.chip:hover{border-color:var(--rim-2); color:var(--ink)}
+.chip:focus-visible{outline:2px solid var(--amber); outline-offset:1px}
+.chip[aria-pressed="true"]{background:var(--amber); border-color:var(--amber); color:var(--ground); font-weight:700}
+.count-live{
+  font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--ink-3);
+  font-variant-numeric:tabular-nums; margin-left:auto; white-space:nowrap;
+}
+
+/* ---------- the book ---------- */
+.book{display:grid; gap:18px; margin:26px 0 0; grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+.sect-head{
+  grid-column:1/-1; display:flex; align-items:baseline; gap:12px;
+  margin:22px 0 -2px; padding-bottom:9px; border-bottom:1px solid var(--rim);
+}
+.sect-head:first-child{margin-top:4px}
+.sect-head[hidden]{display:none}
+.sect-head h2{
+  font-family:"Bricolage Grotesque",sans-serif; font-weight:700; font-size:1.25rem;
+  letter-spacing:-.015em; margin:0;
+}
+.sect-head span{
+  font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--ink-3);
+  font-variant-numeric:tabular-nums;
+}
+
+.card{
+  background:var(--panel); border:1px solid var(--rim); border-radius:3px;
+  padding:16px 16px 14px; box-shadow:var(--shadow);
+  display:flex; flex-direction:column; gap:13px; transition:border-color .14s;
+}
+.card[hidden]{display:none}
+.card:hover{border-color:var(--rim-2)}
+.card-head{display:flex; align-items:flex-start; justify-content:space-between; gap:10px}
+.card-head h3{
+  font-family:"Bricolage Grotesque",sans-serif; font-weight:700; font-size:1.0625rem;
+  letter-spacing:-.012em; margin:0; line-height:1.25; text-wrap:balance;
+}
+.tags{display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex:none}
+.tag{
+  font-family:"JetBrains Mono",monospace; font-size:9.5px; letter-spacing:.08em;
+  text-transform:uppercase; padding:3px 7px; border-radius:2px; white-space:nowrap;
+  border:1px solid var(--rim); color:var(--ink-3);
+}
+.tag.t-new{color:var(--spore); border-color:var(--spore); background:var(--spore-soft)}
+.tag.t-rework{color:var(--amber); border-color:var(--amber); background:var(--amber-soft)}
+
+/* bench: grid + arrow + result */
+.bench{
+  display:flex; align-items:center; justify-content:center; gap:13px;
+  background:var(--panel-2); border:1px solid var(--rim); border-radius:2px;
+  padding:14px 12px; background-image:var(--comb); background-size:26px 45px;
+}
+.bench.smelt{gap:16px}
+.grid3{display:grid; grid-template-columns:repeat(3,34px); gap:3px}
+.slot{
+  width:34px; height:34px; position:relative;
+  background:var(--well); border:1px solid var(--rim-2); border-radius:1px;
+  display:grid; place-items:center; box-shadow:inset 0 1px 3px rgba(0,0,0,.16);
+}
+.slot.empty{background:var(--well-in); border-color:var(--rim); box-shadow:inset 0 1px 2px rgba(0,0,0,.10)}
+.slot img{width:26px; height:26px; display:block; image-rendering:pixelated}
+.slot .van svg{width:26px; height:26px; display:block}
+.slot.filled:hover, .slot.filled:focus-visible{
+  border-color:var(--amber);
+  box-shadow:inset 0 0 0 1px var(--amber-glow), 0 0 12px var(--amber-glow);
+  outline:none; z-index:5;
+}
+/* real parent texture, clipped to read as the derived shape */
+.sh-stairs{clip-path:polygon(0% 50%,50% 50%,50% 0%,100% 0%,100% 100%,0% 100%)}
+.sh-slab{clip-path:inset(50% 0 0 0)}
+
+.arrow{width:26px; height:15px; color:var(--amber); flex:none; shape-rendering:crispEdges}
+.flame{width:22px; height:26px; flex:none}
+.result{display:flex; flex-direction:column; align-items:center; gap:6px; flex:none}
+.slot.out{width:42px; height:42px; border-color:var(--amber)}
+.slot.out img, .slot.out .van svg{width:32px; height:32px}
+.count{
+  position:absolute; right:1px; bottom:-1px;
+  font-family:"JetBrains Mono",monospace; font-weight:700; font-size:12px;
+  color:var(--spore); font-variant-numeric:tabular-nums;
+  text-shadow:0 1px 0 var(--well),0 -1px 0 var(--well),1px 0 0 var(--well),-1px 0 0 var(--well);
+}
+.slot .tip{
+  position:absolute; bottom:calc(100% + 7px); left:50%; transform:translateX(-50%);
+  background:var(--ink); color:var(--ground); font-size:11.5px; font-weight:500;
+  padding:4px 8px; border-radius:2px; white-space:nowrap; pointer-events:none;
+  opacity:0; transition:opacity .1s; z-index:20;
+}
+.slot.filled:hover .tip, .slot.filled:focus-visible .tip{opacity:1}
+.tip em{font-style:normal; color:var(--amber-hi); font-family:"JetBrains Mono",monospace; font-size:10.5px}
+.smelt-meta{
+  font-family:"JetBrains Mono",monospace; font-size:10px; color:var(--ink-3);
+  letter-spacing:.04em; text-align:center; font-variant-numeric:tabular-nums;
+}
+
+.meta{
+  display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+  margin-top:auto; padding-top:11px; border-top:1px solid var(--rim);
+}
+.gate{font-size:.8125rem; color:var(--ink-3)}
+.gate b{color:var(--chitin); font-weight:600}
+.rid{
+  font-family:"JetBrains Mono",monospace; font-size:10px; color:var(--ink-3);
+  background:var(--panel-2); border:1px solid var(--rim); padding:2px 6px; border-radius:2px;
+}
+.empty-state{
+  grid-column:1/-1; text-align:center; padding:60px 20px; color:var(--ink-3);
+  font-family:"JetBrains Mono",monospace; font-size:13px;
+}
+.empty-state[hidden]{display:none}
+footer.foot{
+  margin-top:52px; padding-top:22px; border-top:1px solid var(--rim);
+  font-size:.8125rem; color:var(--ink-3);
+}
+footer.foot p{margin:0; max-width:78ch}
+@media (prefers-reduced-motion:reduce){*{transition:none !important; animation:none !important}}
+@media (max-width:560px){
+  .mast{padding-top:34px}
+  .stat{padding:12px 16px 11px; min-width:110px}
+  .count-live{margin-left:0; width:100%}
+}
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">Formicary &middot; NeoForge 21.0.167 &middot; Minecraft 1.21</p>
+    <h1>The Colony <span class="glow">Recipe Book</span></h1>
+    <p class="lede">Every recipe the mod adds to the crafting table, read straight out of the generated
+      datapack rather than from memory. Hover or focus any slot to name the ingredient.</p>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <section class="choke">
+    <h2>The two chokepoints</h2>
+    <p>The tree is not flat. Two items gate almost everything worth making, and both sit there on
+      purpose &mdash; one is a metal tax on every piece of gear, the other costs a boss fight.</p>
+    <div class="choke-rows" id="chokeRows"></div>
+  </section>
+
+  <nav class="controls" aria-label="Filter recipes">
+    <div class="search">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5 14 14"></path>
+      </svg>
+      <input type="search" id="q" placeholder="Search recipes or ingredients" aria-label="Search recipes or ingredients">
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="count-live" id="live" role="status"></div>
+  </nav>
+
+  <main class="book" id="book"></main>
+
+  <footer class="foot">
+    <p>Read from <code class="rid">src/generated/resources/data/formicary/recipe/</code> on branch
+      <code class="rid">ep2</code>. Item art is the mod&rsquo;s own. The three vanilla ingredients
+      &mdash; iron ingot, stick, sugar &mdash; are drawn here as original stand-ins rather than
+      shipped Minecraft textures.</p>
+  </footer>
+</div>
+
+<script>
+const TEX = {
+"amber_glass": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAdklEQVR4nGP8dbbiAwOZ4N7xIwwsUEYGOQacOH13BhO6oHpUUxAphjCha765rG4dKQYx4dIMYxNtwE0kDcRqRjGAXMA0eA2Q0DIyIUaMCZcBL66dO0OMGBMDhYCJGEXYnE6SAdicTpIB+ADjjSk2H06cvku2AQBBPDCavHdkSgAAAABJRU5ErkJggg==",
+"brood_comb": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAlUlEQVR4nGOc1pLwn4ECwAQiwmISGBycHBiUlOQYsPHPXXnE8OjJKwY9PR0MeSaQwKtnD1BMReeLCHDglGcBEY8e3ENRgM738XLCKc9IcRg4EOlXXHwmYv2Ki8+C7B98fsXFZ6RKOjiH5ndCfIx0IILmd0J8jHTgg+Z3QnzapYMwAnkAGx8lHRDKA9j4KOmAUB7AxgcA0wN/Zbz54tYAAAAASUVORK5CYII=",
+"chitin": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABGklEQVR4nO2RsUoDQRRFz+zMZhMTXQiRwBYKqSzFxs7C0sJGv8XPsLe1N4VfIFqlEOzERtQiEohC1FWz2Z0ns7Cy6oIfoHeaN/DmvPvuwL/U9wh6rboc7q7l9f7JFRfjmOuX9x99hVT5sr3Ulr3NFaJexEF/gCBMU2GSpJwOJ5UgU57c8jVH57fsAIsNH61gZoVwptlabjOMp9K/efgC8YrC0QXQSnF2eU9dezR9zULN0A58Og2f7lwtH1QJcBqMnonTjGlmSa1gBTwFxlMEDmg06915KlcoXIxeE3EurAgtq/E9RSZuFUsmkofmXBR5KCrkGjaikLBmCIzCHefqKckYvyUc3z1+vlNVgDJotdPMc3HTf/tS/qg+AP00bso7mZVUAAAAAElFTkSuQmCC",
+"chitin_boots": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAeUlEQVR4nGNgGAWMsCBQ4uH4jxwc9778gMvhk2eESS4KMWKQUpJi2LfvEoOGgghD3JpzcEX45JmQTQVJ4gPY5JkojUUmZM6ZF5/AGBfAJs+ErqgsyoZhyYl7OA1Bl2eEBZIEFxuKwhfffqEEIi55FmQBfICQPMMIBgBkTUWgycBQhwAAAABJRU5ErkJggg==",
+"chitin_chestplate": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAArUlEQVR4nGNgoBZQ4uH4D8JkqVPi4fh/JMHq/xwHNbyGgORAakBqYepY0BVVmcgxtJ15hNUQkBw6YMGmcFGIEVYX3HjwhjgDbmBRiAsw4ZJwctIDY0KABZfEvn2XiHIBCzJn3rUXDHpCXHg1XHr3jaFLQYSwF4gFjDAGKF4luNiIcsGLb78Y7n35wUgVFzBhswGf7egAHohQJ+HNCyCnI6kFAzgDGeDKD8gaqQYAiztEZyvZIq8AAAAASUVORK5CYII=",
+"chitin_helmet": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAiElEQVR4nGNgGGjAiC6gxMPxH5+Ge19+oOhhRNe8KMQIr41xa86hGMKIrvnGgzd4DdBQEEExhAmXQicnPTAmBFhwSezbd4mgZqwGnHnxiaAXkAETuoJL777h1IxNjgWbwl1PPmBEFyiQJbjYMNQyMVAIGLHZ8OLbL7wuwCbPAFOELyUSkh+iAABfGjrBFNoeNQAAAABJRU5ErkJggg==",
+"chitin_leggings": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAApUlEQVR4nGNgGGjACGMo8XD8J0XjvS8/wHoZYZoXhRgx3HjwhijNGgoiDHFrzoENYcKlyMlJD4wJARZcEvv2XSLKNSzInDMvPhHtBRhgYqAQMCFzLr37hiK568kHMManhgWbqSBNsGgCgRk3XoBjyk1GAL8LyAFMMEbZtitEa0JWywQiQM598e0XWADdj8gAJgdSC/MiShjADEH2PwxAxUhK7vQBAEAMRtKggriHAAAAAElFTkSuQmCC",
+"chitin_plate": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAeElEQVR4nGNgGPKAEZmjxMPxnxhN9778gOtjRNa8KMSIKFvj1pyDG8KCLsmVN4XhXFEEVo1GfSsYcjwcUMSY0BXh0oxLjomBQsCCLnDmxSeSDGCi1AVM6AJpy7bhVIxNjhE5GiW42Iiy9cW3X/BoZESWICchDQMAAAsXJG/DmoDEAAAAAElFTkSuQmCC",
+"fungal_bloom": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAoUlEQVR4nGNgGPKAEZdE2IK6/yD6xs1HYP6l9gVY1TIR0lyVn8awpLGFQa8yASwGAiteHNuC0wVhUM3ItoMAyKC2ibMwXMKITXOQhwdYMTp4d+UumH6y+TBcHwuyApiNbTdxa0YHjOgCMr62cC9gA8i2o4AVSAEDA3Eruv5rpAbgNZAJxoiQsPLBp5CgAcQCdJcyEa0TCtBdSrIB6GDgDQAABGk/u+suNjoAAAAASUVORK5CYII=",
+"fungal_carpet": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABXklEQVR4nH1TPUsDQRCdXawkhR/4hWdIoXBVFKxUAimDIARLu4ABK/+BkNrSQuxsrVJKCjtRK0FTpUghEjEqaiO2J2/kLXt7pw+O2dudN/N2Ztast5qJiMjjbQ9Gvl8+1caba2p75zdqp5cX1X4N36UwO6kWsPIHotKcfDy9pfYGl3eagGTARFsVVYCoQHmj7A63azVpHRymCPSbmJ/SBFb+QbvTSZEJ7iGIKcSlZGxpQYqrsZOMAwJ74b2pQmsQVVZSskhiMJIBJGEg+pqz4XVydHLqIrIbcGYxgYvjttrRmXF3vr/XEEsyHPExG9ZwCME2A7vVnd8uhFdggMHDc6YuYU1G/IL4fad0vwsIwn9aEzfrOge+E4NhzUDdq66SWBsms3nkUBGuAvhqCQuSn5V4ve87mVSRlywziZwBtMuvOMHOsJiZt5CXBQo4B3yVPFcFIZlEDBXbyQEKfX4AtuOya6LUNGYAAAAASUVORK5CYII=",
+"fungal_spores": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAkElEQVR4nGNgGAWMhIJAyEznP4z97tQVDPUshDRN2zSLQUtIjiGjrZHhBgPDf3RDWLBpBmkCgUkz5oPpa+8e4XQhCyEvwAzBBRixuUDDyxLMzstIhBtyY9tx4sLg3akrjCC/gjlQA/ABFmyCIENALiHkfJwGwMC7p6/B9KuLd7A6HwSYsAlSDYC8gZwmBicAACCoNup8Cy9aAAAAAElFTkSuQmCC",
+"fungal_stew": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAlElEQVR4nGNgGPKAEV1AyEznPz4N705dQdHDgq5Zw8sSr403GBj+IxvCiKxZTF8Fp8ZVU6cwhGXngNmvLt6Bu4QJl+aG5jIUPkwzCIDUwrzKAhP88uIthq3YxNABIzHOxwZg3mAiRRPIW6CwwOoCLnFBDA09szsZSlLLsRr27eV7sAsYiY1/dIASCwxYEggxmocJAAAuDD3sHSPIBgAAAABJRU5ErkJggg==",
+"hardened_soil": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAB5klEQVR4nFWT3Y6bQAyFXWYCWZIsbFg2iapKfaRe97pvXlVJwyYN4ScZAm31mQ5SLY1gjH1sHx8+fPv65U8YhjKbWTkW7+K6h6zTRPI8E+c6wa7XSlzXyWq5lOUylv3hKE17k0X8JHaxiCWOnzRwEcfiulKDMWuN9P0gxDw/r2QYBr0DFIWh+qwxRoPn80i8EUB1EqIonPzEAkoXzln1BTg4GIhYcTrJ/vBT3z3A/e6mDgB/PHq92xHVSt/3Ois2DL/1wIkH6LpOD3xVda3xu+1GLGhte1Me6MDPz4wEn88X9a1fUmmadhoR0unKFu8ndZRlJVmWSpJ8Hj9YI9drLYdjIVE408TzpdTnp487Wa9TzbH5azaRxHzYSKDRitu3XFv+/mMvxgQj0K+LEqokJslKOBBCYtPcJhCq8M0bvMyjcVueZEsVKsMBIB7ZvwN0d07HgOzd9k3qutVNQXqAqrwOEIxfKcmAaBVjpB/+CSgKdRtYWVVicYJEMLvdbF61qt81bI8K7fSdbr1e2FLgFQhJBDASLUIUxp3OKERXRXHSLWEo0nIBCbapSCIieUnT/9TpRyJW/5tFrN0EkMFMnm3+MozV0ZGXMwcQ76MQGgryLJv+NJL8rlEem4FUlMqBK08iSqXTv73sQM1NukTRAAAAAElFTkSuQmCC",
+"hardened_soil_tiles": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABW0lEQVR4nK1TTUvDQBCdNNukNg1+xF48FBQFkVBoBRV/vgdBUA9FRFA8+ANsJE3sphuUN+1sE+nNPMjH7Ox8vDe7ztU4/qF/QOF1eT6kxcJQu63o7mFC4+EZO4uioKeXt4029toEWZZTluek1HJRoIvCBgZB165LMNCSjUF3vQEB2OR7Htue59HnNOF1geu63LXTiAaHgwM20AU4nhwNaG93h9egSXx6bAP+aqI4i1I015q+0pQdYa/HLc7nulYNVCRQNFPi3A7Dmmh4JGBj6yvBnUY0iFccUfFx8swcp0nCVV7fP+zcMe6qRrBbkgn8ZUz4mrIkY4yt5PuepYTxYoQ4G6qqgQBa9KOoNneg0/Htv+jkNKIBOGF0ADTA3cAYlXLp5vaeri9GFARbpHXBtpyDdDZba1BtF3wBY0prI7hKRehwAlSvXhYAh6gslwny/JsTSEL40F1/P6JfVpKzYCXlSpcAAAAASUVORK5CYII=",
+"honeyed_comb": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAxUlEQVR4nGNgoBAwYhPMcxH4jy42ac8HrGoZsWkMcxNiuHTtE4OeFh9YHMS+8eQPVoMYkTVryLAQdDLIIKyuyXMR+P//Uc//I11K//+/WQVnT0sQwWAje5ER2XZkJ+Njr9r1Du4KRlKcj80rTDABmC2ZTRVEsWGABURAnQN2xdEV0+CSxLAZkQORWG8gxwQTTBAkAJIgxfkoLsCWmJBDXkqEjWHCshdgMeR0wAjXiQbuzdP4D9MAA7iSM1bw/1oKRn4YnAAAZo+HduvAfLQAAAAASUVORK5CYII=",
+"mandible_pickaxe": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAyklEQVR4nGNgoBAwogso8XD8x6bw3pcfGGoZsGk+kmD1/9uxBWAamQ2Sg2GsLlDi4fi/KMSI4caDNwzzrr0AiyVpSYBpDQURuIZ3OkoMBQ1r4C5iQdZctu0Kw4tvv+CK4QYh2aiBKwyUoE5D9itMTIKLDcNFcWvOgdUyIQcSekDB+BVlfgxqBhIMbWceEQxHFABywaaemP8JbmrwAJzjAGHD1DDh0zyhIYRh3a5TDIeOPSIuGnHZTEw6IUozQaA0NDUzIBlCtmZKAABadYNCGOE1lQAAAABJRU5ErkJggg==",
+"packed_soil": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACAUlEQVR4nF1T7W7aQBCcmrMJtrHBsRNBfrR9jL5IH6SP2l9V/zRIJTRAIQZs4w/UagbOqnqS5du93Z3dmbt3Xz5/+gMAUTDCYzqBPxqi7Tq07QVvhwLLzZ7H8MwA2TRC4A/xst7jVNUIR0MYHboGySRUoOvKBdcYlOcaT9lUtk1kwY9PGeZmINspzg2yJEI8DuC6A2x3uYrwi8c+PM8gu4/UGePa7qKCjJ8/TK8dNE2ntvNjqcPVeod0GqGsav23+4P8x1OF6djX3+YZOuqmVctcP5YbtcgkJtvF4KHnan8oKmzzk7oxJCMOfeTHQkGcmQjkhD4Wpj8/lWjaTnyR8HE4UpyxCEVZa16R6hnZV/KutmLOjb4PsxSzhwSuyeEQkdU5BhfbJiLZpp9tEonoHJff/DHpQQ2D9jfyOKOVkboziZwQxGtasX5Vy6CszphEAYytTImITAVYlLPe3UijzWR7yagO74g4aLqLSOFMX789q5vZfSyS3Ntl6ZPbC163b70SzDWUjGvxc62W7SHHIQIVIg9MJjoLL193vbwOkbmeV1sxLM27i2wWogIcbfGy6e8Dx2NsGocwnJnO/9tWcNupi3PTig/6388zKUbeCOB8X/ySgxeHdz9NYs387zjcr37nsvlC7Y3k63SCO08G5yS79iWSWPvM2TLjrCpc3BP4L4AvTCp3JQahAAAAAElFTkSuQmCC",
+"packed_soil_bricks": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABaElEQVR4nK2TO08CURCFB9wHuyyPEE20MDEaTWi0kmhhZWP8z1Z2WlmZWNgYY0FEUVjZh9F8s8yy1HAK9t47z3NmqF2fHf7JCnD4OT7YXnpseK7M0ky/d48vMujviu+5avM8DZGw4UuW50UCHN/ex2pwnQ39dqJwKel4EqtfkmbS60YSz5JFB77nyt7OphoN1XMVrSiQLP8tC9VW1uDiZF+aoS+u42hbN/dPcnXeL+/ge/KjbU/jRG4fnuXy9Eg1KClM40S67UIcMPqcaKvm1GmFmpDWQZrmSoG7A1dT2MDdVA6DIgln413Vp7aWPRjM58yMqQIlqkADTeBM24xyq9fWM8C/bi1jLPg2y+zmiIivww/dA6ghOgWwO+aM0QJwsApWIAp8/aKFva1vD5I5X1DlXAXd8MYeEMN9OPoSB+7sPUYbD5z5M6VZLu1moO3aCA1oQVwd7iSpzpZgreouloulqaqPFsT9A2e+t8SyvcqPAAAAAElFTkSuQmCC",
+"pheromone_horn": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAzUlEQVR4nGNgGGjASKzCMD2e/8j8VZe+gPWyEKtp2bpJYJpZwgQiYGX1H2QICz6NDhYCDGllTQxvru1jmNVVx6CnIsdgnWWC3wthejz/kTWu23IArPHSnUcMr578Yrj25BuKFxjRNcOcCrMRl0YYYEHWHOAlAWaDbEbXjK4RxQthejz/5ywqYtiyYhlcQk5IjGHPgTt4NYMAEzLHQEcKTj969wqXHkwDVl36wpgS14diCAgQsh0lDFaBFHadA0cfLCzIBmF6PP/RU94wBgAgPWnhqshkOgAAAABJRU5ErkJggg==",
+"pincer_sword": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAA30lEQVR4nGNgGAigxMPxnyxNSlB8JMEKTIPEGYnVvKfMB8x+du8ZQ9yacwz3vvwA62UiVjNIY9eyIxjyTIQ0X9k1A6x5yYl7DDEWSgw3HrwhxtEMYM3fji0A+zdDQwJMz3FQg/sdpyYlKCZWMyOy5pYcGTDbgssAw9ltZx7BAw4ZsCBzDHSkGGR0HBi2rFjGcOjEF4KasXrh2hK7/58u1P1fVqFC2M/YYuHOCzmGJ1cOMPhERDFwWfwjaCkTsu0TGkIYbt15xOCTcQpsCNEA5nQQhjkZFhskGUJWJqEUAAAoFosLLRbXSgAAAABJRU5ErkJggg==",
+"polished_resin": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABGUlEQVR4nGN8scDhPwMDA8Odaw8Y8IF3n36h8IX42MA0EwOR4NbTbxiaQYAFZrOKlgLDi0fPGB49+wLmm1mogfkwoCbNhaEZxQUvoIqRFUjISWG4xCw8AoXPAmN8+YLwI8gQ5DDh4YEY6pEax3Bt6zowH6aeiRj/gxSDNO+YvQglUEGYBWY6ugZ0cZhmmLf2nL4AcYEEmj+RvQIC+jkz8LqOcVOGFDgdyEnxQE1+BaYtNAXgTsUGYOqZcJmMHto4XfACmhJPnbgFjwGQ5neXT8CjFz1MkL3JhM3mUytXwNMFepig8xlBLgApBgWmkK4FWDMIwPwOS8KwMEEHTMjJFeZsUgALLNTVoHkAPa3jshkWJkSlRGyJDQYA1s1+NfQt7EYAAAAASUVORK5CYII=",
+"queens_crest": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABVUlEQVR4nGOsimL7z0ABYAERrX1tJGu8uG0Kw6o9zyAGgMDKSXVgWoCHkeHDF1RHgcQkJETB7BcvXoPpe8/+gmkmZIXheU0omi89+AOmkcXckxpRDGdCtmXnvHqGd5/+MchIcIE1t85aB6Y1VMQYvnz5AlZ3dFUH3HYMF4CAnhoPw7YTn8CaQQBEg/zKw8ODogbDAAkJUTBG1gwCX+9MYagqcwIbAnLFly/fwRjDABAAKULXDANxXnxgw9EDmAnGAIWunQ4rQ3VaEIbmJ1fOMCza9onBy4IPHFZYDYABkCKYIciaw1ykGLABJhiDh4cTouHFNwY9BRaGtq59KDbDYgGnAV+QAgbmEphmbPIYBkhIiIITCciPIAzSAHIJKPpAbJA8iA1SA3Mtmgu+gNM3ciKBGIRwOsgAUEK6dAshBs4LII0QQYgEsiEIsRdYvQA2ABT/5AIA4wur8NdWndQAAAAASUVORK5CYII=",
+"resin": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABHUlEQVR4nN1SMU7DQBAc5zY4YIgsJFBwgUQK/uA0FPaDeAAVSofEGygoeIQjUZE2HVViKmgjcsZ38R1GdxKR44DTIrY5zc7uzGr3gD8dk+vzcltNq4nsnQZbTaieuIq7K9fn6XwND5N3p17v1JvjQR8Xl7cWTx5u8Kk1ijyH4AskT7MNEao2R+EZPP/Q4mlyB78XQKsCknMwaiMKzTBpWRWhqtrO7h7cg328PN6je3SMdqeDQghkRNBaYSny5iUyIutErgvX8+CfBPY12OQN37hErZQdWUkJmWWYv73aCQw2ecM3CizzD8gFB2Nki43r9w5M3vC/CgztYtIyHji2SWQcLcbWrjAapxtXcOqK1btHYR+j8WzF/fQP/kF8AX8LiaEZgKAyAAAAAElFTkSuQmCC",
+"resin_block": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABbklEQVR4nKWTP0sDQRDFx2NNIYeIhUiEoCAHXmXjkdJCREgXCy3Ezu/hZ7ASbERstRMs/ACHaQQhgWAhgQshxSFyXHGN8iZ5x94fK3+Qm9llZ/fN283C5Hb/R/6Bweej/ynxdyaryw2NYBilGts7K+K6Dc2TJJNtf1Pz13CoawwGKGo1XV0AkJNw8CXexpLOBSen8nxzp/M4TKJUHA5YbOcAxcDvdGVx61COLs51TKUGH0oE661mQeLB3poW958exe+IXF1eFzZ2bENYTNA/iuP3UFVhE6ItUEGSZKpiMhprDnlqYpRKPO85aHuzTa32cgXxvJ8ylElwQBlT1zs4O97VAswj1hVXPCjDYkQeUFZr8MEd4zExB/cPbxpxC/QGwBvPWudwp798qPOFrzRXMBonuesA14cfeOlNcz8AnnJgeVXxoOw8W6AnAGO+g3wDnore8CbYEovgAXyiV/xTaQu2/AJRKuFgZmaF3lTDL+ZptoG8/tjRAAAAAElFTkSuQmCC",
+"royal_jelly": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABd0lEQVR4nMWSv0vDQBTHv3eJbfFXselQ262buImzmwr+QHBQBEGEgkgRLKiDqw4OhSKICCoU3Bx1cnfRP0IQURPaUEuamKZJI5diSGsCpYsHx/Heu++Hu/d9wH8vElTIZxK2N967En3v8kHCmdkxNM0GKN+HyMAwgCfbD8R3iheXJvFVlvD2WkK9biIc5hEXamD5WDIN4Nb2QqhXvLI+DU2pQJRUzOUeIUkqRKnmxCz/rVSwfbjf9j36K946yMI0dOi6gYVsEWc741C1BjS14Zwsz+pNU0OucOdCqNtNQkEoBUdbr6McAceR1klbm9XZPV8X8pmEvbY5D/njBZ/vMsplDYZhIRTiEI/3YzQlQEimMZKawPnxkdtM0tnE5dUpKLKIarUGo24hFOYQjQ5iSEg4gMtCsc0J4mcja6auVmGZDXCOjVEHcH1688dG4jccDJLZ3XABfCSGi5NC4DAhCGKU7m1DfrA7p7JrgKU89yb2QnoWd7t+ALP/qnybADdkAAAAAElFTkSuQmCC",
+"royal_jelly_treat": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAA9klEQVR4nGNgGGjAiEuiJ0XiPzK/ZM4LnGqxav7+cvv/5+fawRjERjcQJ+hJkfh//2De//9/P/z/+/nU/5ens//f2uYPFsNmCBO65uisfAY5oxgw/9vTTQxcvIIMkkq6DMz/3zOA5NANYUI38cXN7WD6y+0eFHFBCXm4HF4DWFhYwDZjAyA5ggb8+fMHq2ZcckzoAhLqngzvXzzEUAgSA8kRNGDptIkMfxkFGZ7fu8zw7fN7MAaxQWIgOXTACGOAQtdEQ42BGHDmxi14wmJBlrh25xWEfvCBQUtBAIWNLIbXCyAA04DMxqYZxQswbxDjBZLyBSEAACAbfeq+mwhfAAAAAElFTkSuQmCC",
+"royal_pheromone_gland": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAyklEQVR4nGNgoCWYlCb2H4TxqWHBpzksSAfKu/I/b9YrRmzqmCh1JRM2wQwrnv8aQkIM395BMIgNEiPKCxlWPP+D7GQYbGJywHxOtRAGBoYchiAw78n/Gce+MOJ0QQaSZpBGTjEJhu+31sDlQXLoLmHCZTPDhyMoLlPR08FqCBM2RRQF4otLB8D091cvSDfgzqUrGIbA2LgAIzIHFg7YvAIzfN2hJwzIMcGCrAgi8eQ/JMoQYYJLM4YL0F2CDLBpxmkAzBBM19EAAABkDF2VmHg7nwAAAABJRU5ErkJggg==",
+"scent_gland": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABcklEQVR4nKWTvUrDUBTH/7m9Sdq0MaVf1K9CF3FycOoguPkKPkMKDi4OgogIPkIyOfkaIggOnRx8AlEUpB9YoU3SpKmcmyrRtlDIHw7n68e5J5cbIKGkRY3WVcNStYyIvaGDxmmrudSA+7Mdq1zbRDZfMBlXRS0MPAw+e3b75RX7l09/BrF4cnuybVXrdaxUNkzVqELNr+L65g4UU416xCwcUFxfg1Yom4pehKKXQL5Wyf3G1CMmLh5PjFIRcsYAzxjCM1nF4dExQt+LPsX3BDN3g4eLXYuns2ZK0UCW2zoQnoypkScjhtiZDbiiQkrJkLgMxmXAfRaxOGUSihrlxBA79w7icjsfWEb8JwhGHiZjH5PAR0g29iFJ0XyKqUY9Yoid2WDv/LEZuAN7PBqCLPQi/z8mhtiZDUj9ThdyNrp9EgumD8n3EDh9+E5fMHHxeNJ9e4em67YkpUxamcnp6QAXgfOFYa9tExNX4qec+GdKrG+O7KybeUCHuAAAAABJRU5ErkJggg==",
+"trail_pheromone": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAp0lEQVR4nGNgoAf4dbZiFc00MeKSqIkx+68gIwZmP3jyiqFlySmsapkYaAUSTHj+//92bx8Ig9gka/71YEMezAAQG5chTNg0z9+1CUPhrDVL8rEZwoLN1N+fPuUzvD0x8eWBCTAhRyGHgnxsalmwCb47MGHii0fPUMROdWRNJMoLIICuGR9gwib46NkXygxgIAHgNADZFfhchDV54orzBWe+4Ez6ZAMAQZpPKh4Eet8AAAAASUVORK5CYII="
+};
+
+/* Original stand-ins for the three vanilla ingredients. Deliberately not Mojang's pixels. */
+var VAN = {
+  "minecraft:iron_ingot": '<svg viewBox="0 0 16 16" shape-rendering="crispEdges"><path d="M4 5h8v1h1v5h-1v1H4v-1H3V6h1z" fill="#c3c8cf"/><path d="M5 6h6v2H5z" fill="#eaeef3"/><path d="M4 10h8v1H4z" fill="#8f96a0"/><path d="M11 8h1v2h-1z" fill="#a7aeb7"/></svg>',
+  "minecraft:stick": '<svg viewBox="0 0 16 16" shape-rendering="crispEdges"><path d="M10 3h3v3h-1v1h-1v1h-1v1H9v1H8v1H7v1H6v1H3v-3h1v-1h1V9h1V8h1V7h1V6h1V5h1z" fill="#7b5629"/><path d="M11 4h1v2h-1zM9 6h1v2H9zM7 8h1v2H7zM5 10h1v2H5z" fill="#a5773f"/></svg>',
+  "minecraft:sugar": '<svg viewBox="0 0 16 16" shape-rendering="crispEdges"><path d="M3 10h10v3H3z" fill="#eef1f5"/><path d="M4 8h8v2H4z" fill="#fafcfe"/><path d="M6 6h4v2H6z" fill="#ffffff"/><path d="M2 12h1v1H2zM13 11h1v1h-1zM11 5h1v1h-1z" fill="#dfe5ec"/></svg>'
+};
+
+var NAME = {
+  "formicary:amber_glass":"Amber Glass","formicary:brood_comb":"Brood Comb",
+  "formicary:chitin":"Chitin","formicary:chitin_boots":"Chitin Boots",
+  "formicary:chitin_chestplate":"Chitin Chestplate","formicary:chitin_helmet":"Chitin Helmet",
+  "formicary:chitin_leggings":"Chitin Leggings","formicary:chitin_plate":"Chitin Plate",
+  "formicary:fungal_bloom":"Fungal Bloom","formicary:fungal_carpet":"Fungal Carpet",
+  "formicary:fungal_spores":"Fungal Spores","formicary:fungal_stew":"Fungal Cake",
+  "formicary:hardened_soil":"Hardened Soil",
+  "formicary:hardened_soil_tile_slab":"Hardened Soil Tile Slab",
+  "formicary:hardened_soil_tile_stairs":"Hardened Soil Tile Stairs",
+  "formicary:hardened_soil_tiles":"Hardened Soil Tiles",
+  "formicary:honeyed_comb":"Honeyed Comb","formicary:mandible_pickaxe":"Mandible Pickaxe",
+  "formicary:packed_soil":"Packed Soil","formicary:packed_soil_brick_slab":"Packed Soil Brick Slab",
+  "formicary:packed_soil_brick_stairs":"Packed Soil Brick Stairs",
+  "formicary:packed_soil_bricks":"Packed Soil Bricks",
+  "formicary:pheromone_horn":"Pheromone Horn","formicary:pincer_sword":"Pincer Sword",
+  "formicary:polished_resin":"Polished Resin","formicary:polished_resin_slab":"Polished Resin Slab",
+  "formicary:polished_resin_stairs":"Polished Resin Stairs","formicary:queens_crest":"Queen's Crest",
+  "formicary:resin":"Resin","formicary:resin_block":"Resin Block",
+  "formicary:royal_jelly":"Royal Jelly","formicary:royal_jelly_treat":"Royal Jelly Treat",
+  "formicary:royal_pheromone_gland":"Royal Pheromone Gland","formicary:scent_gland":"Scent Gland",
+  "formicary:trail_pheromone":"Trail Pheromone",
+  "minecraft:iron_ingot":"Iron Ingot","minecraft:stick":"Stick","minecraft:sugar":"Sugar"
+};
+
+/* stairs and slabs render their parent texture, clipped to the derived silhouette */
+var TEXKEY = {
+  "formicary:packed_soil_brick_stairs":["packed_soil_bricks","stairs"],
+  "formicary:packed_soil_brick_slab":["packed_soil_bricks","slab"],
+  "formicary:hardened_soil_tile_stairs":["hardened_soil_tiles","stairs"],
+  "formicary:hardened_soil_tile_slab":["hardened_soil_tiles","slab"],
+  "formicary:polished_resin_stairs":["polished_resin","stairs"],
+  "formicary:polished_resin_slab":["polished_resin","slab"]
+};
+
+var GROUPS = [
+  {k:"tools", label:"Tools &amp; Armour"},
+  {k:"mats",  label:"Materials"},
+  {k:"food",  label:"Colony Food"},
+  {k:"build", label:"Building Blocks"},
+  {k:"deco",  label:"Decoration"}
+];
+
+var F = "formicary:";
+var RECIPES = [
+  /* ---- tools & armour ---- */
+  {id:F+"pincer_sword", g:"tools", t:"shaped", era:"rework",
+   p:["X","C","Y"], k:{X:F+"chitin_plate", C:F+"queens_crest", Y:"minecraft:stick"},
+   c:1, gate:F+"queens_crest"},
+  {id:F+"mandible_pickaxe", g:"tools", t:"shaped", era:"rework",
+   p:["XCX"," Y "," Y "], k:{X:F+"chitin_plate", C:F+"queens_crest", Y:"minecraft:stick"},
+   c:1, gate:F+"queens_crest"},
+  {id:F+"chitin_helmet", g:"tools", t:"shaped", era:"rework",
+   p:["XXX","X X"], k:{X:F+"chitin_plate"}, c:1, gate:F+"chitin_plate"},
+  {id:F+"chitin_chestplate", g:"tools", t:"shaped", era:"rework",
+   p:["X X","XXX","XXX"], k:{X:F+"chitin_plate"}, c:1, gate:F+"chitin_plate"},
+  {id:F+"chitin_leggings", g:"tools", t:"shaped", era:"rework",
+   p:["XXX","X X","X X"], k:{X:F+"chitin_plate"}, c:1, gate:F+"chitin_plate"},
+  {id:F+"chitin_boots", g:"tools", t:"shaped", era:"rework",
+   p:["X X","X X"], k:{X:F+"chitin_plate"}, c:1, gate:F+"chitin_plate"},
+  {id:F+"pheromone_horn", g:"tools", t:"shapeless",
+   ing:[F+"royal_pheromone_gland", F+"resin", F+"chitin"], c:1, gate:F+"royal_pheromone_gland"},
+
+  /* ---- materials ---- */
+  {id:F+"chitin_plate", g:"mats", t:"shapeless", era:"new",
+   ing:[F+"chitin", F+"chitin", "minecraft:iron_ingot"], c:1, gate:F+"chitin"},
+  {id:F+"resin_block", g:"mats", t:"shapeless",
+   ing:[F+"resin",F+"resin",F+"resin",F+"resin",F+"resin",F+"resin",F+"resin",F+"resin",F+"resin"],
+   c:1, gate:F+"resin"},
+  {id:F+"resin", g:"mats", t:"shapeless",
+   ing:[F+"resin_block"], c:9, gate:F+"resin_block"},
+  {id:F+"trail_pheromone", g:"mats", t:"shapeless",
+   ing:[F+"scent_gland", F+"fungal_bloom"], c:2, gate:F+"scent_gland"},
+
+  /* ---- food ---- */
+  {id:F+"honeyed_comb", g:"food", t:"shapeless", era:"new",
+   ing:[F+"brood_comb", "minecraft:sugar"], c:1, gate:F+"brood_comb"},
+  {id:F+"fungal_stew", g:"food", t:"shapeless", era:"new",
+   ing:[F+"fungal_bloom", F+"fungal_bloom", F+"fungal_spores"], c:1, gate:F+"fungal_bloom"},
+  {id:F+"royal_jelly_treat", g:"food", t:"shapeless", era:"new",
+   ing:[F+"royal_jelly", F+"honeyed_comb"], c:1, gate:F+"royal_jelly"},
+
+  /* ---- building ---- */
+  {id:F+"amber_glass", g:"build", t:"smelt", inp:F+"resin_block", c:1, gate:F+"resin_block",
+   time:200, xp:0.35},
+  {id:F+"packed_soil_bricks", g:"build", t:"shaped", era:"new",
+   p:["XX","XX"], k:{X:F+"packed_soil"}, c:4, gate:F+"packed_soil"},
+  {id:F+"packed_soil_brick_stairs", g:"build", t:"shaped", era:"new",
+   p:["X  ","XX ","XXX"], k:{X:F+"packed_soil_bricks"}, c:4, gate:F+"packed_soil_bricks"},
+  {id:F+"packed_soil_brick_slab", g:"build", t:"shaped", era:"new",
+   p:["XXX"], k:{X:F+"packed_soil_bricks"}, c:6, gate:F+"packed_soil_bricks"},
+  {id:F+"hardened_soil_tiles", g:"build", t:"shaped", era:"new",
+   p:["XX","XX"], k:{X:F+"hardened_soil"}, c:4, gate:F+"hardened_soil"},
+  {id:F+"hardened_soil_tile_stairs", g:"build", t:"shaped", era:"new",
+   p:["X  ","XX ","XXX"], k:{X:F+"hardened_soil_tiles"}, c:4, gate:F+"hardened_soil_tiles"},
+  {id:F+"hardened_soil_tile_slab", g:"build", t:"shaped", era:"new",
+   p:["XXX"], k:{X:F+"hardened_soil_tiles"}, c:6, gate:F+"hardened_soil_tiles"},
+  {id:F+"polished_resin", g:"build", t:"shaped", era:"new",
+   p:["XX","XX"], k:{X:F+"resin_block"}, c:4, gate:F+"resin_block"},
+  {id:F+"polished_resin_stairs", g:"build", t:"shaped", era:"new",
+   p:["X  ","XX ","XXX"], k:{X:F+"polished_resin"}, c:4, gate:F+"polished_resin"},
+  {id:F+"polished_resin_slab", g:"build", t:"shaped", era:"new",
+   p:["XXX"], k:{X:F+"polished_resin"}, c:6, gate:F+"polished_resin"},
+
+  /* ---- decoration ---- */
+  {id:F+"brood_comb", g:"deco", t:"shaped",
+   p:["RR","RR"], k:{R:F+"resin"}, c:1, gate:F+"resin"},
+  {id:F+"fungal_carpet", g:"deco", t:"shaped",
+   p:["FF"], k:{F:F+"fungal_bloom"}, c:3, gate:F+"fungal_bloom"}
+];
+
+/* ---------- rendering ---------- */
+function nm(id){ return NAME[id] || id; }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+
+function iconHTML(id){
+  if (VAN[id]) return '<span class="van">' + VAN[id] + '</span>';
+  var mapped = TEXKEY[id];
+  var key = mapped ? mapped[0] : id.replace(/^formicary:/, "");
+  var shape = mapped ? mapped[1] : null;
+  var src = TEX[key];
+  if (!src) return '<span class="van"></span>';
+  return '<img src="' + src + '" alt="" class="' + (shape ? "sh-" + shape : "") + '">';
+}
+function slot(id, extra, count){
+  if (!id) return '<div class="slot empty"></div>';
+  var badge = (count && count > 1) ? '<span class="count">' + count + '</span>' : '';
+  return '<div class="slot filled ' + (extra || "") + '" tabindex="0">' + iconHTML(id) + badge +
+    '<span class="tip">' + esc(nm(id)) + ' <em>' + id.split(":")[0] + '</em></span></div>';
+}
+function cells(r){
+  var out = [null,null,null,null,null,null,null,null,null];
+  if (r.t === "shaped"){
+    r.p.forEach(function(row, y){
+      for (var x = 0; x < row.length; x++){
+        if (row[x] !== " ") out[y * 3 + x] = r.k[row[x]];
+      }
+    });
+  } else {
+    r.ing.forEach(function(id, i){ out[i] = id; });
+  }
+  return out;
+}
+var ARROW = '<svg class="arrow" viewBox="0 0 26 16" aria-hidden="true"><path d="M1 6h14V2l10 6-10 6v-4H1z" fill="currentColor"/></svg>';
+var FLAME = '<svg class="flame" viewBox="0 0 22 26" aria-hidden="true"><path d="M11 1c3 5-1 6 1 9 1.5 2 4-1 4-1 2 3 3 5 3 8a8 8 0 0 1-16 0c0-4 3-7 5-9 2-2 3-4 3-7z" fill="var(--amber)" opacity=".9"/><path d="M11 12c1.5 2.5-.5 3.5.5 5 1 1.5 2.5 0 2.5 0 .8 1.5 1 2.5 1 3.5a4 4 0 0 1-8 0c0-2 1.5-3.5 2.5-4.5S11 13.5 11 12z" fill="var(--panel-2)"/></svg>';
+
+function bench(r){
+  if (r.t === "smelt"){
+    return '<div class="bench smelt">' + slot(r.inp) + FLAME +
+      '<div class="result">' + slot(r.id, "out", r.c) +
+      '<div class="smelt-meta">' + (r.time / 20) + 's &middot; ' + r.xp.toFixed(2) + ' xp</div></div></div>';
+  }
+  var cs = cells(r).map(function(id){ return slot(id); }).join("");
+  return '<div class="bench"><div class="grid3">' + cs + '</div>' + ARROW +
+    '<div class="result">' + slot(r.id, "out", r.c) + '</div></div>';
+}
+function card(r){
+  var kind = r.t === "smelt" ? "Smelting" : r.t === "shaped" ? "Shaped" : "Shapeless";
+  var tags = '<span class="tag">' + kind + '</span>';
+  if (r.era === "new")    tags += '<span class="tag t-new">New in Ep2</span>';
+  if (r.era === "rework") tags += '<span class="tag t-rework">Reworked in Ep2</span>';
+  var ids = r.t === "shaped" ? Object.keys(r.k).map(function(x){ return r.k[x]; })
+          : r.t === "smelt"  ? [r.inp] : r.ing;
+  var hay = (nm(r.id) + " " + r.id + " " + ids.map(nm).join(" ") + " " + kind).toLowerCase();
+  return '<article class="card" data-g="' + r.g + '" data-era="' + (r.era || "base") +
+    '" data-hay="' + esc(hay) + '">' +
+    '<div class="card-head"><h3>' + esc(nm(r.id)) + '</h3><div class="tags">' + tags + '</div></div>' +
+    bench(r) +
+    '<div class="meta"><span class="gate">Unlocked by <b>' + esc(nm(r.gate)) + '</b></span>' +
+    '<code class="rid">' + r.id + '</code></div></article>';
+}
+
+var book = document.getElementById("book");
+book.innerHTML = GROUPS.map(function(g){
+  var rs = RECIPES.filter(function(r){ return r.g === g.k; });
+  return '<div class="sect-head" data-g="' + g.k + '"><h2>' + g.label + '</h2><span>' +
+    rs.length + (rs.length === 1 ? " recipe" : " recipes") + '</span></div>' +
+    rs.map(card).join("");
+}).join("") + '<p class="empty-state" id="none" hidden>No recipe matches that.</p>';
+
+/* stats derive from the same array, so they cannot drift from the cards */
+var nNew = RECIPES.filter(function(r){ return r.era === "new"; }).length;
+var nRe  = RECIPES.filter(function(r){ return r.era === "rework"; }).length;
+document.getElementById("stats").innerHTML = [
+  [RECIPES.length, "recipes"],
+  [GROUPS.length, "groups"],
+  [nNew, "new in ep2"],
+  [nRe, "reworked in ep2"],
+  [RECIPES.filter(function(r){ return r.t === "shapeless"; }).length, "shapeless"]
+].map(function(row){
+  return '<div class="stat"><b>' + row[0] + '</b><span>' + row[1] + '</span></div>';
+}).join("");
+
+/* chokepoint counts are computed, not asserted */
+function consumers(id){
+  return RECIPES.filter(function(r){
+    if (r.t === "shaped") return Object.keys(r.k).some(function(x){ return r.k[x] === id; });
+    if (r.t === "smelt")  return r.inp === id;
+    return r.ing.indexOf(id) !== -1;
+  }).length;
+}
+document.getElementById("chokeRows").innerHTML = [
+  {id: F + "chitin_plate", txt: "<b>Chitin Plate</b> &mdash; two chitin plus an iron ingot. Every piece of armour and both tools route through it."},
+  {id: F + "queens_crest", txt: "<b>Queen&rsquo;s Crest</b> &mdash; drop-only, one per queen, with no recipe of its own. It is what makes the two tools end-game."}
+].map(function(c){
+  return '<div class="choke-row"><span class="icon">' + iconHTML(c.id) + '</span>' +
+    '<span class="choke-txt">' + c.txt + '</span>' +
+    '<span class="feeds">feeds ' + consumers(c.id) + ' recipes</span></div>';
+}).join("");
+
+/* honeycomb ground behind each bench, borrowed from the mod's own comb blocks */
+document.documentElement.style.setProperty("--comb",
+  "url('data:image/svg+xml;utf8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="45" viewBox="0 0 26 45">' +
+    '<g fill="none" stroke="rgba(160,110,40,.11)" stroke-width="1">' +
+    '<path d="M13 0 26 7.5v15L13 30 0 22.5v-15z"/>' +
+    '<path d="M0 37.5 13 30M26 37.5 13 30M13 45v-7.5"/>' +
+    '</g></svg>') + "')");
+
+/* ---------- filtering ---------- */
+var group = "all", era = "all";
+var chips = document.getElementById("chips");
+chips.innerHTML =
+  '<button class="chip" data-f="g" data-v="all" aria-pressed="true">All</button>' +
+  GROUPS.map(function(g){
+    return '<button class="chip" data-f="g" data-v="' + g.k + '" aria-pressed="false">' + g.label + '</button>';
+  }).join("") +
+  '<button class="chip" data-f="e" data-v="new" aria-pressed="false">New in Ep2</button>';
+
+function apply(){
+  var q = document.getElementById("q").value.trim().toLowerCase();
+  var shown = 0;
+  Array.prototype.forEach.call(document.querySelectorAll(".card"), function(c){
+    var ok = (group === "all" || c.dataset.g === group) &&
+             (era === "all" || c.dataset.era === era) &&
+             (!q || c.dataset.hay.indexOf(q) !== -1);
+    c.hidden = !ok;
+    if (ok) shown++;
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".sect-head"), function(h){
+    var any = Array.prototype.some.call(
+      document.querySelectorAll('.card[data-g="' + h.dataset.g + '"]'),
+      function(c){ return !c.hidden; });
+    h.hidden = !any;
+  });
+  document.getElementById("none").hidden = shown > 0;
+  document.getElementById("live").textContent = shown + " of " + RECIPES.length + " shown";
+}
+chips.addEventListener("click", function(e){
+  var b = e.target.closest(".chip");
+  if (!b) return;
+  if (b.dataset.f === "g"){ group = b.dataset.v; era = "all"; }
+  else { era = (era === b.dataset.v) ? "all" : b.dataset.v; group = "all"; }
+  Array.prototype.forEach.call(chips.querySelectorAll(".chip"), function(c){
+    var on = (c.dataset.f === "g" && c.dataset.v === group && era === "all") ||
+             (c.dataset.f === "e" && c.dataset.v === era);
+    c.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  apply();
+});
+document.getElementById("q").addEventListener("input", apply);
+apply();
+</script>
