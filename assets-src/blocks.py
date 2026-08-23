@@ -1683,20 +1683,28 @@ SWORD_SPECULAR_T = (-1, 1, 3)
 
 
 # Hand-tuned, not linear, because of the parity trade the frame forces: a
-# raster row holds only every OTHER s (see _tool_frame), so a linear taper
-# either keeps the +-2 columns too long (t == 10 then paints s == +-1 and the
-# tip ends in a flat two-pixel pair beside the point -- the blunt end of this
-# icon's second round-4 pass) or narrows too early (a lone dark pixel
-# mid-blade where only s == 0 survives an odd row). The table threads it:
-# full five columns through t == 7, the +-1 pair at t == 8, single pixels at
-# t == 9 and 11 with t == 10 skipped entirely -- which on SCREEN is a clean
-# one-pixel staircase to the corner, exactly how vanilla's diagonal blades
-# end, because consecutive odd-t s == 0 cells are diagonal neighbours.
-SWORD_TIP_HALVES = {8: 1.6, 9: 1.3, 10: 0.8, 11: 0.4}
-SWORD_SHOULDER_HALF = 2.1   # t == 6..7, between full width and the tip run:
-                            # keeps the +-2 columns alive through t == 7 so
-                            # the five-column band hands off to the taper
-                            # without a one-row pinch
+# raster row holds only every OTHER s (see _tool_frame), so the achievable
+# rung widths alternate -- an odd t can only be 3 cells wide or 1, an even t
+# only 2 or 0. There is no 2 on an odd row to taper through, which is why
+# this is a table and not an expression.
+#
+# Play-test round 8 ("small tweak at the tip to make it more pointy"): the
+# needle now starts at t == 7 instead of t == 9. Measured off the render, the
+# old profile ran 3,2,3,2,1,0,1 over t == 5..11, so the blade was still three
+# and four cells across two raster rows from the corner and then stopped --
+# a chisel end, not a point. The new profile is 3,2,1,0,1,0,1: the last five
+# rungs are a single-cell diagonal staircase from (11,4) through (12,3) to
+# the corner at (13,2), which is how vanilla's diagonal blades end, because
+# consecutive odd-t s == 0 cells are diagonal neighbours. Costs 4 opaque px
+# (50 -> 46 before outline), so the icon stays in iron_sword's weight class.
+#
+# Widths are exclusive (|s| < half), so each value only has to land between
+# the cell it keeps and the next one out: 1.6 keeps s == +-1, 0.9 keeps only
+# s == 0, and 0.8 clears an even row entirely.
+SWORD_TIP_HALVES = {6: 1.6, 7: 0.9, 8: 0.8, 9: 0.9, 10: 0.8, 11: 0.4}
+SWORD_NEEDLE_HALF = 0.9     # fallback: anything past the table is one cell
+                            # wide, never a pinch back to dark (see the
+                            # s == 0 branch in pincer_sword_item)
 
 
 def _sword_blade_half(t):
@@ -1704,7 +1712,7 @@ def _sword_blade_half(t):
     hand-tuned SWORD_TIP_HALVES run down to a single-pixel point."""
     if t <= SWORD_TAPER_T:
         return SWORD_HALF_WIDE
-    return SWORD_TIP_HALVES.get(t, SWORD_SHOULDER_HALF)
+    return SWORD_TIP_HALVES.get(t, SWORD_NEEDLE_HALF)
 
 
 def pincer_sword_item():
@@ -1721,9 +1729,10 @@ def pincer_sword_item():
     parallel prong masses either side of one dark column read as a pincer,
     where a single mass of the same width just reads as a wider blade -- and
     BOTH flanking columns have to be lit, or the dark column reads as shading
-    on one blade instead of the gap between two. The taper runs the last odd
-    rows down through +-1 pairs to a single-pixel point in the raw corner
-    (see SWORD_TIP_T on the forked tip that was tried and rejected). The
+    on one blade instead of the gap between two. The taper hands the
+    five-column band off to a single-cell diagonal needle over the last five
+    rungs (see SWORD_TIP_HALVES for the measured profile, and SWORD_TIP_T on
+    the forked tip that was tried and rejected). The
     crossguard and pommel are royal gold (the crest the recipe spends), the
     one hue break on the icon, which is what stops guard, grip and blade
     merging into a single club-shaped chitin mass -- the failure of this
