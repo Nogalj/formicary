@@ -29,8 +29,14 @@ import net.minecraft.world.item.crafting.Ingredient;
  */
 public class ModRecipeProvider extends RecipeProvider {
 
-    /** How many Trail Pheromones one Scent Gland + Fungal Bloom makes. Tunable per spec. */
-    public static final int TRAIL_PHEROMONE_PER_CRAFT = 2;
+    /**
+     * How many Trail Pheromones one Scent Gland + Fungal Bloom makes. Tunable per spec.
+     *
+     * <p>Play-test round 8 dropped this from 2 to 1, in the same breath as raising
+     * {@link com.nogal.formicary.portal.TrailPath#CAPACITY}: one pheromone now lights a
+     * far longer route, so one per craft is the matching price.
+     */
+    public static final int TRAIL_PHEROMONE_PER_CRAFT = 1;
 
     /** How many Pheromone Horns one Royal Pheromone Gland makes. Tunable. */
     public static final int PHEROMONE_HORN_PER_CRAFT = 1;
@@ -44,6 +50,18 @@ public class ModRecipeProvider extends RecipeProvider {
 
     /** Vanilla's own wool->carpet economy (2 in, 3 out) -- see buildRecipes for why. */
     public static final int FUNGAL_CARPET_PER_CRAFT = 3;
+
+    /**
+     * How many Brood Combs the 2x2 square makes. Play-test round 8: the square now takes
+     * four Resin <b>Blocks</b> rather than four raw Resin, and pays out four combs instead
+     * of one. Net effect on price is a 2.25x rise -- 36 resin for four combs (9 each)
+     * against the old 4 resin for one -- which also reprices everything downstream of a
+     * comb, since Honeyed Comb and through it the Royal Jelly Treat both start here.
+     */
+    public static final int BROOD_COMB_PER_CRAFT = 4;
+
+    /** How much sugar one Honeyed Comb takes. Play-test round 8 raised this from 1. */
+    public static final int HONEYED_COMB_SUGAR = 2;
 
     public ModRecipeProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> registries) {
         super(output, registries);
@@ -63,11 +81,14 @@ public class ModRecipeProvider extends RecipeProvider {
         // Spec section 3: "gland + resin + chitin, tunable". Shapeless for the same reason
         // -- nothing about the arrangement should matter -- and unlocked by the gland, which
         // only the queen drops, so the recipe book cannot advertise it before the fight.
+        // Round 8: a vanilla Goat Horn replaces the chitin. The horn is the thing you
+        // actually blow, so the craft now reads as gland + resin + an instrument to carry
+        // it -- and it costs a raid or a screaming-goat hunt rather than colony scrap.
         ShapelessRecipeBuilder
                 .shapeless(RecipeCategory.TOOLS, ModItems.PHEROMONE_HORN.get(), PHEROMONE_HORN_PER_CRAFT)
                 .requires(ModItems.ROYAL_PHEROMONE_GLAND.get())
                 .requires(ModItems.RESIN.get())
-                .requires(ModItems.CHITIN.get())
+                .requires(Items.GOAT_HORN)
                 .unlockedBy(getHasName(ModItems.ROYAL_PHEROMONE_GLAND.get()),
                         has(ModItems.ROYAL_PHEROMONE_GLAND.get()))
                 .save(recipeOutput);
@@ -104,13 +125,16 @@ public class ModRecipeProvider extends RecipeProvider {
     private void colonyFoodRecipes(RecipeOutput recipeOutput) {
         ShapelessRecipeBuilder.shapeless(RecipeCategory.FOOD, ModItems.HONEYED_COMB.get())
                 .requires(ModItems.BROOD_COMB.get())
-                .requires(Items.SUGAR)
+                .requires(Items.SUGAR, HONEYED_COMB_SUGAR)
                 .unlockedBy(getHasName(ModItems.BROOD_COMB.get()), has(ModItems.BROOD_COMB.get()))
                 .save(recipeOutput);
 
+        // Round 8: sugar replaces Fungal Spores as the binder. Spores are the crop seed --
+        // spending them on food competed directly with planting them, which is the loop the
+        // dimension is actually about.
         ShapelessRecipeBuilder.shapeless(RecipeCategory.FOOD, ModItems.FUNGAL_STEW.get())
                 .requires(ModItems.FUNGAL_BLOOM.get(), 2)
-                .requires(ModItems.FUNGAL_SPORES.get())
+                .requires(Items.SUGAR)
                 .unlockedBy(getHasName(ModItems.FUNGAL_BLOOM.get()), has(ModItems.FUNGAL_BLOOM.get()))
                 .save(recipeOutput);
 
@@ -234,19 +258,22 @@ public class ModRecipeProvider extends RecipeProvider {
     /**
      * Two decorative recipes (spec section 5's "decorative crafting" standing rule):
      * <ul>
-     *   <li>Brood Comb from 4 Resin in a 2x2 square -- a literal reading of the spec's
-     *       "4 resin in a square".</li>
+     *   <li>Brood Comb from 4 Resin <b>Blocks</b> in a 2x2 square, making 4. Started as a
+     *       literal reading of the spec's "4 resin in a square"; play-test round 8 moved it
+     *       up a tier to blocks and paid the yield out to match -- see
+     *       {@link #BROOD_COMB_PER_CRAFT} for what that does to the price.</li>
      *   <li>Fungal Carpet, 3 for 2 Fungal Bloom items, in the exact 2-wide row shape
      *       vanilla uses for wool -&gt; carpet -- the same "carpet from the plant/wool
      *       above it" convention, just with a different source material.</li>
      * </ul>
      */
     private void decorativeRecipes(RecipeOutput recipeOutput) {
-        ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, ModBlocks.BROOD_COMB.get())
+        ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, ModBlocks.BROOD_COMB.get(),
+                        BROOD_COMB_PER_CRAFT)
                 .pattern("RR")
                 .pattern("RR")
-                .define('R', ModItems.RESIN.get())
-                .unlockedBy(getHasName(ModItems.RESIN.get()), has(ModItems.RESIN.get()))
+                .define('R', ModBlocks.RESIN_BLOCK.get())
+                .unlockedBy(getHasName(ModBlocks.RESIN_BLOCK.get()), has(ModBlocks.RESIN_BLOCK.get()))
                 .save(recipeOutput);
 
         ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, ModBlocks.FUNGAL_CARPET.get(), FUNGAL_CARPET_PER_CRAFT)

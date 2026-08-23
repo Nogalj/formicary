@@ -3,7 +3,7 @@
   "category": "misc",
   "key": {
     "R": {
-      "item": "formicary:resin"
+      "item": "formicary:resin_block"
     }
   },
   "pattern": [
@@ -11,7 +11,7 @@
     "RR"
   ],
   "result": {
-    "count": 1,
+    "count": 4,
     "id": "formicary:brood_comb"
   }
 }

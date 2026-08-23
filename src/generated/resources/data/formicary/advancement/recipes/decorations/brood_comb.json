@@ -1,11 +1,11 @@
 {
   "parent": "minecraft:recipes/root",
   "criteria": {
-    "has_resin": {
+    "has_resin_block": {
       "conditions": {
         "items": [
           {
-            "items": "formicary:resin"
+            "items": "formicary:resin_block"
           }
         ]
       },
@@ -21,7 +21,7 @@
   "requirements": [
     [
       "has_the_recipe",
-      "has_resin"
+      "has_resin_block"
     ]
   ],
   "rewards": {
