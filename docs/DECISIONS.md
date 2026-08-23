@@ -2230,3 +2230,59 @@ pointier sword tip, and three ingredient swaps.
     empty slot with a working tooltip -- zero broken images, nothing in the console. The
     generator now asserts every referenced vanilla id has art in the template's `VAN` table,
     and the assertion was verified to fire by temporarily removing the entry.
+
+---
+
+## Play-test round 8b -- the sword's footprint (2026-08-23)
+
+"You made it smaller, I want it bigger. Compare it to a vanilla sword and try to take up
+the same amount of footprint. I want it to feel like a powerful weapon."
+
+1. **Round 4 matched vanilla on the wrong metric.** It measured pixel COUNT -- 84 opaque,
+   iron_sword's 84 -- and called it parity. Profiling the client jar shows every vanilla
+   sword is also a **16x16 bounding box**: tip at (15,0), pommel at (0,15), corner to
+   corner. Ours was 14x14, which is 77% of the area. Two icons can carry identical pixel
+   counts and read as different weapons entirely, because presence is area, not ink. This
+   is the third time on this project that the obvious count was not the metric the
+   complaint was about.
+
+2. **`TOOL_MARGIN = 2` was the ceiling, and its own comment said it was not.** That comment
+   argued the margin was fine and the width profiles were to blame. The profiles were
+   indeed part of it, but no profile can exceed the box: at margin 2 the largest possible
+   sprite is 14x14. The sword now uses `SWORD_MARGIN = 1`. The pickaxe keeps 2 -- measured,
+   ours is 14x14 against vanilla's 13x13, so it was never the one with the problem.
+
+3. **The border guard was conflating two rules.** It required a fully transparent border on
+   every item. What actually caused the 2026-08-20 truncation bug was a FILL pixel with no
+   room for its outline ring; merely touching the edge is not a defect, and vanilla does it
+   on every sword. Since `outline()` is 4-neighbour, a fill pixel at (14,1) still gets its
+   ring at (15,1) and (14,0), both in-canvas -- so margin 1 is safe and margin 0 is not.
+   The guard now allows listed icons to reach the edge but requires their border pixels to
+   be transparent or exactly their outline colour, which still fails any fill on the border.
+   Verified by setting `SWORD_MARGIN = 0` and watching it catch `(15,0) = CHITIN_RIM`.
+
+4. **A needle tip stops working once the blade is long.** Round 8's 5-rung needle rendered
+   at 14x as a DETACHED pixel: a needle skips every other rung (an odd t can hold s == 0,
+   the even t either side cannot), `outline()` fills the skipped rungs with dark, and the
+   final cell touches the blade only diagonally while being ringed in black elsewhere.
+   Vanilla's tip is t == +13/+14/+15 holding 3/2/1 cells -- three CONSECUTIVE rungs. Ours
+   now closes 3 -> 2 -> 1 into the corner the same way. The constraint worth remembering:
+   a gapless monotone taper can be at most three rungs, because after a 1-cell odd rung the
+   next even rung must be 2 (widening) or 0 (a gap).
+
+5. **The crossguard was the size problem, not the blade.** Ours reached s == +-4 where
+   vanilla reaches +-7, which is most of why the icon read as a long knife. It now matches
+   vanilla's widest rungs exactly -- 7, 8, 7 cells at t == -3, -4, -5. Painting four guard
+   rungs instead of three was tried first and put the icon 30% over vanilla's weight with a
+   five-rung gold slab, straight back toward the club silhouette round 4 fixed; vanilla's
+   fourth rung is its outline, not paint.
+
+6. **Final: 16x16 bbox, 15 occupied rungs, 108 px against vanilla's 84.** The surplus is
+   the pincer band, which needs five core columns where a vanilla blade needs three. Kept
+   deliberately -- the seam is the icon's identity, and extra heft suits a weapon that sits
+   above netherite.
+
+7. **The numbers passed before the render did.** bbox, rung count and guard extent all
+   matched vanilla while the sprite still had a detached tip. Both remaining defects were
+   only found by rendering it at 14x and looking. Measuring says whether you hit the
+   target; it does not say whether the result reads.

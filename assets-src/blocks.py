@@ -1542,16 +1542,34 @@ CHITIN_PALE = (246, 198, 160, 255)
 # outline() spends the second pixel of margin on the sprite's own dark ring,
 # so a RAW fill filling the 2..13 box renders as a 14x14 sprite with a 1px
 # transparent border -- exactly the largest icon assert_item_borders_transparent
-# allows. Dropping TOOL_MARGIN to 1 would instead push outline()'s ring onto
-# row/column 0 and 15 and fail that guard. The old icons were small because
-# their width profiles never filled the box, not because the box was small.
+# allows. The old icons were small because their width profiles never filled
+# the box, not because the box was small.
+#
+# Round 8b: that reasoning was right about the width profiles and wrong about
+# the ceiling. Measured against the client jar, EVERY vanilla sword is a 16x16
+# bounding box -- tip at (15,0), pommel at (0,15), 84 opaque px, corner to
+# corner. A margin of 2 caps us at 14x14, which is 77% of vanilla's footprint,
+# and no width profile can buy that back. So the sword now uses a margin of 1.
+#
+# That is still safe against the bug this constant was created for. outline()
+# is 4-NEIGHBOUR (see its loop), so a raw fill pixel at (14,1) gets its ring at
+# (15,1) and (14,0) -- both inside the canvas. Every raw pixel keeps its full
+# dark ring, which is what "truncating at the icon edge" actually meant. What
+# a margin of 1 gives up is only the fully-transparent border row, which is a
+# convention of ours and not one vanilla observes. A margin of 0 would be the
+# real hazard: raw fill on row 0 has nowhere to put its ring, and THAT reads as
+# a cut-off shape.
 TOOL_MARGIN = 2
 TOOL_MIN = TOOL_MARGIN
 TOOL_MAX = SIZE - 1 - TOOL_MARGIN  # 13: highest x/y a raw fill pixel may use
 
+# The sword matches vanilla's corner-to-corner footprint; the pickaxe does not
+# need to -- measured, ours is already 14x14 against vanilla's 13x13.
+SWORD_MARGIN = 1
 
-def _in_tool_bounds(x, y):
-    return TOOL_MIN <= x <= TOOL_MAX and TOOL_MIN <= y <= TOOL_MAX
+
+def _in_tool_bounds(x, y, margin=TOOL_MARGIN):
+    return margin <= x <= SIZE - 1 - margin and margin <= y <= SIZE - 1 - margin
 
 
 def _tool_frame(x, y):
@@ -1620,7 +1638,7 @@ def _paint_prong(px, base, control, tip, half_width_start, half_width_end,
                 px[x, y] = CHITIN_MID
 
 
-def _paint_diagonal_shaft(px, t_min, t_max, s_values, colour_fn):
+def _paint_diagonal_shaft(px, t_min, t_max, s_values, colour_fn, margin=TOOL_MARGIN):
     """The stick handle both tools hang off: every raw pixel whose (s, t) has
     s in `s_values` and t in [t_min, t_max], coloured by colour_fn(s, t). One
     helper rather than two copies of the same rotated-frame loop, because the
@@ -1629,7 +1647,7 @@ def _paint_diagonal_shaft(px, t_min, t_max, s_values, colour_fn):
     three-value s_values renders as vanilla's five-column grip."""
     for y in range(SIZE):
         for x in range(SIZE):
-            if not _in_tool_bounds(x, y):
+            if not _in_tool_bounds(x, y, margin):
                 continue
             s, t = _tool_frame(x, y)
             if s not in s_values or not (t_min <= t <= t_max):
@@ -1643,7 +1661,24 @@ def _paint_diagonal_shaft(px, t_min, t_max, s_values, colour_fn):
 # Laid out against vanilla iron_sword's proportions: roughly 60% blade, 15%
 # crossguard, 25% grip, measured along the diagonal. Ours has 22 diagonal
 # steps of raw box (t in -11..11) where vanilla has 30 of full canvas.
-SWORD_BLADE_T_MIN = -3      # perpendicular cut where blade meets crossguard
+#
+# Round 8b re-derivation. Every vanilla sword was profiled in THIS (s, t)
+# frame straight out of the client jar, and the layout below copies its
+# proportions (numbers, never pixels). Vanilla, over its 31 outlined rungs:
+#
+#   blade   t = -2..+15   18 rungs, a constant five-column band (half 2.5)
+#                         held all the way out, tapering only in the last two
+#   guard   t = -6..-3     4 rungs, reaching s = +-7 at its widest
+#   grip    t = -12..-7    6 rungs, one or two cells per rung
+#   pommel  t = -15..-13   3 rungs, widening to 3 cells then closing to the
+#                          corner
+#
+# Two things that re-derivation settled. Our blade band was ALREADY vanilla's
+# thickness -- half 2.5 either side -- so the icon never read thin, it read
+# SHORT: 25 occupied rungs against 31, and a 14x14 box against 16x16. And our
+# crossguard reached s = +-4 where vanilla's reaches +-7, which is most of why
+# ours read as a long knife rather than a weapon with heft.
+SWORD_BLADE_T_MIN = -2      # perpendicular cut where blade meets crossguard
 # Three lines thick: a dark separator against the blade, one line of lit
 # body, and a shaded underside -- and GOLD, not chitin. The first round-4
 # pass painted the guard in the blade's own reds and it disappeared into it
@@ -1651,23 +1686,39 @@ SWORD_BLADE_T_MIN = -3      # perpendicular cut where blade meets crossguard
 # 16px, and royal gold is the material the recipe actually spends (a Queen's
 # Crest sits in the guard slot of the crafting shape). Palette borrowed from
 # the horn's mouthpiece golds.
-SWORD_GUARD_T_MIN = -6
-SWORD_GUARD_T_MAX = -4
-SWORD_GUARD_HALF_S = 4      # how far the guard reaches to either side
-SWORD_GRIP_T_MIN = -11      # the pommel end (the (2,13) raw corner)
+SWORD_GUARD_T_MIN = -5
+SWORD_GUARD_T_MAX = -3      # 3 PAINTED rungs. Vanilla's guard occupies 4
+                            # rungs in the finished sprite, but the outermost
+                            # is its outline -- painting 4 gave us 5 thick
+                            # rungs once ringed (t = -7..-2 all 7-8 cells
+                            # wide), a gold slab that put the icon 30% over
+                            # vanilla's pixel weight and straight back toward
+                            # the club silhouette round 4 fixed.
+SWORD_GUARD_HALF_S = 6      # how far the guard reaches to either side. Was 4,
+                            # which outlined to +-5 against vanilla's +-7; 6
+                            # outlines to +-7 and lands on vanilla exactly.
+SWORD_GRIP_T_MIN = -13      # the pommel end (the (1,14) raw corner)
 SWORD_GRIP_T_MAX = -7       # everything above this belongs to the guard
 SWORD_GRIP_S = (0, 1)       # two staggered columns -- the first pass used
                             # three (+outline = five visual), nearly as wide
                             # as the blade, which is half of why it read as a
                             # club rather than a sword
-SWORD_POMMEL_T = -10        # at/below this the grip caps off as a pommel
-SWORD_TAPER_T = 5           # blade holds full width to here, then tapers
+SWORD_POMMEL_T = -11        # at/below this the grip caps off as a pommel --
+                            # 3 rungs of gold (t = -11..-13), vanilla's own
+                            # pommel length
+SWORD_TAPER_T = 11          # blade holds full width to here, then tapers.
+                            # Vanilla holds full width to t == +13 of its 15
+                            # and spends the last 3 rungs on the point; ours
+                            # holds to 11 of 13 and spends 3, the same ratio.
+                            # Holding the five-column band this far out is the
+                            # "powerful weapon" half of the ask -- an early
+                            # taper spends the blade on air.
 SWORD_HALF_WIDE = 2.5       # -> a five-column band: two lit columns, the
                             #    seam, two more -- both prongs have to catch
                             #    light or the icon reads as one bright edge
                             #    with a shadow rather than as a pair
 SWORD_BAND_CENTRE = 0.0
-SWORD_TIP_T = 11            # t of the raw corner pixel, (TOOL_MAX, TOOL_MIN)
+SWORD_TIP_T = 13            # t of the raw corner pixel, (14, 1)
                             # -- filled, so the blade ends in a real point.
                             # A forked "pincer mouth" tip was tried here
                             # (leave t == 11 empty, let the two t == 10
@@ -1688,20 +1739,27 @@ SWORD_SPECULAR_T = (-1, 1, 3)
 # only 2 or 0. There is no 2 on an odd row to taper through, which is why
 # this is a table and not an expression.
 #
-# Play-test round 8 ("small tweak at the tip to make it more pointy"): the
-# needle now starts at t == 7 instead of t == 9. Measured off the render, the
-# old profile ran 3,2,3,2,1,0,1 over t == 5..11, so the blade was still three
-# and four cells across two raster rows from the corner and then stopped --
-# a chisel end, not a point. The new profile is 3,2,1,0,1,0,1: the last five
-# rungs are a single-cell diagonal staircase from (11,4) through (12,3) to
-# the corner at (13,2), which is how vanilla's diagonal blades end, because
-# consecutive odd-t s == 0 cells are diagonal neighbours. Costs 4 opaque px
-# (50 -> 46 before outline), so the icon stays in iron_sword's weight class.
+# Round 8 made the tip a 5-rung needle, which was right for a blade that
+# stopped at t == 11 and wrong for one that now runs to the corner. Rendered
+# at 14x it read as a DETACHED pixel: a needle skips every other rung (an odd
+# t can hold s == 0, the even t either side cannot), outline() fills those
+# skipped rungs with dark, and the last cell ends up touching the blade only
+# diagonally, ringed in black on every other side.
+#
+# Vanilla does not skip. Profiled from the jar, its tip is t == +13, +14, +15
+# holding 3, 2, 1 cells -- three CONSECUTIVE rungs, so the point is solid.
+# That is the shape here now: full five-column band all the way to t == 11,
+# then 3 -> 2 -> 1 into the corner.
+#
+# Worth stating because it constrains any future retune: a monotone taper with
+# no gaps can be at most three rungs long, because after a 1-cell odd rung the
+# next even rung must be 2 (widening) or 0 (a gap). Vanilla's tip is three
+# rungs for exactly this reason, not by taste.
 #
 # Widths are exclusive (|s| < half), so each value only has to land between
 # the cell it keeps and the next one out: 1.6 keeps s == +-1, 0.9 keeps only
-# s == 0, and 0.8 clears an even row entirely.
-SWORD_TIP_HALVES = {6: 1.6, 7: 0.9, 8: 0.8, 9: 0.9, 10: 0.8, 11: 0.4}
+# s == 0.
+SWORD_TIP_HALVES = {12: 1.6, 13: 0.9}
 SWORD_NEEDLE_HALF = 0.9     # fallback: anything past the table is one cell
                             # wide, never a pinch back to dark (see the
                             # s == 0 branch in pincer_sword_item)
@@ -1722,17 +1780,30 @@ def pincer_sword_item():
 
     Round-4 item 1: the previous icon was a single tapering claw about two
     pixels wide -- 37 opaque px against iron_sword's 84 -- which is why it
-    read as a twig next to a vanilla weapon. This one fills the raw box
-    corner to corner, five chitin columns across the middle of the blade,
+    read as a twig next to a vanilla weapon.
+
+    Round 8b ("bigger, same footprint as a vanilla sword, feel like a
+    powerful weapon"): round 4 matched vanilla on pixel COUNT and quietly
+    missed on footprint. Measured against the client jar, every vanilla sword
+    is a 16x16 bounding box; ours was 14x14, or 77% of the area, because
+    TOOL_MARGIN reserved two pixels of border it did not need. The sword now
+    uses SWORD_MARGIN = 1 and lands on 16x16, 15 occupied rungs, with a
+    crossguard whose widest rungs (7, 8, 7 cells at t == -3, -4, -5) are
+    vanilla's numbers exactly. It carries 108 px against vanilla's 84 -- the
+    surplus is the pincer band, which needs five core columns where a vanilla
+    blade needs three, and it suits a weapon that sits above netherite.
+
+    This one fills the raw box corner to corner, five chitin columns across
+    the middle of the blade,
     shaded SPARK / RIM / DARK-seam / RIM / MID from the lit upper-left edge
     down to the shaded lower-right one. The seam is the whole trick: two
     parallel prong masses either side of one dark column read as a pincer,
     where a single mass of the same width just reads as a wider blade -- and
     BOTH flanking columns have to be lit, or the dark column reads as shading
-    on one blade instead of the gap between two. The taper hands the
-    five-column band off to a single-cell diagonal needle over the last five
-    rungs (see SWORD_TIP_HALVES for the measured profile, and SWORD_TIP_T on
-    the forked tip that was tried and rejected). The
+    on one blade instead of the gap between two. The band holds full width to
+    t == 11 and then closes 3 -> 2 -> 1 into the canvas corner, vanilla's own
+    tip shape (see SWORD_TIP_HALVES for why a solid taper can only be three
+    rungs, and SWORD_TIP_T on the forked tip that was tried and rejected). The
     crossguard and pommel are royal gold (the crest the recipe spends), the
     one hue break on the icon, which is what stops guard, grip and blade
     merging into a single club-shaped chitin mass -- the failure of this
@@ -1749,11 +1820,11 @@ def pincer_sword_item():
         return TOOL_STICK_LIGHT if t % 2 else TOOL_STICK_DARK
 
     _paint_diagonal_shaft(px, SWORD_GRIP_T_MIN, SWORD_GRIP_T_MAX,
-                          SWORD_GRIP_S, grip_colour)
+                          SWORD_GRIP_S, grip_colour, margin=SWORD_MARGIN)
 
     for y in range(SIZE):
         for x in range(SIZE):
-            if not _in_tool_bounds(x, y):
+            if not _in_tool_bounds(x, y, SWORD_MARGIN):
                 continue
             s, t = _tool_frame(x, y)
 
@@ -2653,6 +2724,12 @@ def family_wall_sheet(families, cols=6, rows=4, scale=6):
     return sheet
 
 
+# Icons allowed to reach the canvas edge, and the outline colour their border
+# pixels must be. See assert_item_borders_transparent for why this is not just
+# an exemption.
+EDGE_TO_EDGE_ITEMS = {"pincer_sword": CHITIN_OUTLINE}
+
+
 def assert_item_borders_transparent(items):
     """Permanent guard (WP-S2 item 2, 2026-08-20): the mandible pickaxe and
     pincer sword icons shipped with their blade/prong truncating at the
@@ -2660,24 +2737,47 @@ def assert_item_borders_transparent(items):
     first-person rendering crops and magnifies the icon further, which is
     what made it visible in-game. Fixing those two by eye doesn't stop a
     future icon from doing the same thing, so this checks EVERY item
-    texture written this run: the outermost row/column on all four sides
-    must be fully transparent (alpha 0), i.e. >=1px of margin. A violation
-    names the offending texture, pixel, and colour, and the whole script
-    exits non-zero -- a texture that fails this can never reach
-    textures/item/ unnoticed."""
+    texture written this run.
+
+    The default rule is the strict one: the outermost row/column on all four
+    sides must be fully transparent, i.e. >=1px of margin.
+
+    Round 8b split that rule, because it was doing two jobs and only one of
+    them was the bug. What actually reads as "truncated" is a FILL pixel with
+    no room for its dark ring; a sprite merely touching the edge is not a
+    defect -- measured against the client jar, every vanilla sword does it,
+    tip at (15,0) and pommel at (0,15). Insisting on a transparent border
+    therefore capped us at a 14x14 sprite against vanilla's 16x16, which is
+    what made the Pincer Sword read as a knife.
+
+    So an icon in EDGE_TO_EDGE_ITEMS may reach the edge, but its border
+    pixels must be transparent OR exactly its outline colour. Since outline()
+    only ever paints transparent cells adjacent to fill, a fill pixel on the
+    border fails this -- which is precisely the original defect, still caught.
+    """
     failures = []
     for name, img in items:
         px = img.load()
         w, h = img.size
+        allowed = EDGE_TO_EDGE_ITEMS.get(name)
+
+        def bad(x, y):
+            colour = px[x, y]
+            if colour[3] == 0:
+                return False
+            if allowed is not None and tuple(colour) == tuple(allowed):
+                return False
+            return True
+
         for x in range(w):
-            if px[x, 0][3] != 0:
+            if bad(x, 0):
                 failures.append((name, x, 0, px[x, 0]))
-            if px[x, h - 1][3] != 0:
+            if bad(x, h - 1):
                 failures.append((name, x, h - 1, px[x, h - 1]))
         for y in range(h):
-            if px[0, y][3] != 0:
+            if bad(0, y):
                 failures.append((name, 0, y, px[0, y]))
-            if px[w - 1, y][3] != 0:
+            if bad(w - 1, y):
                 failures.append((name, w - 1, y, px[w - 1, y]))
     if failures:
         for (name, x, y, color) in failures:
