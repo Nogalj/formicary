@@ -2,8 +2,7 @@
 
 An ant-colony dimension for **Minecraft 1.21** on **NeoForge**.
 
-An ant colony is not a dungeon you clear. It is a place you learn to live alongside — you
-can rob it, and it will remember.
+Welcome to the colony...
 
 Throw an ender pearl at a savanna anthill and you fall into the Formicary: a layered
 underground world of packed soil, amber and glowing fungal gardens, worked by four castes
@@ -39,7 +38,7 @@ becomes a horn that calls her own soldiers to *your* side, and the **Queen's Cre
 arms the only two tools in the mod that sit above netherite.
 
 **Things to build with.** Chitin armour, resin and amber blocks, brood comb, and three
-decorative families with full stairs-and-slab sets.
+decorative families with stairs-and-slab sets.
 
 By the numbers: 7 entity types, 26 blocks, 41 items, 26 recipes, its own dimension and
 biomes, and 100 headless GameTests that run in CI-style on every change.
