@@ -84,6 +84,17 @@ texture painting and orthographic QA previews -- run `python assets-src\models.p
 edits. Before ANY model/render work, open `docs/gotchas/entity-models.md` (1.21 signature
 changes, held-item layer, UV rules, the full pipeline description).
 
+**Before reporting ANY visual work finished, render it at the size it will actually be
+seen and LOOK at the image.** Not "verify it" -- open the PNG. Every generator here
+asserts numeric properties (opaque counts, borders, contrast, mono audio), and on
+2026-08-24 three separate defects passed every one of those assertions and were caught
+only by looking: the Pincer Sword matched vanilla on bounding box, rung count and
+crossguard extent while its tip read as a detached pixel; the mod icon passed a contrast
+assertion and rendered as a spider; a thumbnail passed at full size and lost its subject
+at 168px. A metric is a hypothesis about what matters, so the check on it cannot be
+another metric. The failure mode is always the same ordering -- render AFTER declaring
+success rather than before.
+
 ## Gotcha index -- open on symptom match
 
 All under `docs/gotchas/`. Every entry is a verbatim banked rule with its `verified:`
