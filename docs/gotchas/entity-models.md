@@ -41,3 +41,17 @@ is a known-correct 1.21 entity model reference.
   `context.getItemInHandRenderer().renderItem(entity, stack, ItemDisplayContext.GROUND,
   false, poseStack, buffer, light)`. See `client/renderer/WorkerAntCarriedItemLayer.java`.
   (`verified: 2026-08-13`)
+
+- **A renderer can only see SYNCHED entity state -- a plain field is always the default on
+  the client.** `getTextureLocation`, `RenderLayer`s and `setupAnim` all run client-side,
+  where a server-written field like a `@Nullable UUID summoner` is simply `null`. Deriving
+  a texture from one gives a mob that looks right in a GameTest (server) and never changes
+  in-game (client), with no error anywhere. Fix: hold the flag in an
+  `EntityDataAccessor<Boolean>` defined in `defineSynchedData`, and make the accessor the
+  SINGLE source of truth (`isX()` returns `entityData.get(...)`) rather than a second copy
+  kept in step by hand -- `entityData.set` is visible to the server's own `get`
+  immediately, so server callers lose nothing. Route every writer, including
+  `readAdditionalSaveData`, through one setter or a reloaded entity renders wrong.
+  (Hit 2026-08-23 giving Pheromone-Horn allies the tamed soldier's yellow-tipped texture:
+  `SoldierAntEntity#isAllied` was `summoner != null`, so the renderer could never see it.)
+  (`verified: 2026-08-23`)

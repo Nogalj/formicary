@@ -66,6 +66,20 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
     private static final EntityDataAccessor<Boolean> DATA_CLIMBING =
             SynchedEntityData.defineId(SoldierAntEntity.class, EntityDataSerializers.BOOLEAN);
 
+    /**
+     * Whether this soldier is a Pheromone Horn summon. Synched because the CLIENT needs it:
+     * play-test round 9 asks a summoned ally to wear the tamed soldier's yellow-tipped
+     * texture, and {@code SoldierAntRenderer#getTextureLocation} runs client-side, where
+     * {@link #summoner} is always null -- it is a plain field written only on the server.
+     *
+     * <p>This accessor is the single source of truth for {@link #isAllied()} rather than a
+     * second copy of it: both writers go through {@link #setSummoner}, so the flag cannot
+     * drift from the UUID. {@code entityData.set} is visible to the server's own {@code get}
+     * immediately, so server-side callers see no lag from the indirection.
+     */
+    private static final EntityDataAccessor<Boolean> DATA_ALLIED =
+            SynchedEntityData.defineId(SoldierAntEntity.class, EntityDataSerializers.BOOLEAN);
+
     private int remainingAngerTime;
 
     @Nullable
@@ -146,6 +160,7 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
         super.defineSynchedData(builder);
         builder.define(DATA_CLIMBING, false);
+        builder.define(DATA_ALLIED, false);
     }
 
     /** @see AntClimbing */
@@ -175,13 +190,27 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
      * {@link #customServerAiStep()} disperses it when the timer runs out.
      */
     public void summonFor(Player summoner, int lifetimeTicks) {
-        this.summoner = summoner.getUUID();
-        this.summonExpiry = this.level().getGameTime() + lifetimeTicks;
+        this.setSummoner(summoner.getUUID(), this.level().getGameTime() + lifetimeTicks);
     }
 
-    /** Whether this soldier is a Pheromone Horn summon rather than one of the colony's. */
+    /**
+     * The one place {@link #summoner} is written, so the synched {@link #DATA_ALLIED} flag
+     * the renderer reads can never disagree with it.
+     */
+    private void setSummoner(UUID uuid, long expiry) {
+        this.summoner = uuid;
+        this.summonExpiry = expiry;
+        this.entityData.set(DATA_ALLIED, uuid != null);
+    }
+
+    /**
+     * Whether this soldier is a Pheromone Horn summon rather than one of the colony's.
+     *
+     * <p>Reads the synched flag, not {@link #summoner}, so it answers correctly on the
+     * client too -- which is what lets the renderer give an ally the tamed texture.
+     */
     public boolean isAllied() {
-        return this.summoner != null;
+        return this.entityData.get(DATA_ALLIED);
     }
 
     @Nullable
@@ -346,8 +375,8 @@ public class SoldierAntEntity extends PathfinderMob implements NeutralMob {
         super.readAdditionalSaveData(compound);
         this.readPersistentAngerSaveData(this.level(), compound);
         if (compound.hasUUID(TAG_SUMMONER)) {
-            this.summoner = compound.getUUID(TAG_SUMMONER);
-            this.summonExpiry = compound.getLong(TAG_SUMMON_EXPIRY);
+            // Through the setter, so an ally that survived a reload still renders as one.
+            this.setSummoner(compound.getUUID(TAG_SUMMONER), compound.getLong(TAG_SUMMON_EXPIRY));
         }
     }
 
