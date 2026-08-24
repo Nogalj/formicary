@@ -1,5 +1,6 @@
 package com.nogal.formicary.gametest;
 
+import java.util.List;
 import java.util.Optional;
 
 import com.nogal.formicary.Formicary;
@@ -19,8 +20,10 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.HopperBlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -87,6 +90,48 @@ public class PolishGameTests {
             helper.assertTrue(container.countItem(ModItems.FUNGAL_BLOOM.get()) > 0,
                     "the worker should have deposited the fungal bloom cut from the mature crop");
         });
+    }
+
+    /**
+     * Play-test round 9: the Fungal Bloom sits on ANY block, not just soil.
+     *
+     * <p>It used to accept only the three tier soils, Anthill Soil and vanilla dirt, which
+     * made the mod's one light-emitting plant useless as a build material. This walks a
+     * deliberately unsoil-like set -- stone, glass, planks, and two of the mod's own
+     * crafted blocks -- and checks the bloom both places AND survives on each.
+     *
+     * <p>Asserting {@code canSurvive} as well as presence is the point: {@code setBlock}
+     * will happily place a block that a neighbour update then pops off a tick later, so
+     * presence alone would pass even with the old soil-only rule still in force.
+     *
+     * <p>The air case is the other half of the contract. "Any block" still means there has
+     * to BE a block -- a bloom whose support is air must not survive, or it floats.
+     */
+    @PrefixGameTestTemplate(false)
+    @GameTest(template = "farm_platform", timeoutTicks = 200)
+    public static void fungal_bloom_places_on_any_block(GameTestHelper helper) {
+        BlockPos at = new BlockPos(3, STAND_Y, 2);
+        BlockState bloom = ModBlocks.FUNGAL_BLOOM.get().defaultBlockState();
+
+        List<Block> grounds = List.of(
+                Blocks.STONE, Blocks.GLASS, Blocks.OAK_PLANKS,
+                ModBlocks.RESIN_BLOCK.get(), ModBlocks.BROOD_COMB.get());
+
+        for (Block ground : grounds) {
+            helper.setBlock(at, Blocks.AIR);
+            helper.setBlock(at.below(), ground);
+            helper.setBlock(at, bloom);
+            helper.assertBlockPresent(ModBlocks.FUNGAL_BLOOM.get(), at);
+            helper.assertTrue(bloom.canSurvive(helper.getLevel(), helper.absolutePos(at)),
+                    "a fungal bloom should survive on " + ground.getName().getString());
+        }
+
+        helper.setBlock(at, Blocks.AIR);
+        helper.setBlock(at.below(), Blocks.AIR);
+        helper.assertFalse(bloom.canSurvive(helper.getLevel(), helper.absolutePos(at)),
+                "a fungal bloom must not survive with air beneath it");
+
+        helper.succeed();
     }
 
     /**

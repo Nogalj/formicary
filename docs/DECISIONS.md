@@ -2286,3 +2286,34 @@ the same amount of footprint. I want it to feel like a powerful weapon."
    matched vanilla while the sprite still had a detached tip. Both remaining defects were
    only found by rendering it at 14x and looking. Measuring says whether you hit the
    target; it does not say whether the result reads.
+
+---
+
+## Play-test round 9 -- the fungal economy (2026-08-23)
+
+"Should be able to place fungal bloom on any block and get multiple when harvesting from
+fungal spores."
+
+1. **The bloom's placement rule was written for how it GROWS, not how it is used.**
+   `FungalBloomBlock.mayPlaceOn` accepted only the three tier soils, Anthill Soil and
+   vanilla dirt -- correct for worldgen, useless for building, and the bloom is the mod's
+   only light-emitting plant. It now accepts anything with a block under it. The two
+   exclusions are not restrictions on the ask, they are what "on a block" already means:
+   air leaves it floating, and a fluid has it standing on the surface of water.
+
+2. **`canSurvive` asks NeoForge first.** Verified in the decompiled `BushBlock`: it calls
+   `belowBlockState.canSustainPlant(...)` and only falls through to `mayPlaceOn` when that
+   `TriState` is default. Nothing in this mod overrides that hook, so `mayPlaceOn` decides
+   every placement in practice -- but a future soil block that DOES override it would win
+   over this rule, which is worth knowing before debugging a placement that refuses.
+
+3. **One bloom per harvest made farming the crop strictly worse than foraging.** A Fungal
+   Cake takes two blooms and a Fungal Carpet takes two, so a crop yielding one could not
+   pay for what the bloom is spent on. Now 2-3, matching the flat-uniform convention the
+   rest of this loot table already uses over Fortune math.
+
+4. **Presence is not survival, so the test asserts both.** `setBlock` will happily place a
+   block that the next neighbour update pops off, which means a placement test that only
+   checks `assertBlockPresent` would pass with the old soil-only rule still in force. The
+   new GameTest walks stone, glass, planks, Resin Block and Brood Comb asserting
+   `canSurvive` on each, then asserts the air case is refused. Suite 99 -> 100.

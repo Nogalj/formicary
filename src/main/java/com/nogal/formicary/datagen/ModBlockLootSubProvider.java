@@ -64,6 +64,15 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
      */
     private static final float PROVISION_PEARL_CHANCE = 0.05F;
 
+    /**
+     * Fungal Blooms from one mature Fungal Spore crop. Play-test round 9 raised this from
+     * a flat 1: at one bloom a harvest the crop could not pay for what the bloom is spent
+     * on, since a Fungal Cake takes two and a Fungal Carpet takes two, so farming it was
+     * strictly worse than picking wild blooms. Tunable.
+     */
+    private static final float FUNGAL_BLOOM_PER_HARVEST_MIN = 2.0F;
+    private static final float FUNGAL_BLOOM_PER_HARVEST_MAX = 3.0F;
+
     public ModBlockLootSubProvider(HolderLookup.Provider registries) {
         super(Set.of(), FeatureFlags.REGISTRY.allFlags(), registries);
     }
@@ -246,9 +255,10 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
 
     /**
      * The Fungal Spore crop's own loot (spec section 5/8, M8): mature (age {@link
-     * FungalSporeCropBlock#MAX_AGE}) safely yields the bloom item plus 1-2 spores; an
-     * immature break -- the plant was cut down early -- yields a single spore only, wheat-
-     * style. Age-condition shape verified against vanilla's own {@code createCropDrops}
+     * FungalSporeCropBlock#MAX_AGE}) safely yields {@link #FUNGAL_BLOOM_PER_HARVEST_MIN}-{@link
+     * #FUNGAL_BLOOM_PER_HARVEST_MAX} blooms plus 1-2 spores; an immature break -- the plant was cut down early -- yields
+     * a single spore only, wheat-style. Age-condition shape verified against vanilla's
+     * own {@code createCropDrops}
      * (a {@code BlockLootSubProvider} method this class inherits): {@code
      * LootItemBlockStatePropertyCondition.hasBlockStateProperties(block).setProperties(
      * StatePropertiesPredicate.Builder.properties().hasProperty(AGE, max))}, chained with
@@ -267,7 +277,10 @@ public class ModBlockLootSubProvider extends BlockLootSubProvider {
                 .withPool(LootPool.lootPool()
                         .setRolls(ConstantValue.exactly(1.0F))
                         .when(mature)
-                        .add(LootItem.lootTableItem(ModItems.FUNGAL_BLOOM.get())))
+                        .add(LootItem.lootTableItem(ModItems.FUNGAL_BLOOM.get())
+                                .apply(SetItemCountFunction.setCount(
+                                        UniformGenerator.between(FUNGAL_BLOOM_PER_HARVEST_MIN,
+                                                FUNGAL_BLOOM_PER_HARVEST_MAX)))))
                 .withPool(LootPool.lootPool()
                         .setRolls(ConstantValue.exactly(1.0F))
                         .add(LootItem.lootTableItem(ModItems.FUNGAL_SPORES.get())
