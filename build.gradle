@@ -23,7 +23,14 @@ sourceSets.main.resources {
 
     // Exclude common development only resources from finalized outputs
     exclude("**/*.bbmodel") // BlockBench project files
-    exclude("src/generated/**/.cache") // datagen cache files
+
+    // Datagen's HashCache. The MDK ships this as exclude("src/generated/**/.cache"),
+    // which never matches: resource excludes are evaluated against the path RELATIVE to
+    // each srcDir, and srcDir is already src/generated/resources -- so the cache files
+    // are ".cache/<sha1>", never "src/generated/...". Caught by opening the 1.0.0 jar
+    // before release and finding 9 cache files (~20 KB) shipped inside it.
+    exclude(".cache")
+    exclude(".cache/**")
 }
 
 repositories {
