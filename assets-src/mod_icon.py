@@ -30,6 +30,13 @@ from PIL import Image, ImageDraw, ImageFilter
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = REPO_ROOT / "src" / "main" / "resources" / "formicary.png"
 
+# The CurseForge project avatar. Their requirement is a 1:1 PNG of at least 400x400
+# ("anything larger will be downscaled"), so 512 gives headroom and costs nothing --
+# the art is drawn at 512 internally anyway, so this is the UNREDUCED render rather
+# than an upscale of the 128px icon. Not shipped in the jar; it is a listing asset.
+STORE_OUT = REPO_ROOT / "docs" / "curseforge-logo.png"
+STORE_SIZE = 512
+
 SIZE = 128
 SS = 4                      # supersample factor; drawn at 512 then reduced
 W = SIZE * SS
@@ -107,7 +114,9 @@ def body_mass(draw, centre, rx, ry, fill, rim, highlight):
     draw.ellipse([ox - hx, oy - hy, ox + hx, oy + hy], fill=highlight)
 
 
-def build():
+def build_full():
+    """The art at full supersampled resolution. Both outputs are reductions of THIS --
+    the store avatar is never an upscale of the 128px icon."""
     img = Image.new("RGBA", (W, W), LOAM)
     draw = ImageDraw.Draw(img)
 
@@ -187,10 +196,9 @@ def build():
         draw.ellipse([ex - er * 0.5, ey - er * 0.5, ex + er * 0.15, ey + er * 0.15],
                      fill=B.CHITIN_PALE)
 
-    # A touch of bloom on the amber, then down to final size.
+    # A touch of bloom on the amber. Callers reduce to whatever size they need.
     bloom = img.filter(ImageFilter.GaussianBlur(radius=6 * SS / 4))
-    img = Image.blend(img, bloom, 0.16)
-    return img.resize((SIZE, SIZE), Image.LANCZOS)
+    return Image.blend(img, bloom, 0.16)
 
 
 def assert_shippable(img):
@@ -217,7 +225,9 @@ def assert_shippable(img):
 
 
 def main():
-    img = build()
+    full = build_full()
+
+    img = full.resize((SIZE, SIZE), Image.LANCZOS)
     contrast = assert_shippable(img)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     img.save(OUT)
@@ -225,6 +235,15 @@ def main():
           % (OUT.relative_to(REPO_ROOT), img.size[0], img.size[1],
              OUT.stat().st_size / 1024.0))
     print("  subject/background separation at 32px: %d (min 90)" % contrast)
+
+    store = full.resize((STORE_SIZE, STORE_SIZE), Image.LANCZOS)
+    if store.size[0] != store.size[1] or store.size[0] < 400:
+        raise AssertionError("CurseForge needs a 1:1 PNG of at least 400x400")
+    STORE_OUT.parent.mkdir(parents=True, exist_ok=True)
+    store.save(STORE_OUT)
+    print("wrote %s (%dx%d, %.1f KB) -- CurseForge project avatar"
+          % (STORE_OUT.relative_to(REPO_ROOT), store.size[0], store.size[1],
+             STORE_OUT.stat().st_size / 1024.0))
 
 
 if __name__ == "__main__":
