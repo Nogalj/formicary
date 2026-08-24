@@ -33,7 +33,7 @@ CurseForge's description editor has an HTML source mode. Paste the block below i
 not into the rich-text view.
 
 ```html
-<p><strong>An ant colony is not a dungeon you clear. It is a place you learn to live alongside — and it remembers being robbed.</strong></p>
+<p><strong>Welcome to the colony...</strong></p>
 
 <p>Throw an ender pearl at a savanna anthill and fall into the Formicary: a layered underground world of packed soil, amber and glowing fungal gardens, worked by four castes of ant and ruled by a queen who does not tolerate visitors.</p>
 
@@ -57,7 +57,7 @@ not into the rich-text view.
 <p>The queen fights in three phases, burrows, spits acid and calls her brood. She drops the two things worth having: the <strong>Royal Pheromone Gland</strong>, which becomes a horn that calls her own soldiers to <em>your</em> side, and the <strong>Queen's Crest</strong>, which arms the only two tools in the mod that sit above netherite.</p>
 
 <h2>Things to build with</h2>
-<p>Chitin armour, resin and amber blocks, brood comb, and three decorative families with full stairs-and-slab sets.</p>
+<p>Chitin armour, resin and amber blocks, brood comb, and three decorative families with stairs-and-slab sets.</p>
 
 <p><strong>7 entity types &middot; 26 blocks &middot; 41 items &middot; 26 recipes &middot; its own dimension and biomes</strong></p>
 
