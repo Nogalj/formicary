@@ -46,3 +46,7 @@ reference/
 # log4j comes along on the classpath when the worldgen NoiseProbe runs as a plain JavaExec,
 # and drops an empty logs/ in the project root every time
 /logs/
+
+# Python bytecode from the assets-src generators
+__pycache__/
+*.pyc
